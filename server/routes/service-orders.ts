@@ -27,6 +27,7 @@ import type { Express } from "express";
     denyIfComercialClientOutOfScope,
     isComercialScoped,
   } from "../lib/comercial-scope";
+  import { CLIENT_INACTIVE_BLOCK_MSG, isClientActive } from "@shared/client-duplicates";
 
   async function buildOfficialBillingPayloadForServiceOrder(so: any, createdBy: string) {
     if (!so?.escortContractId) {
@@ -956,6 +957,14 @@ import type { Express } from "express";
       const allowed = await allowedClientIdsFromRequest(req);
       if (!clientIdAllowed(parsed.data.clientId, allowed)) {
         return res.status(400).json({ message: "Cliente não encontrado" });
+      }
+    }
+    // Bloqueio: nunca criar OS por cadastro inativo (duplicados GO LOG etc.).
+    if (parsed.data.clientId) {
+      const clientRow = await storage.getClient(parsed.data.clientId);
+      if (!clientRow) return res.status(400).json({ message: "Cliente não encontrado" });
+      if (!isClientActive(clientRow as any)) {
+        return res.status(400).json({ message: CLIENT_INACTIVE_BLOCK_MSG });
       }
     }
     // Bloqueio operacional: cliente com fatura em cobrança judicial não recebe nova OS.

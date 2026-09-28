@@ -429,6 +429,7 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients?includeInactive=1"] });
       toast({ title: client ? "Cliente atualizado" : "Cliente cadastrado" });
       onClose();
     },
@@ -2811,15 +2812,24 @@ export default function ClientsPage() {
       setGeneratingPdf(null);
     }
   };
-  const { data: clients = [], isLoading } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
+  // Gestão precisa ver inativos (reativar/duplicados); demais telas usam /api/clients (só ativos).
+  const { data: clients = [], isLoading } = useQuery<Client[]>({
+    queryKey: ["/api/clients?includeInactive=1"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const invalidateClientLists = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/clients?includeInactive=1"] });
+  };
 
   const deactivateMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/clients/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/clients"] }); toast({ title: "Cliente desativado" }); },
+    onSuccess: () => { invalidateClientLists(); toast({ title: "Cliente desativado" }); },
   });
   const reactivateMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("PATCH", `/api/clients/${id}`, { status: "ativo" }); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/clients"] }); toast({ title: "Cliente reativado" }); },
+    onSuccess: () => { invalidateClientLists(); toast({ title: "Cliente reativado" }); },
     onError: (err: Error) => toast({ title: "Erro ao reativar", description: err.message, variant: "destructive" }),
   });
 

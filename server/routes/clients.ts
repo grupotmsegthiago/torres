@@ -12,7 +12,7 @@ import type { Express } from "express";
     denyIfComercialClientOutOfScope,
     filterComerciaisForUser,
   } from "../lib/comercial-scope";
-  import { parseClientStatus } from "@shared/client-duplicates";
+  import { isClientActive, parseClientStatus } from "@shared/client-duplicates";
 
   import { generateContractPDF } from "../contract-pdf";
 import { listGroups as listZapiGroups } from "../lib/zapi";
@@ -53,9 +53,21 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
     app.get("/api/clients", requireAuth, requireRoles("financeiro", "comercial"), async (req, res) => {
     const allowed = await allowedClientIdsFromRequest(req);
     const data = await storage.getClients();
-    if (allowed == null) return res.json(data);
-    const set = new Set(allowed);
-    res.json(data.filter((c: any) => set.has(Number(c.id))));
+    // Cadastro inativo NÃO entra em listas operacionais (OS, fatura, boletim…).
+    // Tela de gestão de clientes passa ?includeInactive=1 para reativar/duplicados.
+    const includeInactive =
+      req.query.includeInactive === "1" ||
+      req.query.includeInactive === "true" ||
+      req.query.status === "todos";
+    const afterScope =
+      allowed == null
+        ? data
+        : (() => {
+            const set = new Set(allowed);
+            return data.filter((c: any) => set.has(Number(c.id)));
+          })();
+    if (includeInactive) return res.json(afterScope);
+    res.json(afterScope.filter((c: any) => isClientActive(c)));
   });
 
   // Lista grupos do WhatsApp via Z-API pra popular o select no cadastro

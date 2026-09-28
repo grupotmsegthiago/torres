@@ -7,6 +7,7 @@ import {
   digitsDoc,
   isClientActive,
   parseClientStatus,
+  pickActiveClient,
 } from "./client-duplicates.ts";
 
 const LCE = [
@@ -44,6 +45,23 @@ test("isClientActive trata status ausente como ativo (compatível com cadastros 
   assert.equal(isClientActive({ status: "ativo" }), true);
   assert.equal(isClientActive({ status: "INATIVO" }), false);
   assert.equal(isClientActive({ status: "inativo" }), false);
+});
+
+test("pickActiveClient nunca devolve inativo (GO LOG duplicado)", () => {
+  const rows = [
+    { id: 63, name: "GO LOG", status: "inativo" },
+    { id: 66, name: "GO LOG", status: "ativo" },
+  ];
+  assert.equal(pickActiveClient(rows)?.id, 66);
+  assert.equal(pickActiveClient([{ id: 63, status: "inativo" }]), null);
+  assert.equal(pickActiveClient([]), null);
+});
+
+test("listas operacionais (filtro ativos) excluem inativos", () => {
+  const all = [...TVM, { id: 63, name: "GO LOG", cnpj: "17848915000154", status: "inativo" }];
+  const ativos = applyClientListFilter(all, "ativos", buildClientDuplicateIndex(all));
+  assert.ok(ativos.every(isClientActive));
+  assert.equal(ativos.some((c) => c.id === 62 || c.id === 63), false);
 });
 
 test("parseClientStatus só aceita ativo/inativo", () => {
