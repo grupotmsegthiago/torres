@@ -1248,15 +1248,25 @@ export async function emitInvoiceAuto(
   }
 
   const clientId = invoice.client_id;
-  const clientCols = `id, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, address, address_number, address_complement, bairro, city, state, zip, ${CLIENT_EMAIL_COLUMNS}, phone, name, inscricao_municipal, inscricao_estadual`;
+  const clientCols = `id, status, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, address, address_number, address_complement, bairro, city, state, zip, ${CLIENT_EMAIL_COLUMNS}, phone, name, inscricao_municipal, inscricao_estadual`;
   let clientData: any = null;
   if (clientId) {
     const r = await supabaseAdmin.from("clients").select(clientCols).eq("id", clientId).maybeSingle();
     clientData = r.data;
   }
   if (!clientData && invoice.client_name) {
-    const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
-    clientData = r.data?.[0] || null;
+    // Preferir cadastro ATIVO quando há homônimos (ex.: GO LOG id 63 inativo + 66 ativo).
+    const r = await supabaseAdmin
+      .from("clients")
+      .select(clientCols)
+      .ilike("name", invoice.client_name)
+      .order("status", { ascending: true }) // "ativo" < "inativo"
+      .limit(5);
+    const rows = r.data || [];
+    clientData =
+      rows.find((c: any) => String(c.status || "").toLowerCase() === "ativo") ||
+      rows[0] ||
+      null;
   }
   let cpfCnpj: string;
   let totalValue: number;
@@ -2441,13 +2451,15 @@ export function registerAsaasRoutes(app: Express) {
         lookupSteps.push("STEP1 skipped (invoice.client_id vazio)");
       }
 
-      // Etapa 2: fallback por nome (ilike) — sempre retorna array, não single
+      // Etapa 2: fallback por nome (ilike) — preferir cadastro ATIVO (homônimos GO LOG)
       if (!clientData && invoice.client_name) {
-        const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
+        const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(5);
         if (r.error) console.log(`[emitir #${id}] STEP2 by name="${invoice.client_name}" ERROR:`, r.error.message);
         const arr = r.data || [];
-        clientData = arr.length > 0 ? arr[0] : null;
-        lookupSteps.push(`STEP2 by name="${invoice.client_name}": ${clientData ? `FOUND id=${clientData.id} cnpj="${clientData.cnpj || ""}" cpf="${clientData.cpf || ""}"` : `NOT FOUND (array vazio: ${arr.length === 0})`}`);
+        clientData =
+          arr.find((c: any) => String(c.status || "").toLowerCase() === "ativo") ||
+          (arr.length > 0 ? arr[0] : null);
+        lookupSteps.push(`STEP2 by name="${invoice.client_name}": ${clientData ? `FOUND id=${clientData.id} status=${clientData.status || "?"} cnpj="${clientData.cnpj || ""}" cpf="${clientData.cpf || ""}"` : `NOT FOUND (array vazio: ${arr.length === 0})`}`);
       } else if (!clientData) {
         lookupSteps.push("STEP2 skipped (sem invoice.client_name)");
       }
@@ -3000,8 +3012,8 @@ export function registerAsaasRoutes(app: Express) {
   });
 
   app.post("/api/boletim-medicao/gerar-fatura/:clientId", requireAdminRole, async (req: Request, res: Response) => {
+    const clientId = parseInt(req.params.clientId);
     try {
-      const clientId = parseInt(req.params.clientId);
       if (!clientId) return res.status(400).json({ message: "clientId inválido" });
 
       const lastCall = gerarFaturaLocks.get(clientId);
@@ -3561,7 +3573,7 @@ export function registerAsaasRoutes(app: Express) {
       });
       gerarFaturaLocks.delete(clientId);
     } catch (err: any) {
-      gerarFaturaLocks.delete(clientId);
+      if (clientId) gerarFaturaLocks.delete(clientId);
       console.error("[billing] Erro ao gerar fatura:", err.message, err.asaasErrors || "");
       const status = err?.asaasGateway || Array.isArray(err?.asaasErrors) ? 502 : 500;
       res.status(status).json({

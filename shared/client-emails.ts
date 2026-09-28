@@ -17,7 +17,9 @@ export function parseEmailList(raw: string | null | undefined): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const part of String(raw).split(/[\n,;]+/)) {
-    const e = part.trim().toLowerCase();
+    // Cadastro às vezes grava "mailto:fulano@x.com" (cola de Outlook/HTML).
+    // Sem strip, o regex aceitava e o Asaas rejeitava com invalid_email (GO LOG).
+    const e = part.trim().toLowerCase().replace(/^mailto:\s*/i, "");
     if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || seen.has(e)) continue;
     seen.add(e);
     out.push(e);
@@ -29,7 +31,7 @@ function uniqueEmails(list: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of list) {
-    const e = String(raw || "").trim().toLowerCase();
+    const e = String(raw || "").trim().toLowerCase().replace(/^mailto:\s*/i, "");
     if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || seen.has(e)) continue;
     seen.add(e);
     out.push(e);
@@ -98,8 +100,12 @@ export function nfseTomadorEmail(client: any): string | undefined {
   return financeiroCadastroEmails(client).find((e) => e.length > 0 && e.length <= 75);
 }
 
-/** E-mail do tomador no Asaas: só financeiro (não mistura operacional/contratual). */
+/**
+ * E-mail do tomador no Asaas: só o PRIMEIRO do campo financeiro.
+ * Asaas não aceita lista ("a@x.com, b@x.com") — HTTP 400 invalid_email.
+ * Não mistura operacional/contratual.
+ */
 export function asaasTomadorEmail(client: any): string | undefined {
   const list = pickClientEmails(client, "financeiro");
-  return list.length ? list.join(", ") : undefined;
+  return list[0];
 }
