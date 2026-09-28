@@ -1070,18 +1070,20 @@ export async function runMigrateMediaCron(): Promise<void> {
       const { migrateMediaToStorage, summarizeMigrateReport } = await import(
         "./lib/migrate-media-to-storage"
       );
-      // Uma tabela por tick — evita timeout serverless e stubs travando a fila.
+      // Prioriza as tabelas mais pesadas (missão/custos).
       const rotation = [
+        "mission_photos",
+        "mission_costs",
         "mission_photos",
         "mission_costs",
         "vehicle_fueling",
         "employee_documents",
         "login_selfies",
       ] as const;
-      const slot = Math.floor(Date.now() / 300_000) % rotation.length; // muda a cada 5 min
+      const slot = Math.floor(Date.now() / 300_000) % rotation.length;
       const only = rotation[slot];
       const report = await migrateMediaToStorage({
-        limitPerTable: 20,
+        limitPerTable: only === "mission_photos" || only === "mission_costs" ? 6 : 15,
         tables: [only],
       });
       const s = summarizeMigrateReport(report);
