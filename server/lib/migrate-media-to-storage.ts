@@ -120,8 +120,7 @@ async function migrateMissionPhotos(limit: number, report: BucketReport) {
       const { error: upErr } = await supabaseAdmin
         .from("mission_photos")
         .update({ photo_data: path })
-        .eq("id", row.id)
-        .eq("photo_data", v!);
+        .eq("id", row.id);
       if (upErr) {
         report.failed++;
         console.warn(`[migrate-media] mission_photos#${row.id}:`, upErr.message);
