@@ -2,6 +2,9 @@
  * Migração controlada: base64 inline → Supabase Storage.
  * Processa em lotes; idempotente (pula quem já é path).
  * Não apaga blobs do Storage; só reescreve a coluna no Postgres.
+ *
+ * Estratégia: lista só IDs com `like 'data:%'` (sem baixar o blob),
+ * depois busca e migra um a um — cobre o histórico inteiro.
  */
 import { supabaseAdmin } from "../supabase";
 import {
@@ -11,40 +14,84 @@ import {
 import { persistMissionPhotoBlob } from "./mission-photos";
 import { persistFuelingPhotoBlob, type FuelingPhotoKind } from "./fueling-photo-storage";
 import { persistEmployeeDocBlob } from "./employee-doc-storage";
+import { persistLoginSelfieBlob } from "./login-selfie-storage";
 
-export type MigrateMediaReport = {
-  missionPhotos: { scanned: number; migrated: number; failed: number; skipped: number };
-  fueling: { scanned: number; migrated: number; failed: number; skipped: number };
-  employeeDocs: { scanned: number; migrated: number; failed: number; skipped: number };
+export type MediaTable =
+  | "mission_photos"
+  | "vehicle_fueling"
+  | "employee_documents"
+  | "mission_costs"
+  | "login_selfies";
+
+export type BucketReport = {
+  scanned: number;
+  migrated: number;
+  failed: number;
+  skipped: number;
 };
 
-const EMPTY_BUCKET = () => ({ scanned: 0, migrated: 0, failed: 0, skipped: 0 });
+export type MigrateMediaReport = {
+  missionPhotos: BucketReport;
+  fueling: BucketReport;
+  employeeDocs: BucketReport;
+  missionCosts: BucketReport;
+  loginSelfies: BucketReport;
+};
 
-async function migrateMissionPhotos(limit: number, report: MigrateMediaReport["missionPhotos"]) {
-  // PostgREST não filtra bem por prefixo de TEXT gigante; buscamos recentes
-  // e filtramos em memória. Rodadas sucessivas cobrem o histórico.
+const EMPTY_BUCKET = (): BucketReport => ({
+  scanned: 0,
+  migrated: 0,
+  failed: 0,
+  skipped: 0,
+});
+
+function looksLikeInlineBlob(v: unknown): boolean {
+  if (typeof v !== "string" || v.length < 200) return false;
+  if (isStoragePath(v) || v.startsWith("[")) return false;
+  if (isInlineBase64Blob(v) || v.startsWith("data:image/") || v.startsWith("data:application/")) {
+    return true;
+  }
+  // base64 cru (sem prefixo data:) — legado WAF
+  return /^[A-Za-z0-9+/=\s]{200,}$/.test(v.slice(0, 500));
+}
+
+async function listCandidateIds(
+  table: string,
+  column: string,
+  limit: number,
+): Promise<number[]> {
+  // Só IDs — evita transferir TOAST gigante na listagem.
   const { data, error } = await supabaseAdmin
-    .from("mission_photos")
-    .select("id, service_order_id, photo_data")
-    .order("id", { ascending: false })
-    .limit(Math.max(limit * 4, 80));
+    .from(table)
+    .select("id")
+    .like(column, "data:%")
+    .order("id", { ascending: true })
+    .limit(limit);
   if (error) throw error;
+  return (data || []).map((r: { id: number }) => r.id).filter((id) => Number.isFinite(id));
+}
 
-  for (const row of data || []) {
-    const v = row.photo_data as string | null;
-    if (!v || isStoragePath(v) || v.startsWith("[")) {
-      report.skipped++;
-      continue;
-    }
-    if (!isInlineBase64Blob(v) && !v.startsWith("data:image/")) {
-      report.skipped++;
-      continue;
-    }
-    if (report.scanned >= limit) break;
+async function migrateMissionPhotos(limit: number, report: BucketReport) {
+  const ids = await listCandidateIds("mission_photos", "photo_data", limit);
+  for (const id of ids) {
     report.scanned++;
+    const { data: row, error } = await supabaseAdmin
+      .from("mission_photos")
+      .select("id, service_order_id, photo_data")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !row) {
+      report.failed++;
+      continue;
+    }
+    const v = row.photo_data as string | null;
+    if (!looksLikeInlineBlob(v)) {
+      report.skipped++;
+      continue;
+    }
     try {
-      const path = await persistMissionPhotoBlob(row.service_order_id, v);
-      if (path === v) {
+      const path = await persistMissionPhotoBlob(row.service_order_id, v!);
+      if (path === v || looksLikeInlineBlob(path)) {
         report.failed++;
         continue;
       }
@@ -52,7 +99,7 @@ async function migrateMissionPhotos(limit: number, report: MigrateMediaReport["m
         .from("mission_photos")
         .update({ photo_data: path })
         .eq("id", row.id)
-        .eq("photo_data", v); // otimista: não sobrescreve se mudou
+        .eq("photo_data", v!);
       if (upErr) {
         report.failed++;
         console.warn(`[migrate-media] mission_photos#${row.id}:`, upErr.message);
@@ -61,7 +108,7 @@ async function migrateMissionPhotos(limit: number, report: MigrateMediaReport["m
       }
     } catch (e: any) {
       report.failed++;
-      console.warn(`[migrate-media] mission_photos#${row.id}:`, e?.message);
+      console.warn(`[migrate-media] mission_photos#${id}:`, e?.message);
     }
   }
 }
@@ -73,71 +120,72 @@ const FUELING_COLS: { col: string; kind: FuelingPhotoKind }[] = [
   { col: "plate_photo", kind: "plate" },
 ];
 
-async function migrateFueling(limit: number, report: MigrateMediaReport["fueling"]) {
-  const { data, error } = await supabaseAdmin
-    .from("vehicle_fueling")
-    .select("id, receipt_photo, pump_photo, odometer_photo, plate_photo")
-    .order("id", { ascending: false })
-    .limit(Math.max(limit * 2, 40));
-  if (error) throw error;
+async function migrateFueling(limit: number, report: BucketReport) {
+  // Qualquer coluna ainda em data: — união por id
+  const idSets = await Promise.all(
+    FUELING_COLS.map((c) => listCandidateIds("vehicle_fueling", c.col, limit)),
+  );
+  const ids = [...new Set(idSets.flat())].sort((a, b) => a - b).slice(0, limit);
 
-  for (const row of data || []) {
-    if (report.scanned >= limit) break;
-    let touched = false;
+  for (const id of ids) {
+    report.scanned++;
+    const { data: row, error } = await supabaseAdmin
+      .from("vehicle_fueling")
+      .select("id, receipt_photo, pump_photo, odometer_photo, plate_photo")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !row) {
+      report.failed++;
+      continue;
+    }
     const patch: Record<string, string> = {};
     for (const { col, kind } of FUELING_COLS) {
       const v = (row as any)[col] as string | null;
-      if (!v || isStoragePath(v)) continue;
-      if (!isInlineBase64Blob(v) && !v.startsWith("data:image/")) continue;
-      touched = true;
+      if (!looksLikeInlineBlob(v)) continue;
       try {
         const path = await persistFuelingPhotoBlob(row.id, kind, v);
-        if (path && path !== v) patch[col] = path;
+        if (path && path !== v && !looksLikeInlineBlob(path)) patch[col] = path;
         else report.failed++;
       } catch (e: any) {
         report.failed++;
-        console.warn(`[migrate-media] fueling#${row.id}.${col}:`, e?.message);
+        console.warn(`[migrate-media] fueling#${id}.${col}:`, e?.message);
       }
     }
-    if (!touched) {
+    if (Object.keys(patch).length === 0) {
       report.skipped++;
       continue;
     }
-    report.scanned++;
-    if (Object.keys(patch).length === 0) continue;
     const { error: upErr } = await supabaseAdmin
       .from("vehicle_fueling")
       .update(patch)
-      .eq("id", row.id);
+      .eq("id", id);
     if (upErr) {
       report.failed++;
-      console.warn(`[migrate-media] fueling#${row.id}:`, upErr.message);
+      console.warn(`[migrate-media] fueling#${id}:`, upErr.message);
     } else {
       report.migrated += Object.keys(patch).length;
     }
   }
 }
 
-async function migrateEmployeeDocs(limit: number, report: MigrateMediaReport["employeeDocs"]) {
-  const { data, error } = await supabaseAdmin
-    .from("employee_documents")
-    .select("id, employee_id, type, file_data, file_name")
-    .order("id", { ascending: false })
-    .limit(Math.max(limit * 3, 60));
-  if (error) throw error;
-
-  for (const row of data || []) {
-    const v = row.file_data as string | null;
-    if (!v || isStoragePath(v)) {
-      report.skipped++;
-      continue;
-    }
-    if (!isInlineBase64Blob(v) && !v.startsWith("data:")) {
-      report.skipped++;
-      continue;
-    }
-    if (report.scanned >= limit) break;
+async function migrateEmployeeDocs(limit: number, report: BucketReport) {
+  const ids = await listCandidateIds("employee_documents", "file_data", limit);
+  for (const id of ids) {
     report.scanned++;
+    const { data: row, error } = await supabaseAdmin
+      .from("employee_documents")
+      .select("id, employee_id, type, file_data, file_name")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !row) {
+      report.failed++;
+      continue;
+    }
+    const v = row.file_data as string | null;
+    if (!looksLikeInlineBlob(v)) {
+      report.skipped++;
+      continue;
+    }
     try {
       const path = await persistEmployeeDocBlob(
         row.employee_id,
@@ -145,7 +193,7 @@ async function migrateEmployeeDocs(limit: number, report: MigrateMediaReport["em
         v,
         row.file_name,
       );
-      if (!path || path === v) {
+      if (!path || path === v || looksLikeInlineBlob(path)) {
         report.failed++;
         continue;
       }
@@ -153,33 +201,148 @@ async function migrateEmployeeDocs(limit: number, report: MigrateMediaReport["em
         .from("employee_documents")
         .update({ file_data: path })
         .eq("id", row.id)
-        .eq("file_data", v);
+        .eq("file_data", v!);
       if (upErr) {
         report.failed++;
-        console.warn(`[migrate-media] employee_documents#${row.id}:`, upErr.message);
+        console.warn(`[migrate-media] employee_documents#${id}:`, upErr.message);
       } else {
         report.migrated++;
       }
     } catch (e: any) {
       report.failed++;
-      console.warn(`[migrate-media] employee_documents#${row.id}:`, e?.message);
+      console.warn(`[migrate-media] employee_documents#${id}:`, e?.message);
+    }
+  }
+}
+
+async function migrateMissionCosts(limit: number, report: BucketReport) {
+  const ids = await listCandidateIds("mission_costs", "photo_url", limit);
+  for (const id of ids) {
+    report.scanned++;
+    const { data: row, error } = await supabaseAdmin
+      .from("mission_costs")
+      .select("id, service_order_id, photo_url")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !row) {
+      report.failed++;
+      continue;
+    }
+    const v = row.photo_url as string | null;
+    if (!looksLikeInlineBlob(v)) {
+      report.skipped++;
+      continue;
+    }
+    try {
+      const path = await persistMissionPhotoBlob(row.service_order_id, v!);
+      if (path === v || looksLikeInlineBlob(path)) {
+        report.failed++;
+        continue;
+      }
+      const { error: upErr } = await supabaseAdmin
+        .from("mission_costs")
+        .update({ photo_url: path })
+        .eq("id", row.id)
+        .eq("photo_url", v!);
+      if (upErr) {
+        report.failed++;
+        console.warn(`[migrate-media] mission_costs#${id}:`, upErr.message);
+      } else {
+        report.migrated++;
+      }
+    } catch (e: any) {
+      report.failed++;
+      console.warn(`[migrate-media] mission_costs#${id}:`, e?.message);
+    }
+  }
+}
+
+async function migrateLoginSelfies(limit: number, report: BucketReport) {
+  const ids = await listCandidateIds("login_selfies", "photo_data", limit);
+  for (const id of ids) {
+    report.scanned++;
+    const { data: row, error } = await supabaseAdmin
+      .from("login_selfies")
+      .select("id, user_id, photo_data")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !row) {
+      report.failed++;
+      continue;
+    }
+    const v = row.photo_data as string | null;
+    if (!looksLikeInlineBlob(v)) {
+      report.skipped++;
+      continue;
+    }
+    try {
+      const path = await persistLoginSelfieBlob(row.user_id, v);
+      if (!path || path === v || looksLikeInlineBlob(path)) {
+        report.failed++;
+        continue;
+      }
+      const { error: upErr } = await supabaseAdmin
+        .from("login_selfies")
+        .update({ photo_data: path })
+        .eq("id", row.id)
+        .eq("photo_data", v!);
+      if (upErr) {
+        report.failed++;
+        console.warn(`[migrate-media] login_selfies#${id}:`, upErr.message);
+      } else {
+        report.migrated++;
+      }
+    } catch (e: any) {
+      report.failed++;
+      console.warn(`[migrate-media] login_selfies#${id}:`, e?.message);
     }
   }
 }
 
 export async function migrateMediaToStorage(opts?: {
   limitPerTable?: number;
-  tables?: Array<"mission_photos" | "vehicle_fueling" | "employee_documents">;
+  tables?: MediaTable[];
 }): Promise<MigrateMediaReport> {
   const limit = Math.min(Math.max(opts?.limitPerTable ?? 25, 1), 100);
-  const tables = new Set(opts?.tables || ["mission_photos", "vehicle_fueling", "employee_documents"]);
+  const tables = new Set<MediaTable>(
+    opts?.tables || [
+      "mission_photos",
+      "vehicle_fueling",
+      "employee_documents",
+      "mission_costs",
+      "login_selfies",
+    ],
+  );
   const report: MigrateMediaReport = {
     missionPhotos: EMPTY_BUCKET(),
     fueling: EMPTY_BUCKET(),
     employeeDocs: EMPTY_BUCKET(),
+    missionCosts: EMPTY_BUCKET(),
+    loginSelfies: EMPTY_BUCKET(),
   };
   if (tables.has("mission_photos")) await migrateMissionPhotos(limit, report.missionPhotos);
   if (tables.has("vehicle_fueling")) await migrateFueling(limit, report.fueling);
   if (tables.has("employee_documents")) await migrateEmployeeDocs(limit, report.employeeDocs);
+  if (tables.has("mission_costs")) await migrateMissionCosts(limit, report.missionCosts);
+  if (tables.has("login_selfies")) await migrateLoginSelfies(limit, report.loginSelfies);
   return report;
+}
+
+export function summarizeMigrateReport(report: MigrateMediaReport): {
+  migrated: number;
+  failed: number;
+  scanned: number;
+} {
+  const buckets = [
+    report.missionPhotos,
+    report.fueling,
+    report.employeeDocs,
+    report.missionCosts,
+    report.loginSelfies,
+  ];
+  return {
+    migrated: buckets.reduce((s, b) => s + b.migrated, 0),
+    failed: buckets.reduce((s, b) => s + b.failed, 0),
+    scanned: buckets.reduce((s, b) => s + b.scanned, 0),
+  };
 }

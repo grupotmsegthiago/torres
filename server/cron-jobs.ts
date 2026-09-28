@@ -1062,3 +1062,24 @@ export async function runAgentCentralEscalationCron(): Promise<void> {
     }
   });
 }
+
+/** Lote noturno: base64 inline → Storage (não apaga evidências). */
+export async function runMigrateMediaCron(): Promise<void> {
+  await withCronLock("migrate-media", async () => {
+    try {
+      const { migrateMediaToStorage, summarizeMigrateReport } = await import(
+        "./lib/migrate-media-to-storage"
+      );
+      const report = await migrateMediaToStorage({ limitPerTable: 15 });
+      const s = summarizeMigrateReport(report);
+      if (s.scanned > 0 || s.migrated > 0 || s.failed > 0) {
+        log(
+          `CRON migrate-media: scanned=${s.scanned} migrated=${s.migrated} failed=${s.failed}`,
+          "cron",
+        );
+      }
+    } catch (e: any) {
+      log(`CRON migrate-media: Erro: ${e.message}`, "cron");
+    }
+  });
+}

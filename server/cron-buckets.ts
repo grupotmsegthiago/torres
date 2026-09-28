@@ -77,6 +77,8 @@ async function runBrtScheduledJobs(brt: BrtClock): Promise<void> {
   if (hour === 3 && minute === 10) await jobs.runContratoDefinitivoCron();
   if (hour === 3 && minute === 0 && day === 1 && month % 3 === 1) await jobs.runRhComplianceCron();
   if (hour === 3 && minute === 0) await jobs.runBillingAlertsCron();
+  // Lotes leves de mídia 03:20–04:50 BRT (a cada 10 min via bucket minute)
+  if (hour >= 3 && hour <= 4 && minute % 10 === 0) await jobs.runMigrateMediaCron();
   if (hour === 4 && minute === 0) await jobs.runInterReconcileBackfillCron();
   if (hour === 5 && minute === 0 && day === 1) await jobs.runFolhaSnapshotCron();
   if (hour === 6 && minute === 0) {
