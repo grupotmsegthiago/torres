@@ -55,25 +55,46 @@ function looksLikeInlineBlob(v: unknown): boolean {
   return /^[A-Za-z0-9+/=\s]{200,}$/.test(v.slice(0, 500));
 }
 
+async function neutralizeTinyStub(
+  table: string,
+  column: string,
+  id: number,
+  value: string | null,
+): Promise<void> {
+  if (!value || !value.startsWith("data:") || value.length > 500) return;
+  const { error } = await supabaseAdmin
+    .from(table)
+    .update({ [column]: "[invalid-stub]" })
+    .eq("id", id)
+    .eq(column, value);
+  if (error) {
+    console.warn(`[migrate-media] neutralize ${table}#${id}:`, error.message);
+  }
+}
+
 async function listCandidateIds(
   table: string,
   column: string,
   limit: number,
 ): Promise<number[]> {
-  // Só IDs — evita transferir TOAST gigante na listagem.
+  // Busca folga pra pular stubs "data:" curtos que bloqueavam o ASC.
   const { data, error } = await supabaseAdmin
     .from(table)
     .select("id")
     .like(column, "data:%")
     .order("id", { ascending: true })
-    .limit(limit);
+    .limit(Math.max(limit * 10, 50));
   if (error) throw error;
-  return (data || []).map((r: { id: number }) => r.id).filter((id) => Number.isFinite(id));
+  return (data || [])
+    .map((r: { id: number }) => r.id)
+    .filter((id) => Number.isFinite(id))
+    .slice(0, Math.max(limit * 10, 50));
 }
 
 async function migrateMissionPhotos(limit: number, report: BucketReport) {
   const ids = await listCandidateIds("mission_photos", "photo_data", limit);
   for (const id of ids) {
+    if (report.migrated + report.failed >= limit) break;
     report.scanned++;
     const { data: row, error } = await supabaseAdmin
       .from("mission_photos")
@@ -86,6 +107,7 @@ async function migrateMissionPhotos(limit: number, report: BucketReport) {
     }
     const v = row.photo_data as string | null;
     if (!looksLikeInlineBlob(v)) {
+      await neutralizeTinyStub("mission_photos", "photo_data", id, v);
       report.skipped++;
       continue;
     }
@@ -183,6 +205,7 @@ async function migrateEmployeeDocs(limit: number, report: BucketReport) {
     }
     const v = row.file_data as string | null;
     if (!looksLikeInlineBlob(v)) {
+      await neutralizeTinyStub("employee_documents", "file_data", id, v);
       report.skipped++;
       continue;
     }
@@ -230,6 +253,7 @@ async function migrateMissionCosts(limit: number, report: BucketReport) {
     }
     const v = row.photo_url as string | null;
     if (!looksLikeInlineBlob(v)) {
+      await neutralizeTinyStub("mission_costs", "photo_url", id, v);
       report.skipped++;
       continue;
     }
@@ -272,6 +296,7 @@ async function migrateLoginSelfies(limit: number, report: BucketReport) {
     }
     const v = row.photo_data as string | null;
     if (!looksLikeInlineBlob(v)) {
+      await neutralizeTinyStub("login_selfies", "photo_data", id, v);
       report.skipped++;
       continue;
     }
