@@ -140,6 +140,8 @@ export async function runCronBucket(bucket: CronBucket): Promise<void> {
       await jobs.runRhidQueueCron();
       await jobs.runInterReconcileFastCron();
       await jobs.runAgentCentralCron();
+      // Lotes diurnos: sobe mídia base64 → Storage (produção tem as secrets).
+      await jobs.runMigrateMediaCron();
       break;
     }
     case "ten-min": {

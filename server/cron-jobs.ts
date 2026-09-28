@@ -1063,14 +1063,15 @@ export async function runAgentCentralEscalationCron(): Promise<void> {
   });
 }
 
-/** Lote noturno: base64 inline → Storage (não apaga evidências). */
+/** Lotes: base64 inline → Storage (não apaga evidências). */
 export async function runMigrateMediaCron(): Promise<void> {
   await withCronLock("migrate-media", async () => {
     try {
       const { migrateMediaToStorage, summarizeMigrateReport } = await import(
         "./lib/migrate-media-to-storage"
       );
-      const report = await migrateMediaToStorage({ limitPerTable: 15 });
+      // 12/tabela ≈ 60 uploads — cabe no timeout serverless sem estourar o banco.
+      const report = await migrateMediaToStorage({ limitPerTable: 12 });
       const s = summarizeMigrateReport(report);
       if (s.scanned > 0 || s.migrated > 0 || s.failed > 0) {
         log(
