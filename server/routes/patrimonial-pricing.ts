@@ -18,6 +18,7 @@ import {
   type PatrimonialScale,
   type RateItem,
 } from "../../shared/patrimonial-pricing";
+import { CLIENT_INACTIVE_BLOCK_MSG } from "@shared/client-duplicates";
 
 const UFS = ["AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO"];
 const ROLE_COLUMNS = "id, name, salary, sort_order, scale, armed, night, interval_indenizado, gratification_percent, he60_hours, he100_hours, holiday_hours, holiday_dsr";
@@ -518,7 +519,9 @@ export function registerPatrimonialPricingRoutes(app: Express) {
           .maybeSingle();
         if (clientError) throw clientError;
         if (!client) return res.status(400).json({ message: "Cliente não encontrado no cadastro" });
-        if (String(client.status || "ativo") === "inativo") return res.status(400).json({ message: "Cliente inativo no cadastro" });
+        if (String(client.status || "ativo") === "inativo") {
+          return res.status(400).json({ message: CLIENT_INACTIVE_BLOCK_MSG });
+        }
         clientName = String(client.nome_fantasia || client.name || client.razao_social || "").trim();
       }
       const city = String(req.body?.city || "").trim();

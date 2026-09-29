@@ -1062,3 +1062,39 @@ export async function runAgentCentralEscalationCron(): Promise<void> {
     }
   });
 }
+
+/** Lotes: base64 inline → Storage (não apaga evidências). */
+export async function runMigrateMediaCron(): Promise<void> {
+  await withCronLock("migrate-media", async () => {
+    try {
+      const { migrateMediaToStorage, summarizeMigrateReport } = await import(
+        "./lib/migrate-media-to-storage"
+      );
+      // Prioriza as tabelas mais pesadas (missão/custos).
+      const rotation = [
+        "mission_photos",
+        "mission_costs",
+        "mission_photos",
+        "mission_costs",
+        "vehicle_fueling",
+        "employee_documents",
+        "login_selfies",
+      ] as const;
+      const slot = Math.floor(Date.now() / 300_000) % rotation.length;
+      const only = rotation[slot];
+      const report = await migrateMediaToStorage({
+        limitPerTable: only === "mission_photos" || only === "mission_costs" ? 6 : 15,
+        tables: [only],
+      });
+      const s = summarizeMigrateReport(report);
+      if (s.scanned > 0 || s.migrated > 0 || s.failed > 0) {
+        log(
+          `CRON migrate-media[${only}]: scanned=${s.scanned} migrated=${s.migrated} failed=${s.failed}`,
+          "cron",
+        );
+      }
+    } catch (e: any) {
+      log(`CRON migrate-media: Erro: ${e.message}`, "cron");
+    }
+  });
+}

@@ -198,6 +198,7 @@ export default function DatabasePage() {
   };
 
   const [confirmVacuum, setConfirmVacuum] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<string | null>(null);
   const prevVacuumStatus = useRef<string | null>(null);
 
   const vacuum = useQuery<VacuumState>({
@@ -206,8 +207,8 @@ export default function DatabasePage() {
   });
 
   const startVacuum = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/admin/db-vacuum", { table: "mission_updates" });
+    mutationFn: async (table: string) => {
+      const res = await apiRequest("POST", "/api/admin/db-vacuum", { table });
       return res.json();
     },
     onSuccess: () => {
@@ -221,6 +222,30 @@ export default function DatabasePage() {
     onError: (e: any) => {
       toast({
         title: "Não foi possível iniciar",
+        description: e?.message || "Tente novamente em instantes.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const migrateMedia = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/migrate-media", { limit: 25 });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const s = data?.summary || {};
+      const msg = `Migradas ${s.migrated ?? 0} · falhas ${s.failed ?? 0} · lidas ${s.scanned ?? 0}`;
+      setMigrateResult(msg);
+      toast({
+        title: "Lote de fotos enviado ao Storage",
+        description: `${msg}. Pode clicar de novo até zerar. Depois compacte o banco.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/db-telemetry"] });
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Falha na migração de mídia",
         description: e?.message || "Tente novamente em instantes.",
         variant: "destructive",
       });
@@ -516,7 +541,27 @@ export default function DatabasePage() {
                         ? `${pct.toFixed(1)}% de uso · ${fmt(Math.max(0, limitMb - usedMb))} livres`
                         : "Capacidade não configurada"}
                     </div>
-                    <div className="mt-3 border-t border-neutral-200/60 pt-3">
+                    <div className="mt-3 border-t border-neutral-200/60 pt-3 space-y-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        disabled={migrateMedia.isPending}
+                        onClick={() => migrateMedia.mutate()}
+                        data-testid="button-migrate-media"
+                      >
+                        {migrateMedia.isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                        ) : (
+                          <HardDrive className="w-3.5 h-3.5 mr-1.5" />
+                        )}
+                        Migrar fotos → Storage (lote)
+                      </Button>
+                      {migrateResult && (
+                        <div className="text-[11px] text-neutral-600" data-testid="text-migrate-media-result">
+                          Último lote: {migrateResult}
+                        </div>
+                      )}
                       {vacuum.data?.status === "running" ? (
                         <div className="flex items-center gap-2 text-xs text-neutral-700" data-testid="status-vacuum-running">
                           <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
@@ -525,19 +570,22 @@ export default function DatabasePage() {
                       ) : confirmVacuum ? (
                         <div className="space-y-2" data-testid="confirm-vacuum">
                           <p className="text-[11px] leading-snug text-neutral-700">
-                            Isso vai <b>travar a tabela de missões por alguns minutos</b> enquanto recupera o espaço.
-                            Faça de preferência de madrugada. Confirmar agora?
+                            Isso vai <b>travar a tabela escolhida por alguns minutos</b> enquanto recupera o espaço.
+                            Faça preferencialmente de madrugada, depois de migrar as fotos. Qual tabela?
                           </p>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              disabled={startVacuum.isPending}
-                              onClick={() => startVacuum.mutate()}
-                              data-testid="button-vacuum-confirm"
-                            >
-                              {startVacuum.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Sim, compactar"}
-                            </Button>
+                          <div className="flex flex-wrap gap-2">
+                            {["mission_photos", "vehicle_fueling", "mission_costs", "employee_documents", "login_selfies"].map((t) => (
+                              <Button
+                                key={t}
+                                size="sm"
+                                variant="destructive"
+                                disabled={startVacuum.isPending}
+                                onClick={() => startVacuum.mutate(t)}
+                                data-testid={`button-vacuum-confirm-${t}`}
+                              >
+                                {startVacuum.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : t}
+                              </Button>
+                            ))}
                             <Button size="sm" variant="outline" onClick={() => setConfirmVacuum(false)} data-testid="button-vacuum-cancel">
                               Cancelar
                             </Button>

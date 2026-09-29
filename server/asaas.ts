@@ -4,6 +4,11 @@ import { supabaseAdmin } from "./supabase";
 import { logSystemAudit } from "./audit";
 import { nowBRTString } from "./routes/_helpers";
 import { asaasTomadorEmail, CLIENT_EMAIL_COLUMNS, nfseTomadorEmail } from "../shared/client-emails";
+import {
+  CLIENT_INACTIVE_BLOCK_MSG,
+  isClientActive,
+  pickActiveClient,
+} from "../shared/client-duplicates";
 import { sendBillingEmail, maybeSendInvoiceReadyEmail } from "./lib/invoice-billing-email";
 import { applyPaymentToInvoice } from "./lib/invoice-payment";
 import { bustBalancoCaches } from "./lib/balanco-cache";
@@ -1248,15 +1253,24 @@ export async function emitInvoiceAuto(
   }
 
   const clientId = invoice.client_id;
-  const clientCols = `id, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, address, address_number, address_complement, bairro, city, state, zip, ${CLIENT_EMAIL_COLUMNS}, phone, name, inscricao_municipal, inscricao_estadual`;
+  const clientCols = `id, status, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, address, address_number, address_complement, bairro, city, state, zip, ${CLIENT_EMAIL_COLUMNS}, phone, name, inscricao_municipal, inscricao_estadual`;
   let clientData: any = null;
   if (clientId) {
     const r = await supabaseAdmin.from("clients").select(clientCols).eq("id", clientId).maybeSingle();
     clientData = r.data;
   }
   if (!clientData && invoice.client_name) {
-    const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
-    clientData = r.data?.[0] || null;
+    // Homônimos: NUNCA usar cadastro inativo (ex.: GO LOG id 63 inativo + 66 ativo).
+    const r = await supabaseAdmin
+      .from("clients")
+      .select(clientCols)
+      .ilike("name", invoice.client_name)
+      .limit(10);
+    const rows = r.data || [];
+    clientData = pickActiveClient(rows);
+  }
+  if (clientData && !isClientActive(clientData)) {
+    return { success: false, message: CLIENT_INACTIVE_BLOCK_MSG, nfEmitted: false };
   }
   let cpfCnpj: string;
   let totalValue: number;
@@ -1751,7 +1765,10 @@ export function registerAsaasRoutes(app: Express) {
       let clientFiscal: any = null;
       let clientOpts: AsaasCustomerOpts = {};
       if (clientId) {
-        const { data: cliInfo } = await supabaseAdmin.from("clients").select("email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual, emite_nf, retem_inss, inss_aliquota").eq("id", clientId).single();
+        const { data: cliInfo } = await supabaseAdmin.from("clients").select("status, email, email_financeiro, email_contratual, email_operacional, phone, address, address_number, address_complement, bairro, city, state, zip, inscricao_municipal, inscricao_estadual, emite_nf, retem_inss, inss_aliquota").eq("id", clientId).single();
+        if (cliInfo && !isClientActive(cliInfo)) {
+          return res.status(400).json({ message: CLIENT_INACTIVE_BLOCK_MSG });
+        }
         clientFiscal = cliInfo;
         if (!clientEmail) clientEmail = asaasTomadorEmail(cliInfo);
         clientPhone = cliInfo?.phone || undefined;
@@ -2441,15 +2458,19 @@ export function registerAsaasRoutes(app: Express) {
         lookupSteps.push("STEP1 skipped (invoice.client_id vazio)");
       }
 
-      // Etapa 2: fallback por nome (ilike) — sempre retorna array, não single
+      // Etapa 2: fallback por nome (ilike) — só cadastro ATIVO (nunca inativo)
       if (!clientData && invoice.client_name) {
-        const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(1);
+        const r = await supabaseAdmin.from("clients").select(clientCols).ilike("name", invoice.client_name).limit(10);
         if (r.error) console.log(`[emitir #${id}] STEP2 by name="${invoice.client_name}" ERROR:`, r.error.message);
         const arr = r.data || [];
-        clientData = arr.length > 0 ? arr[0] : null;
-        lookupSteps.push(`STEP2 by name="${invoice.client_name}": ${clientData ? `FOUND id=${clientData.id} cnpj="${clientData.cnpj || ""}" cpf="${clientData.cpf || ""}"` : `NOT FOUND (array vazio: ${arr.length === 0})`}`);
+        clientData = pickActiveClient(arr);
+        lookupSteps.push(`STEP2 by name="${invoice.client_name}": ${clientData ? `FOUND id=${clientData.id} status=${clientData.status || "?"} cnpj="${clientData.cnpj || ""}" cpf="${clientData.cpf || ""}"` : `NOT FOUND ativos (candidatos=${arr.length})`}`);
       } else if (!clientData) {
         lookupSteps.push("STEP2 skipped (sem invoice.client_name)");
+      }
+
+      if (clientData && !isClientActive(clientData)) {
+        return res.status(400).json({ message: CLIENT_INACTIVE_BLOCK_MSG });
       }
 
       // Etapa 3: CNPJ direto da fatura como último recurso
@@ -3000,9 +3021,21 @@ export function registerAsaasRoutes(app: Express) {
   });
 
   app.post("/api/boletim-medicao/gerar-fatura/:clientId", requireAdminRole, async (req: Request, res: Response) => {
+    const clientId = parseInt(req.params.clientId);
     try {
-      const clientId = parseInt(req.params.clientId);
       if (!clientId) return res.status(400).json({ message: "clientId inválido" });
+
+      const { data: clientStatusRow } = await supabaseAdmin
+        .from("clients")
+        .select("id, status, name")
+        .eq("id", clientId)
+        .maybeSingle();
+      if (!clientStatusRow) {
+        return res.status(404).json({ message: "Cliente não encontrado" });
+      }
+      if (!isClientActive(clientStatusRow)) {
+        return res.status(400).json({ message: CLIENT_INACTIVE_BLOCK_MSG });
+      }
 
       const lastCall = gerarFaturaLocks.get(clientId);
       if (lastCall && Date.now() - lastCall < 10000) {
@@ -3561,7 +3594,7 @@ export function registerAsaasRoutes(app: Express) {
       });
       gerarFaturaLocks.delete(clientId);
     } catch (err: any) {
-      gerarFaturaLocks.delete(clientId);
+      if (clientId) gerarFaturaLocks.delete(clientId);
       console.error("[billing] Erro ao gerar fatura:", err.message, err.asaasErrors || "");
       const status = err?.asaasGateway || Array.isArray(err?.asaasErrors) ? 502 : 500;
       res.status(status).json({

@@ -296,18 +296,11 @@ export default function BalancoGerencialPage() {
     }>;
   }>({
     // v16: HE = pares Control iD; ponto ciclo 26→25; VR = mês civil.
-    // Bust por período: trocar Personalizado (ex.: 26/06→25/07) força 1× no range novo.
+    // Sem force=1 automático: o SWR (?cached=1) + warm-up + bustBalancoCaches
+    // nos writers já invalidam snapshot velho. Force só no botão "Atualizar agora".
     queryKey: ["/api/fixed-costs/rh-summary", "v16", "cached", gridRange.from, gridRange.to],
     queryFn: async () => {
-      const bustKey = `rh-summary-v16-forced:${gridRange.from}:${gridRange.to}`;
-      let force = "";
-      try {
-        if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(bustKey)) {
-          force = "&force=1";
-          sessionStorage.setItem(bustKey, "1");
-        }
-      } catch { /* private mode */ }
-      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1${force}&from=${gridRange.from}&to=${gridRange.to}`);
+      const res = await authFetch(`/api/fixed-costs/rh-summary?cached=1&from=${gridRange.from}&to=${gridRange.to}`);
       if (!res.ok) throw new Error(`Falha ao carregar RH (${res.status})`);
       return res.json();
     },
@@ -768,13 +761,13 @@ export default function BalancoGerencialPage() {
         authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`),
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
-      // Importante: invalidar pelo PREFIXO — a query ativa é v13; invalidar só vN
-      // antigo deixava a Folha do Personalizado com cache velho após "Sincronizar".
+      // Invalidar pelo PREFIXO — a query ativa é v16; chave antiga deixava Folha
+      // com cache velho após "Sincronizar".
       await queryClient.invalidateQueries({ queryKey: ["/api/financial/dashboard"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/fixed-costs/rh-summary"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
       await queryClient.refetchQueries({
-        queryKey: ["/api/fixed-costs/rh-summary", "v13", "cached", gridRange.from, gridRange.to],
+        queryKey: ["/api/fixed-costs/rh-summary", "v16", "cached", gridRange.from, gridRange.to],
       });
       setDataGeradoEm(new Date());
       toast({
@@ -831,8 +824,24 @@ export default function BalancoGerencialPage() {
   if (isLoading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-96" data-testid="loading-dashboard">
-          <Loader2 className="animate-spin text-neutral-400" size={32} />
+        <div className="space-y-4 px-1" data-testid="loading-dashboard">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">
+                Balanço Gerencial • Gestor de Dados Financeiro
+              </h2>
+              <p className="text-xs text-slate-500 font-bold uppercase">
+                Abrindo com o último cálculo em cache…
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-amber-600 text-xs font-black uppercase">
+              <Loader2 className="animate-spin" size={16} />
+              Carregando painel
+            </div>
+          </div>
+          <div className="flex items-center justify-center h-64 rounded-xl border border-dashed border-slate-300 bg-slate-50/80">
+            <Loader2 className="animate-spin text-neutral-400" size={32} />
+          </div>
         </div>
       </AdminLayout>
     );

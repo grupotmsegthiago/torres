@@ -1231,7 +1231,18 @@ export default function RelatorioFaturamentoPage() {
               <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Cliente</label>
               <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-black bg-white uppercase font-bold" value={selectedClient} onChange={e => setSelectedClient(e.target.value)} data-testid="select-billing-client">
                 <option value="">Selecione...</option>
-                {clients.map((c: any) => <option key={c.id} value={c.id}>{c.nomeFantasia || c.nome_fantasia || c.name}</option>)}
+                {[...clients]
+                  .sort((a: any, b: any) =>
+                    String(a.name || "").localeCompare(String(b.name || ""), "pt-BR"),
+                  )
+                  .map((c: any) => {
+                    const label = c.nomeFantasia || c.nome_fantasia || c.name;
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {label} — #{c.id}
+                      </option>
+                    );
+                  })}
               </select>
             </div>
             <div className="md:col-span-2">

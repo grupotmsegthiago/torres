@@ -333,6 +333,9 @@ if (isServerSupabaseConfigured()) {
   import("./lib/mission-photos").then(m => m.ensureMissionFotosBucket()).catch(() => {});
   import("./lib/signable-doc-storage").then(m => m.ensureSignableDocsBucket()).catch(() => {});
   import("./lib/vehicle-doc-storage").then(m => m.ensureVehicleDocsBucket()).catch(() => {});
+  import("./lib/fueling-photo-storage").then(m => m.ensureFuelingFotosBucket()).catch(() => {});
+  import("./lib/employee-doc-storage").then(m => m.ensureEmployeeDocsBucket()).catch(() => {});
+  import("./lib/login-selfie-storage").then(m => m.ensureLoginSelfiesBucket()).catch(() => {});
   ensureCategoryHierarchy().catch((e: any) =>
     console.warn("[categories] ensureCategoryHierarchy skipped:", e?.message),
   );
@@ -923,6 +926,40 @@ async function ensureSystemSettingsTable() {
       res.json(getVacuumState());
     });
 
+    // Migra lote de mídia base64 → Storage (idempotente; não apaga evidências).
+    app.post("/api/admin/migrate-media", requireAuth, requireAdminRole, async (req, res) => {
+      try {
+        const { migrateMediaToStorage, summarizeMigrateReport } = await import(
+          "./lib/migrate-media-to-storage"
+        );
+        const limit = Math.min(Math.max(Number(req.body?.limit) || 20, 1), 50);
+        const only = typeof req.body?.only === "string" ? req.body.only : undefined;
+        const allowed = new Set([
+          "mission_photos",
+          "vehicle_fueling",
+          "employee_documents",
+          "mission_costs",
+          "login_selfies",
+        ]);
+        const tables =
+          only && allowed.has(only)
+            ? ([only] as Array<
+                | "mission_photos"
+                | "vehicle_fueling"
+                | "employee_documents"
+                | "mission_costs"
+                | "login_selfies"
+              >)
+            : undefined;
+        const report = await migrateMediaToStorage({ limitPerTable: limit, tables });
+        const summary = summarizeMigrateReport(report);
+        res.json({ ok: true, summary, report });
+      } catch (err: any) {
+        console.error("[migrate-media] erro:", err?.message);
+        res.status(500).json({ error: "migrate_failed", message: err?.message });
+      }
+    });
+
   const tokenFailureRateMap = new Map<string, number>();
   app.post("/api/auth/token-failure", async (req, res) => {
     try {
@@ -1288,11 +1325,15 @@ async function ensureSystemSettingsTable() {
     const ipAddress = req.headers["x-forwarded-for"]?.toString() || req.socket.remoteAddress || null;
     const userAgent = req.headers["user-agent"] || null;
 
+    // Upload para Storage (path curto no Postgres); fallback base64 se falhar.
+    const { persistLoginSelfieBlob } = await import("./lib/login-selfie-storage");
+    const storedSelfie = (await persistLoginSelfieBlob(user.id, photoData)) || photoData;
+
     await supabaseAdmin.from("login_selfies").insert({
       user_id: user.id,
       employee_id: user.employeeId,
       user_name: user.name || "—",
-      photo_data: photoData,
+      photo_data: storedSelfie,
       latitude: latitude || null,
       longitude: longitude || null,
       ip_address: ipAddress,
@@ -1345,7 +1386,10 @@ async function ensureSystemSettingsTable() {
     const id = parseInt(req.params.id);
     const { data: result } = await supabaseAdmin.from("login_selfies").select("*").eq("id", id).limit(1);
     if (!result?.length) return res.status(404).json({ message: "Selfie não encontrada" });
-    res.json(toCamelObj(result[0]));
+    const { resolveLoginSelfieForView } = await import("./lib/login-selfie-storage");
+    const row = result[0];
+    const photoData = await resolveLoginSelfieForView(row.photo_data);
+    res.json(toCamelObj({ ...row, photo_data: photoData ?? row.photo_data }));
   });
 
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {

@@ -18,7 +18,7 @@ import type { Express } from "express";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
   import { randomUUID } from "crypto";
   import { estimateTolls, estimateTollsAlongPath, getAllTollPlazas } from "../toll-engine";
-  import { hasPhotoValue, resolvePhotoForView } from "../lib/mission-photos";
+  import { hasPhotoValue, resolvePhotoForView, downloadMissionPhotoDataUri } from "../lib/mission-photos";
   import { computeRouteTolls, googleMapsServerKey } from "../lib/google-routes-tolls";
   import {
     allowedClientIdsFromRequest,
@@ -27,6 +27,7 @@ import type { Express } from "express";
     denyIfComercialClientOutOfScope,
     isComercialScoped,
   } from "../lib/comercial-scope";
+  import { CLIENT_INACTIVE_BLOCK_MSG, isClientActive } from "@shared/client-duplicates";
 
   async function buildOfficialBillingPayloadForServiceOrder(so: any, createdBy: string) {
     if (!so?.escortContractId) {
@@ -956,6 +957,14 @@ import type { Express } from "express";
       const allowed = await allowedClientIdsFromRequest(req);
       if (!clientIdAllowed(parsed.data.clientId, allowed)) {
         return res.status(400).json({ message: "Cliente não encontrado" });
+      }
+    }
+    // Bloqueio: nunca criar OS por cadastro inativo (duplicados GO LOG etc.).
+    if (parsed.data.clientId) {
+      const clientRow = await storage.getClient(parsed.data.clientId);
+      if (!clientRow) return res.status(400).json({ message: "Cliente não encontrado" });
+      if (!isClientActive(clientRow as any)) {
+        return res.status(400).json({ message: CLIENT_INACTIVE_BLOCK_MSG });
       }
     }
     // Bloqueio operacional: cliente com fatura em cobrança judicial não recebe nova OS.
@@ -2590,6 +2599,12 @@ import type { Express } from "express";
         };
 
         const photosToShow = missionPhotoRowsSafe.slice(0, 4);
+        // Dual-read: path Storage → data URI; legado base64 permanece.
+        const photosResolved = await Promise.all(photosToShow.map(async (mp: any) => {
+          const raw = mp.photo_data || mp.photoData;
+          const dataUri = (await downloadMissionPhotoDataUri(raw)) || raw;
+          return { ...mp, photoData: dataUri, photo_data: dataUri };
+        }));
         const mpGap = 8;
         const cols = Math.min(photosToShow.length, 2);
         const rows = Math.ceil(photosToShow.length / 2);
@@ -2602,9 +2617,9 @@ import type { Express } from "express";
           let px = LM;
           for (let col = 0; col < cols; col++) {
             const idx = row * 2 + col;
-            if (idx >= photosToShow.length) break;
-            const mp = photosToShow[idx];
-            const photoBuf = parseDataUri(mp.photoData);
+            if (idx >= photosResolved.length) break;
+            const mp = photosResolved[idx];
+            const photoBuf = parseDataUri(mp.photoData || mp.photo_data);
             if (photoBuf && photoBuf.length > 100) {
               try {
                 doc.save()

@@ -37,6 +37,15 @@ export function isClientActive(client: { status?: string | null }): boolean {
   return status !== CLIENT_STATUS_INATIVO;
 }
 
+/** Mensagem canônica ao tentar operar com cadastro inativo. */
+export const CLIENT_INACTIVE_BLOCK_MSG =
+  "Cliente inativo no cadastro. Use apenas o cadastro ativo.";
+
+/** Em homônimos/duplicados, nunca escolher inativo — só ativo ou null. */
+export function pickActiveClient<T extends { status?: string | null }>(rows: T[]): T | null {
+  return rows.find(isClientActive) ?? null;
+}
+
 export function parseClientStatus(raw: unknown): typeof CLIENT_STATUS_ATIVO | typeof CLIENT_STATUS_INATIVO | null {
   const status = String(raw ?? "").trim().toLowerCase();
   if (status === CLIENT_STATUS_ATIVO || status === CLIENT_STATUS_INATIVO) return status;

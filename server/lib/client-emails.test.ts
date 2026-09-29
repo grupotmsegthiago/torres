@@ -19,6 +19,14 @@ test("parseEmailList: vírgula, ponto-e-vírgula e duplicata", () => {
   assert.deepEqual(parseEmailList("invalido"), []);
 });
 
+test("parseEmailList: remove prefixo mailto: (GO LOG / cola Outlook)", () => {
+  assert.deepEqual(
+    parseEmailList("mailto:carlos@gologtrans.com.br; mota@torresseguranca.com.br"),
+    ["carlos@gologtrans.com.br", "mota@torresseguranca.com.br"],
+  );
+  assert.deepEqual(parseEmailList("MAILTO: fin@cliente.com"), ["fin@cliente.com"]);
+});
+
 test("pickClientEmails: não mistura categoria", () => {
   const client = {
     email_operacional: "ops@cliente.com",
@@ -72,13 +80,19 @@ test("clientOutboundMail: junta cadastro da categoria com extra e aplica CC", ()
   assert.equal(mail.cc.length, 4);
 });
 
-test("asaasTomadorEmail: só financeiro, não operacional", () => {
+test("asaasTomadorEmail: só o primeiro financeiro (Asaas não aceita lista)", () => {
   assert.equal(
     asaasTomadorEmail({
       email_operacional: "ops@c.com",
       email_financeiro: "fin@c.com, fin2@c.com",
     }),
-    "fin@c.com, fin2@c.com",
+    "fin@c.com",
+  );
+  assert.equal(
+    asaasTomadorEmail({
+      email_financeiro: "mailto:carlos@gologtrans.com.br; mota@torresseguranca.com.br",
+    }),
+    "carlos@gologtrans.com.br",
   );
   assert.equal(asaasTomadorEmail({ email_operacional: "ops@c.com" }), undefined);
 });
