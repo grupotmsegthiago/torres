@@ -30,6 +30,75 @@ const fmt = (val: number | null | undefined) => {
 };
 
 const _eu = (ts: string) => /[Zz]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts) ? ts : ts + "Z";
+
+// O início cobrado é o check-in da origem (hora_chegada), não o horário
+// agendado nem o relógio gravado no billing. Sem fuso, o instante já é UTC:
+// 2026-09-09T07:00:00 na TOR-0794 é 04:00 em Brasília.
+function parseMissao(ts: string): Date {
+  return new Date(_eu(String(ts).trim().replace(" ", "T")));
+}
+
+function janelaMissao(os: any): { inicio: string | null; fim: string | null; horas: number } {
+  const real = os?.hora_chegada_origem || os?.missionStartedAt || null;
+  const sched = os?.scheduledDate || null;
+  let inicio: string | null = real || sched;
+  if (real && sched) {
+    const r = parseMissao(String(real)).getTime();
+    const s = parseMissao(String(sched)).getTime();
+    if (!isNaN(r) && !isNaN(s)) inicio = r < s ? real : sched;
+  }
+  const fim = os?.hora_fim_missao || os?.completedDate || null;
+  if (!inicio || !fim) {
+    const b = os?.billing;
+    return { inicio, fim, horas: Number(b?.horas_trabalhadas || b?.horas_missao || 0) };
+  }
+  const startMs = parseMissao(String(inicio)).getTime();
+  const endMs = parseMissao(String(fim)).getTime();
+  if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) return { inicio, fim, horas: 0 };
+  return { inicio, fim, horas: Math.floor((endMs - startMs) / 60000) / 60 };
+}
+
+function fmtMissaoDataHora(d: string | null) {
+  if (!d) return "—";
+  const dt = parseMissao(d);
+  if (isNaN(dt.getTime())) return "—";
+  return dt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function fmtMissaoHora(d: string | null) {
+  if (!d) return null;
+  const dt = parseMissao(d);
+  if (isNaN(dt.getTime())) return null;
+  return dt.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** Mesma conta do motor: excedente × valor_hora_extra da tabela (R$/h), não R$/min arredondado. */
+function cobrancaDaTabela(horas: number, kmTotal: number, contract: any) {
+  const valorHora = Number(contract?.valor_hora_extra || 0);
+  const valorAcion = Number(contract?.valor_acionamento || 0);
+  const valorKm = Number(contract?.valor_km_extra || 0);
+  const franquiaH = Number(contract?.franquia_horas || 0);
+  const franquiaKm = Number(contract?.franquia_km || contract?.franquia_minima_km || 0);
+  const fracionada = contract?.hora_extra_fracionada !== false;
+  const raw = franquiaH > 0 && horas > franquiaH ? horas - franquiaH : 0;
+  const horasExtra = fracionada ? raw : Math.ceil(raw);
+  const minutos = Math.round(horasExtra * 60);
+  const horaExtra = valorHora > 0
+    ? (fracionada ? Math.round((minutos / 60) * valorHora * 100) / 100 : Math.ceil(raw) * valorHora)
+    : 0;
+  const kmExc = franquiaKm > 0 ? Math.max(0, kmTotal - franquiaKm) : Math.max(0, kmTotal);
+  const kmExtraValor = valorKm > 0 && franquiaKm > 0 ? Math.round(Math.max(0, kmTotal - franquiaKm) * valorKm * 100) / 100 : 0;
+  return {
+    temTabela: !!(contract && (valorAcion > 0 || valorHora > 0 || valorKm > 0)),
+    acionamento: valorAcion,
+    horaExtra,
+    horasExtra,
+    valorHora,
+    kmExc,
+    kmExtraValor,
+    valorKm,
+  };
+}
 const fmtDate = (d: string | null) => d ? new Date(_eu(d)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
 const fmtTime = (d: string | null) => d ? new Date(_eu(d)).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
 const fmtHoras = (val: number | null | undefined) => {
@@ -41,26 +110,7 @@ const fmtHoras = (val: number | null | undefined) => {
 
 // Regra unificada: cobrança parte do agendamento; se o agente iniciou ANTES do agendado, usa o início real.
 // Usa timestamps completos (preserva diferença de dias).
-const computeHorasReais = (os: any): number => {
-  const b = os?.billing;
-  const fallback = Number(b?.horas_trabalhadas || b?.horas_missao || 0);
-  const real = os?.hora_chegada_origem || os?.missionStartedAt;
-  const sched = os?.scheduledDate;
-  const startRaw = (() => {
-    if (real && sched) {
-      const r = new Date(_eu(real)).getTime();
-      const s = new Date(_eu(sched)).getTime();
-      return r < s ? real : sched;
-    }
-    return real || sched;
-  })();
-  const endRaw = os?.hora_fim_missao || os?.completedDate;
-  if (!startRaw || !endRaw) return fallback;
-  const startMs = new Date(_eu(startRaw)).getTime();
-  const endMs = new Date(_eu(endRaw)).getTime();
-  if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) return fallback;
-  return Math.floor((endMs - startMs) / 60000) / 60;
-};
+const computeHorasReais = (os: any): number => janelaMissao(os).horas;
 
 const computeKm = (os: any) => {
   const b = os.billing;
@@ -1375,12 +1425,12 @@ export default function BoletimMedicaoPage() {
                                         </div>
                                       ) : (
                                         <div className="flex items-center gap-3 text-[10px] text-neutral-500 flex-wrap">
-                                          <span><strong className="text-neutral-700">Acionamento:</strong> {fmt(Number(b.fat_acionamento || 0))}</span>
+                                          <span><strong className="text-neutral-700">Acionamento:</strong> {fmt(os.contractValues?.valor_acionamento > 0 ? Number(os.contractValues.valor_acionamento) : Number(b.fat_acionamento || 0))}</span>
                                           <span className="text-neutral-300">|</span>
                                           <span><strong className="text-neutral-700">Franquia:</strong> {Number(b.km_franquia || 0).toLocaleString("pt-BR")} / {Number(b.km_faturado || b.km_franquia || 0).toLocaleString("pt-BR")} km</span>
                                           <span className="text-neutral-300">|</span>
                                           <span><strong className="text-neutral-700">KM Excedente:</strong> {Number(b.km_excedente || 0)} km — {fmt(Number(b.fat_km || 0))}</span>
-                                          {Number(b.fat_hora_extra || 0) > 0 && (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Hora Extra:</strong> {fmtHoras(computeHorasReais(os))} — {fmt(Number(b.fat_hora_extra || 0))}</span></>)}
+                                          {(() => { const c = cobrancaDaTabela(computeHorasReais(os), computeKm(os), os.contractValues); return c.horaExtra > 0 ? (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Hora Extra:</strong> {fmtHoras(c.horasExtra)} × {fmt(c.valorHora)}/h — {fmt(c.horaExtra)}</span></>) : null; })()}
                                           {Number(b.despesas_pedagio || 0) > 0 && (<><span className="text-neutral-300">|</span><span><strong className="text-neutral-700">Pedágio:</strong> {fmt(Number(b.despesas_pedagio || 0))}</span></>)}
                                           <span className="text-neutral-300">|</span>
                                           <span><strong className="text-neutral-700">KM Inicial:</strong> {Number(b.km_inicial || 0).toLocaleString("pt-BR")}</span>
@@ -1696,67 +1746,22 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   const kmChegada = Number(os.km_chegada_origem || os.km_inicial || b?.km_inicial || 0);
   const kmFim = Number(os.km_final || b?.km_final || 0);
   const kmTotalCalc = Math.max(0, kmFim - kmChegada);
-  const franquia = Number(b?.km_franquia || 0);
-  const kmExcCalc = Math.max(0, kmTotalCalc - franquia);
 
-  const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
-  const fmtToHHMM = (v: string | null) => {
-    if (!v) return null;
-    try { return new Date(_eu(v)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).split(" ").pop() || null; } catch { return null; }
-  };
-  const ini = b?.horario_inicio_considerado || b?.horario_inicio;
-  const fimReal = fmtToHHMM(os.hora_fim_missao) || b?.horario_fim;
-
-  const chegadaReal = fmtToHHMM(os.hora_chegada_origem) || fmtToHHMM(os.missionStartedAt);
-  const agendado = fmtToHHMM(os.scheduledDate);
-  const inicioCobranca = (() => {
-    if (!agendado && !chegadaReal) return b?.horario_inicio_considerado || b?.horario_inicio || null;
-    if (!agendado) return chegadaReal;
-    if (!chegadaReal) return agendado;
-    const minAg = toMin(agendado);
-    const minReal = toMin(chegadaReal);
-    return minReal <= minAg ? chegadaReal : agendado;
-  })();
-  const realFim = fmtToHHMM(os.hora_fim_missao) || fmtToHHMM(os.completedDate) || b?.horario_fim;
-  let hCalc = Number(b?.horas_trabalhadas || b?.horas_missao || 0);
-  // Preferir cálculo por timestamps completos (preserva diferença de dias).
-  const startTsRaw = (() => {
-    const real = os.hora_chegada_origem || os.missionStartedAt;
-    if (real && os.scheduledDate) {
-      const r = new Date(_eu(real)).getTime();
-      const s = new Date(_eu(os.scheduledDate)).getTime();
-      return r < s ? real : os.scheduledDate;
-    }
-    return real || os.scheduledDate;
-  })();
-  const endTsRaw = os.hora_fim_missao || os.completedDate;
-  if (startTsRaw && endTsRaw) {
-    const startMs = new Date(_eu(startTsRaw)).getTime();
-    const endMs = new Date(_eu(endTsRaw)).getTime();
-    if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
-      hCalc = Math.floor((endMs - startMs) / 60000) / 60;
-    }
-  } else if (inicioCobranca && realFim) {
-    let diff = toMin(realFim) - toMin(inicioCobranca);
-    if (diff < 0) diff += 24 * 60;
-    hCalc = diff / 60;
-  }
-
-  const franquiaHorasContract = Number(os.contractValues?.franquia_horas || 0);
-  const valorHoraExtraContract = Number(os.contractValues?.valor_hora_extra || 0);
-  const horaExtraFracionada = os.contractValues?.hora_extra_fracionada !== false;
-  const horasExtrasCalcRaw = franquiaHorasContract > 0 && hCalc > franquiaHorasContract ? hCalc - franquiaHorasContract : 0;
-  const horasExtrasCalc = horaExtraFracionada ? horasExtrasCalcRaw : Math.ceil(horasExtrasCalcRaw);
-  const minutosExtrasCalc = Math.round(horasExtrasCalc * 60);
-  const valorMinutoContract = Math.round(valorHoraExtraContract / 60 * 100) / 100;
-  const horaExtraValorCalc = horaExtraFracionada
-    ? Math.round((minutosExtrasCalc / 60) * valorHoraExtraContract * 100) / 100
-    : Math.ceil(horasExtrasCalcRaw) * valorHoraExtraContract;
+  const janela = janelaMissao(os);
+  const hCalc = janela.horas;
+  const tabela = cobrancaDaTabela(hCalc, kmTotalCalc, os.contractValues);
+  const kmExcCalc = tabela.temTabela ? tabela.kmExc : Math.max(0, kmTotalCalc - Number(b?.km_franquia || 0));
 
   const liveNum = (v: any, fallback: number) => (v !== undefined && v !== "" && v !== null ? (Number(v) || 0) : fallback);
-  const acionamento = liveNum(acionamentoValue, Number(b?.fat_acionamento || 0));
-  const horaExtra = liveNum(horaExtraValue, Number(b?.fat_hora_extra || 0) > 0 ? Number(b.fat_hora_extra) : horaExtraValorCalc);
-  const kmExtraVal = liveNum(kmExtraValue, Number(b?.fat_km || 0));
+  const acionamento = isPendente
+    ? liveNum(acionamentoValue, tabela.acionamento || Number(b?.fat_acionamento || 0))
+    : (tabela.temTabela ? tabela.acionamento : Number(b?.fat_acionamento || 0));
+  const horaExtra = isPendente
+    ? liveNum(horaExtraValue, tabela.valorHora > 0 ? tabela.horaExtra : Number(b?.fat_hora_extra || 0))
+    : (tabela.temTabela ? tabela.horaExtra : Number(b?.fat_hora_extra || 0));
+  const kmExtraVal = isPendente
+    ? liveNum(kmExtraValue, tabela.valorKm > 0 ? tabela.kmExtraValor : Number(b?.fat_km || 0))
+    : (tabela.temTabela ? tabela.kmExtraValor : Number(b?.fat_km || 0));
   const pedagio = liveNum(pedagioValue, Number(b?.despesas_pedagio || 0) || Number((os as any).pedagioEstimado || 0));
   const receitasOsVal = liveNum(reembolsoValue, Number(b?.receitas_os || 0));
   const adNoturno = liveNum(adNoturnoValue, Number(b?.fat_adicional_noturno || 0));
@@ -1766,18 +1771,8 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
   const demaisCustos = despOutrasVal + estadiaVal + pernoiteVal;
   const resultado = acionamento + horaExtra + kmExtraVal + pedagio + receitasOsVal + adNoturno + demaisCustos;
 
-  const schedTime = os.scheduledDate ? fmtTime(os.scheduledDate) : null;
-  const startTimeRaw = (() => {
-    const real = os.hora_chegada_origem || os.missionStartedAt;
-    if (real && os.scheduledDate) {
-      const r = new Date(_eu(real)).getTime();
-      const s = new Date(_eu(os.scheduledDate)).getTime();
-      return r < s ? real : os.scheduledDate;
-    }
-    return real || os.scheduledDate;
-  })();
-  const startTime = startTimeRaw ? fmtTime(startTimeRaw) : null;
-  const endTime = os.completedDate ? fmtTime(os.completedDate) : null;
+  const startTime = fmtMissaoHora(janela.inicio);
+  const endTime = fmtMissaoHora(janela.fim);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-3" onClick={onClose}>
@@ -1941,42 +1936,14 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
               ) : (
                 <>
                   <div className="space-y-1">
-                    {(() => {
-                      const realInicio = os.hora_chegada_origem || os.missionStartedAt;
-                      // Regra: cobrança parte do agendamento; só usa o real se o agente iniciou ANTES do agendado.
-                      const horaInicial = (() => {
-                        if (realInicio && os.scheduledDate) {
-                          const r = new Date(_eu(realInicio)).getTime();
-                          const s = new Date(_eu(os.scheduledDate)).getTime();
-                          return r < s ? realInicio : os.scheduledDate;
-                        }
-                        return realInicio || os.scheduledDate;
-                      })();
-                      const horaFinal = os.hora_fim_missao || os.completedDate;
-                      const fmtDtHr = (v: string | null) => {
-                        if (!v) return "—";
-                        try {
-                          const d = new Date(_eu(v));
-                          return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-                        } catch { return "—"; }
-                      };
-                      const horasExtras = horasExtrasCalc;
-                      const fmtH = (h: number) => h > 0 ? `${Math.floor(h)}h${String(Math.round((h % 1) * 60)).padStart(2, "0")}min` : "0h00";
-                      const inicioReal = chegadaReal || agendado;
-                      const inicioDifere = inicioReal && inicioCobranca && inicioReal !== inicioCobranca;
-                      return (
-                        <>
-                          <div className="grid grid-cols-2 gap-3">
-                            <FieldRow label="Data / Hora Inicial" value={fmtDtHr(horaInicial)} />
-                            <FieldRow label="Data / Hora Final" value={fmtDtHr(horaFinal)} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <FieldRow label="Total de Horas" value={fmtH(hCalc)} accent="blue" />
-                            <FieldRow label="Total de Extras" value={horasExtras > 0 ? fmtH(horasExtras) : "—"} accent={horasExtras > 0 ? "amber" : undefined} />
-                          </div>
-                        </>
-                      );
-                    })()}
+                    <div className="grid grid-cols-2 gap-3">
+                      <FieldRow label="Data / Hora Inicial" value={fmtMissaoDataHora(janela.inicio)} />
+                      <FieldRow label="Data / Hora Final" value={fmtMissaoDataHora(janela.fim)} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <FieldRow label="Total de Horas" value={fmtHoras(hCalc)} accent="blue" />
+                      <FieldRow label="Total de Extras" value={tabela.horasExtra > 0 ? fmtHoras(tabela.horasExtra) : "—"} accent={tabela.horasExtra > 0 ? "amber" : undefined} />
+                    </div>
                   </div>
 
                   <div className="border-t border-neutral-100 pt-3 space-y-1">
@@ -1997,7 +1964,7 @@ export function OsDetailModal({ os, onClose, isDiretoria, editingFields, setEdit
               <>
                 <div className="border-t border-neutral-100 pt-3 space-y-1">
                   <FieldRow label="Valor do Acionamento" value={fmt(acionamento)} accent="blue" bold />
-                  {horaExtra > 0 && <FieldRow label={`Hora Extra (${horasExtrasCalc > 0 ? `${minutosExtrasCalc}min × ${fmt(valorMinutoContract)}/min` : ""})`} value={fmt(horaExtra)} accent="amber" bold />}
+                  {horaExtra > 0 && <FieldRow label={tabela.valorHora > 0 && tabela.horasExtra > 0 ? `Hora Extra (${fmtHoras(tabela.horasExtra)} × ${fmt(tabela.valorHora)}/h)` : "Hora Extra"} value={fmt(horaExtra)} accent="amber" bold />}
                   {kmExtraVal > 0 && <FieldRow label="Valor KM Excedente" value={fmt(kmExtraVal)} accent="violet" bold />}
                   {pedagio > 0 && <FieldRow label="Valor do Pedágio" value={fmt(pedagio)} bold />}
                   {receitasOsVal > 0 && <FieldRow label="Pedágio (Reembolso Cliente)" value={fmt(receitasOsVal)} bold />}

@@ -7,6 +7,7 @@ import {
   applyComercialCreateClientPayload,
   denyIfComercialClientOutOfScope,
 } from "../lib/comercial-scope";
+import { duplicateDocumentMessage, findBlockingDocumentClient } from "../lib/client-document-guard";
 import cron from "node-cron";
 import fs from "fs";
 import path from "path";
@@ -1666,10 +1667,10 @@ export function registerLeadRoutes(app: Express) {
       const { data: lead } = await supabaseAdmin.from("leads").select("*").eq("id", id).single();
       if (!lead) return res.status(404).json({ error: "Lead não encontrado" });
 
-      const { data: existingClient } = await supabaseAdmin.from("clients")
-        .select("id")
-        .eq("cnpj", lead.cnpj || "")
-        .maybeSingle();
+      const existingClient = await findBlockingDocumentClient(
+        { id: 0, cnpj: lead.cnpj, cpf: lead.cpf },
+        "create",
+      );
 
       if (existingClient) {
         if (await denyIfComercialClientOutOfScope(
@@ -1698,6 +1699,13 @@ export function registerLeadRoutes(app: Express) {
         contact_person: lead.contato_nome || null,
         segment: lead.setor || null,
       });
+      const duplicate = await findBlockingDocumentClient(
+        { id: 0, cnpj: insertPayload.cnpj, cpf: insertPayload.cpf },
+        "create",
+      );
+      if (duplicate) {
+        return res.status(409).json({ error: duplicateDocumentMessage(duplicate, "create"), existingId: duplicate.id });
+      }
       const { data: newClient, error: clientErr } = await supabaseAdmin.from("clients").insert({
         name: insertPayload.name,
         cnpj: insertPayload.cnpj || null,
@@ -1711,6 +1719,7 @@ export function registerLeadRoutes(app: Express) {
         segment: insertPayload.segment || null,
         created_by_user_id: insertPayload.createdByUserId || null,
         responsavel_comercial_id: insertPayload.responsavelComercialId || null,
+        status: "ativo",
       }).select().single();
       if (clientErr) throw clientErr;
 

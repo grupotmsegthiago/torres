@@ -12,7 +12,8 @@ import type { Express } from "express";
     denyIfComercialClientOutOfScope,
     filterComerciaisForUser,
   } from "../lib/comercial-scope";
-  import { parseClientStatus } from "@shared/client-duplicates";
+  import { clientDocumentKey, isClientActive, parseClientStatus } from "@shared/client-duplicates";
+  import { clearedClientIdentity, duplicateDocumentMessage, findBlockingDocumentClient } from "../lib/client-document-guard";
 
   import { generateContractPDF } from "../contract-pdf";
 import { listGroups as listZapiGroups } from "../lib/zapi";
@@ -130,9 +131,21 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
     if (!hasWhoPaysEmail(payload.emailFinanceiro)) {
       return res.status(400).json({ message: "E-mail de quem paga (recebimento financeiro) é obrigatório." });
     }
-    const data = await storage.createClient(
-      applyComercialCreateClientPayload(req.user as any, payload) as any,
+    const toSave = applyComercialCreateClientPayload(req.user as any, payload) as any;
+    if (!clientDocumentKey({ id: 0, cnpj: toSave.cnpj, cpf: toSave.cpf })) {
+      return res.status(400).json({ message: "Informe um CNPJ com 14 dígitos ou um CPF com 11 dígitos antes de salvar." });
+    }
+    const existing = await findBlockingDocumentClient(
+      { id: 0, cnpj: toSave.cnpj, cpf: toSave.cpf },
+      "create",
     );
+    if (existing) {
+      return res.status(409).json({
+        message: duplicateDocumentMessage(existing, "create"),
+        existingId: existing.id,
+      });
+    }
+    const data = await storage.createClient(toSave);
     const doc = data.cnpj || data.cpf || "";
     if (doc.replace(/\D/g, "").length >= 11) {
       apibrasil.autoConsultaCliente(doc, req.user!.id).catch(() => {});
@@ -161,6 +174,36 @@ function coerceComercialId(body: Record<string, any>): Record<string, any> {
     }
     if (await denyIfComercialClientOutOfScope(req, res, req.params.id)) return;
     try {
+      const current = await storage.getClient(Number(req.params.id));
+      if (!current) return res.status(404).json({ message: "Cliente não encontrado" });
+      const cleared = clearedClientIdentity(current as any, patch);
+      if (cleared) {
+        return res.status(400).json({ message: `Não foi salvo: o campo ${cleared} ficaria vazio e o cadastro perderia esse dado.` });
+      }
+      const nextDoc = {
+        id: Number(req.params.id),
+        cnpj: ("cnpj" in patch ? patch.cnpj : (current as any).cnpj) as string | null,
+        cpf: ("cpf" in patch ? patch.cpf : (current as any).cpf) as string | null,
+      };
+      const docChanged = clientDocumentKey(nextDoc) !== clientDocumentKey(current as any);
+      const activating = patch.status === "ativo" && !isClientActive(current as any);
+      if (docChanged) {
+        const taken = await findBlockingDocumentClient(nextDoc, "create", nextDoc.id);
+        if (taken) {
+          return res.status(409).json({
+            message: duplicateDocumentMessage(taken, "create"),
+            existingId: taken.id,
+          });
+        }
+      } else if (activating) {
+        const taken = await findBlockingDocumentClient(nextDoc, "activate", nextDoc.id);
+        if (taken) {
+          return res.status(409).json({
+            message: duplicateDocumentMessage(taken, "activate"),
+            existingId: taken.id,
+          });
+        }
+      }
       const data = await storage.updateClient(
         Number(req.params.id),
         applyComercialPatchClientPayload(req.user as any, patch) as any,

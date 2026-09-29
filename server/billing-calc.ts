@@ -525,6 +525,7 @@ export function calcularEscolta(dados: {
   // ✅ FIX HE multi-dia: se temos timestamps reais (mission_started_at / completed_date),
   // usar diff em ms — pega qualquer missão que atravessa dias/noites. Senão, fallback HH:MM.
   let horas_trabalhadas_calc = 0;
+  let duracaoRealConhecida = false;
   if (dados.fim_ts) {
     let inicio_ts_ref: string | null = null;
     if (usou_agendado && dados.scheduled_date && horario_agendado) {
@@ -536,13 +537,19 @@ export function calcularEscolta(dados: {
       inicio_ts_ref = dados.inicio_ts;
     }
     if (inicio_ts_ref) {
+      duracaoRealConhecida = true;
       horas_trabalhadas_calc = calcularHorasTrabalhadasReais(inicio_ts_ref, dados.fim_ts);
     }
   }
-  if (horas_trabalhadas_calc <= 0) {
+  // Só o relógio HH:MM soma 24h quando o fim é "antes" do início (missão que vira o dia).
+  // Se os timestamps reais existem e a duração é zero ou negativa (cancelou antes de começar,
+  // ou no mesmo dia), NÃO inventar quase 24h de hora extra.
+  if (!duracaoRealConhecida && horas_trabalhadas_calc <= 0) {
     horas_trabalhadas_calc = horario_fim ? calcularHorasTrabalhadas(inicio_considerado, horario_fim) : dados.horas_missao;
   }
-  const horas_missao = horas_trabalhadas_calc > 0 ? horas_trabalhadas_calc : dados.horas_missao;
+  const horas_missao = duracaoRealConhecida
+    ? horas_trabalhadas_calc
+    : (horas_trabalhadas_calc > 0 ? horas_trabalhadas_calc : dados.horas_missao);
 
   const kmOdometro = km_final - km_inicial;
   const km_total = (kmRota && kmRota > 0 && kmOdometro > kmRota) ? kmRota : kmOdometro;

@@ -2,10 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyClientListFilter,
+  blockingDocumentClient,
   buildClientDuplicateIndex,
+  clearedClientIdentity,
   clientDocumentKey,
   digitsDoc,
   isClientActive,
+  otherClientsWithSameDocument,
   parseClientStatus,
 } from "./client-duplicates.ts";
 
@@ -79,6 +82,39 @@ test("filtro duplicados junta o mesmo CNPJ e preserva numeração Dup n/m", () =
     assert.equal(i + 1 >= 1, true);
     assert.ok(index.get(c.id));
   });
+});
+
+test("novo cadastro é bloqueado se o CNPJ já existe, com ou sem máscara, ativo ou inativo", () => {
+  const rows = [...TVM, ...GO_LOG];
+  const masked = otherClientsWithSameDocument(rows, { id: 0, cnpj: "30.854.765/0001-50" });
+  assert.deepEqual(masked.map((c) => c.id), [57, 62, 64]);
+  assert.equal(blockingDocumentClient(masked, "create")?.id, 57);
+
+  const inactiveOnly = otherClientsWithSameDocument(
+    [{ id: 63, name: "GO LOG", cnpj: "17848915000154", status: "inativo" }],
+    { id: 0, cnpj: "17.848.915/0001-54" },
+  );
+  assert.equal(blockingDocumentClient(inactiveOnly, "create")?.id, 63);
+  assert.equal(blockingDocumentClient([], "create"), null);
+});
+
+test("reativar só bloqueia quando já existe outro CNPJ ativo", () => {
+  const others = otherClientsWithSameDocument(TVM, { id: 62, cnpj: "30854765000150" }, 62);
+  assert.equal(blockingDocumentClient(others, "activate")?.id, 57);
+  const onlyInactive = otherClientsWithSameDocument(
+    [{ id: 64, cnpj: "30.854.765/0001-50", status: "inativo" }],
+    { id: 62, cnpj: "30854765000150" },
+    62,
+  );
+  assert.equal(blockingDocumentClient(onlyInactive, "activate"), null);
+});
+
+test("patch não pode apagar nome ou documento já gravados", () => {
+  const current = { name: "TVM LOG", cnpj: "30.854.765/0001-50" };
+  assert.equal(clearedClientIdentity(current, { name: "  " }), "nome");
+  assert.equal(clearedClientIdentity(current, { cnpj: "" }), "CNPJ/CPF");
+  assert.equal(clearedClientIdentity(current, { responsavelComercialId: null }), null);
+  assert.equal(clearedClientIdentity(current, { phone: "11999999999" }), null);
 });
 
 test("filtros ativos/inativos/todos", () => {

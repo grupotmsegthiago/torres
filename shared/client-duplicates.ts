@@ -65,6 +65,55 @@ export function buildClientDuplicateIndex<T extends ClientDuplicateLike>(
   return out;
 }
 
+/** Outros cadastros com o mesmo CNPJ (14) ou CPF (11), ignorando máscara. */
+export function otherClientsWithSameDocument<T extends ClientDuplicateLike>(
+  clients: T[],
+  candidate: ClientDuplicateLike,
+  exceptId?: number,
+): T[] {
+  const key = clientDocumentKey(candidate);
+  if (!key) return [];
+  return clients.filter((client) => client.id !== exceptId && clientDocumentKey(client) === key);
+}
+
+/**
+ * Criar outro cartão com o mesmo documento é recusado, ativo ou inativo.
+ * Reativar só é recusado se já existir outro cadastro ativo daquele documento.
+ * Editar o próprio cartão (exceptId) não entra aqui.
+ */
+export function blockingDocumentClient<T extends ClientDuplicateLike>(
+  others: T[],
+  mode: "create" | "activate",
+): T | null {
+  if (mode === "create") return others[0] || null;
+  return others.find((client) => isClientActive(client)) || null;
+}
+
+/** Impede gravar vazio por cima de nome ou documento já preenchidos. */
+export function clearedClientIdentity(
+  current: {
+    name?: string | null;
+    cnpj?: string | null;
+    cpf?: string | null;
+  },
+  patch: Record<string, unknown>,
+): string | null {
+  if ("name" in patch && !String(patch.name || "").trim() && String(current.name || "").trim()) {
+    return "nome";
+  }
+  const touchesDoc = "cnpj" in patch || "cpf" in patch;
+  if (touchesDoc) {
+    const had = clientDocumentKey({ id: 0, cnpj: current.cnpj, cpf: current.cpf });
+    const next = clientDocumentKey({
+      id: 0,
+      cnpj: ("cnpj" in patch ? patch.cnpj : current.cnpj) as string | null,
+      cpf: ("cpf" in patch ? patch.cpf : current.cpf) as string | null,
+    });
+    if (had && !next) return "CNPJ/CPF";
+  }
+  return null;
+}
+
 export function applyClientListFilter<T extends ClientDuplicateLike>(
   clients: T[],
   filter: ClientListFilter,

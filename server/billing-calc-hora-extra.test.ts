@@ -278,3 +278,44 @@ test("calcularFaturamentoLive: kmRota continua tendo prioridade sobre teto físi
   assert.equal(r.km_absurdo_limitado, false, "com rota, teto físico não age");
   assert.equal(r.km_total, 820, "km_total = kmRota");
 });
+
+// REGRESSÃO TOR-0794: fim no mesmo dia, antes do horário de cobrança.
+// O fallback HH:MM somava 24h (07:46 < 08:00) e cobrava ~20h46 × tarifa.
+test("TOR-0794: timestamps no mesmo dia com fim antes do início não geram 24h de hora extra", () => {
+  const r = calcularEscolta({
+    km_inicial: 0, km_final: 0, km_vazio: 0,
+    horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+    horario_agendado: "08:00",
+    horario_fim: "07:46",
+    fim_ts: "2026-09-09T10:46:00.000Z",
+    scheduled_date: "2026-09-09T11:00:00.000Z",
+    despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+    contrato: {
+      valor_acionamento: 650, valor_hora_extra: 160, franquia_horas: 3, franquia_km: 100,
+      hora_extra_fracionada: true,
+    },
+  });
+  assert.equal(r.fat_hora_extra, 0);
+  assert.equal(r.fat_acionamento, 650);
+  assert.ok(r.horas_trabalhadas < 1, `horas deve ser 0, foi ${r.horas_trabalhadas}`);
+});
+
+test("TOR-0794: 46 min reais dentro da franquia de 3h cobra só o acionamento a R$ 160/h", () => {
+  const r = calcularEscolta({
+    km_inicial: 200, km_final: 200, km_vazio: 0,
+    horas_missao: 0, horas_estadia: 0, teve_pernoite: false,
+    horario_inicio: "07:00", horario_fim: "07:46", horario_agendado: "07:00",
+    inicio_ts: "2026-09-09T10:00:00.000Z",
+    fim_ts: "2026-09-09T10:46:00.000Z",
+    scheduled_date: "2026-09-09T10:00:00.000Z",
+    despesas_pedagio: 0, despesas_combustivel: 0, despesas_outras: 0,
+    contrato: {
+      valor_acionamento: 650, valor_hora_extra: 160, franquia_horas: 3, franquia_km: 100,
+      valor_km_extra: 6.5, hora_extra_fracionada: true,
+    },
+  });
+  assert.equal(r.fat_hora_extra, 0);
+  assert.equal(r.fat_km, 0);
+  assert.equal(r.fat_acionamento, 650);
+  assert.equal(r.fat_total, 650);
+});

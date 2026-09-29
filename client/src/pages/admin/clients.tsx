@@ -433,7 +433,15 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      let description = String(err?.message || "Não foi possível salvar o cliente.");
+      const jsonStart = description.indexOf("{");
+      if (jsonStart >= 0) {
+        try {
+          const body = JSON.parse(description.slice(jsonStart));
+          if (body?.message) description = body.message;
+        } catch { /* mantém o texto original */ }
+      }
+      toast({ title: "Cliente não foi salvo", description, variant: "destructive" });
     },
   });
 
@@ -462,6 +470,12 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
             description: "Informe o e-mail de recebimento financeiro do cliente (quem paga as faturas).",
             variant: "destructive",
           });
+          return;
+        }
+        const docDigits = (form.cnpj || form.cpf || "").replace(/\D/g, "");
+        const docOk = docDigits.length === 14 || docDigits.length === 11;
+        if (!client && !docOk) {
+          toast({ title: "Documento obrigatório", description: "Informe um CNPJ com 14 dígitos ou um CPF com 11 dígitos.", variant: "destructive" });
           return;
         }
         if (form.emiteNf) {
