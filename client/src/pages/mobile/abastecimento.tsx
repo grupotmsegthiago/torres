@@ -1,11 +1,12 @@
 import { parseBRL, maskBRL } from "@/lib/utils";
+import { compressImageFile } from "@/lib/image-compress";
 import MobileLayout from "@/components/mobile/layout";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, MapPin, Car, ChevronRight, RefreshCw, ShieldCheck } from "lucide-react"; // ShieldCheck/Loader2 ainda usados em outros pontos da tela
+import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, MapPin, Car, ChevronRight, RefreshCw, ShieldCheck, Images } from "lucide-react";
 import { Link } from "wouter";
 
 type PhotoKey = "pumpPhoto" | "receiptPhoto" | "odometerPhoto";
@@ -135,6 +136,27 @@ export default function MobileAbastecimentoPage() {
     }
     stopCamera();
   }, [captureMode, stopCamera]);
+
+  const pickFromGallery = useCallback(async (mode: CaptureMode, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const { dataUrl } = await compressImageFile(file, { maxSide: 1024, quality: 0.7 });
+      if (!dataUrl.startsWith("data:image/")) {
+        toast({ title: "Foto inválida", description: "Escolha uma imagem da galeria.", variant: "destructive" });
+        return;
+      }
+      if (mode === "plate") {
+        setPlatePhoto(dataUrl);
+        setPlateConfirmed(false);
+      } else {
+        setPhotos(p => ({ ...p, [mode]: dataUrl }));
+      }
+    } catch (err: any) {
+      toast({ title: "Não foi possível ler a foto", description: err?.message || "Tente outra imagem.", variant: "destructive" });
+    }
+  }, [toast]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -483,9 +505,21 @@ export default function MobileAbastecimentoPage() {
                     {done ? (
                       <img src={photos[s.key]} className="w-12 h-12 rounded-lg object-cover border" alt={s.label} />
                     ) : (
-                      <button onClick={() => startCamera(s.key)} className="px-3 py-2 bg-neutral-900 text-white rounded-lg text-xs font-bold flex items-center gap-1" data-testid={`button-photo-${s.key}`}>
-                        <Camera size={12} /> Tirar Foto
-                      </button>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <button onClick={() => startCamera(s.key)} className="px-3 py-2 bg-neutral-900 text-white rounded-lg text-xs font-bold flex items-center gap-1" data-testid={`button-photo-${s.key}`}>
+                          <Camera size={12} /> Tirar Foto
+                        </button>
+                        <label className="relative px-3 py-2 bg-neutral-100 text-neutral-800 border border-neutral-200 rounded-lg text-xs font-bold flex items-center gap-1" data-testid={`button-gallery-${s.key}`}>
+                          <Images size={12} /> Galeria
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                            onChange={(e) => pickFromGallery(s.key, e)}
+                            data-testid={`input-gallery-${s.key}`}
+                            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, fontSize: "16px" }}
+                          />
+                        </label>
+                      </div>
                     )}
                   </div>
                 );
@@ -541,10 +575,22 @@ export default function MobileAbastecimentoPage() {
               <p className="text-xs text-blue-700">Fotografe a placa física do veículo para confirmar que está abastecendo a viatura correta.</p>
 
               {!platePhoto ? (
-                <button onClick={() => startCamera("plate")} data-testid="button-take-plate-photo"
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2">
-                  <Camera size={16} /> Fotografar Placa
-                </button>
+                <div className="space-y-2">
+                  <button onClick={() => startCamera("plate")} data-testid="button-take-plate-photo"
+                    className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2">
+                    <Camera size={16} /> Fotografar Placa
+                  </button>
+                  <label className="relative w-full py-3 bg-white text-blue-700 border border-blue-200 rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2" data-testid="button-gallery-plate">
+                    <Images size={16} /> Galeria
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                      onChange={(e) => pickFromGallery("plate", e)}
+                      data-testid="input-gallery-plate"
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, fontSize: "16px" }}
+                    />
+                  </label>
+                </div>
               ) : (
                 <div className="space-y-3">
                   <div className="rounded-xl overflow-hidden border-2 border-emerald-400">
