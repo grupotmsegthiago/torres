@@ -94,25 +94,36 @@ export function useGeolocation(_missionActive = false) {
   // Captura a posição uma vez. Se a alta precisão falhar (timeout/indisponível —
   // mas NÃO por permissão negada), tenta de novo por rede (baixa precisão) pra
   // não deixar o usuário travado na tela "buscando GPS".
+  const captureGen = useRef(0);
   const captureOnce = useCallback(() => {
     if (!navigator.geolocation) return;
+    const gen = ++captureGen.current;
     setLoading(true);
     setError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => sendLocation(pos),
-      (err) => {
-        if (err.code === err.PERMISSION_DENIED) {
-          handleGeoError(err);
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(
-          (pos) => sendLocation(pos),
-          handleGeoError,
-          GPS_FALLBACK_OPTIONS,
-        );
-      },
-      GPS_OPTIONS,
-    );
+    // No Android o GPS fino (enableHighAccuracy) estoura os 10s dentro do carro
+    // e a tela fica em "Capturando localização...". A posição de rede chega antes
+    // e libera o app; o GPS fino, se responder, só atualiza.
+    let pending = 2;
+    let finished = false;
+    const succeed = (pos: GeolocationPosition) => {
+      if (finished || gen !== captureGen.current) return;
+      finished = true;
+      sendLocation(pos);
+    };
+    const fail = (err: GeolocationPositionError) => {
+      if (finished || gen !== captureGen.current) return;
+      if (err.code === err.PERMISSION_DENIED) {
+        finished = true;
+        handleGeoError(err);
+        return;
+      }
+      pending -= 1;
+      if (pending > 0) return;
+      finished = true;
+      handleGeoError(err);
+    };
+    navigator.geolocation.getCurrentPosition(succeed, fail, GPS_FALLBACK_OPTIONS);
+    navigator.geolocation.getCurrentPosition(succeed, fail, GPS_OPTIONS);
   }, [sendLocation, handleGeoError]);
 
   // Disparado por gesto do usuário (botão "Habilitar Localização" / "Tentar

@@ -4,6 +4,7 @@ import { logAuditAction } from "@/hooks/use-audit";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, maskBRL } from "@/lib/utils";
+import { compressImageFile } from "@/lib/image-compress";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError, forceFlush, subscribeQueue } from "@/lib/offlineQueue";
@@ -128,33 +129,25 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
   aiResult?: any;
   onRetake?: () => void;
 }) {
+  const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
-  const galleryRef = useRef<HTMLInputElement>(null);
   const slug = label.toLowerCase().replace(/\s/g, "-");
 
-  const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.removeAttribute("capture");
     e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const canvas = document.createElement("canvas");
-      const img = new Image();
-      img.onload = () => {
-        const maxSize = 800;
-        let w = img.width, h = img.height;
-        if (w > maxSize || h > maxSize) {
-          if (w > h) { h = (h / w) * maxSize; w = maxSize; }
-          else { w = (w / h) * maxSize; h = maxSize; }
-        }
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
-        onCapture(canvas.toDataURL("image/jpeg", 0.7));
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
+    try {
+      const { dataUrl } = await compressImageFile(file, { maxSide: 800, quality: 0.7 });
+      if (!dataUrl.startsWith("data:image/")) {
+        toast({ title: "Foto inválida", description: "Escolha uma imagem da galeria.", variant: "destructive" });
+        return;
+      }
+      onCapture(dataUrl);
+    } catch (err: any) {
+      toast({ title: "Não foi possível ler a foto", description: err?.message || "Tente outra imagem.", variant: "destructive" });
+    }
   };
 
   const isAnalyzing = aiStatus === "uploading" || aiStatus === "analisando";
@@ -162,7 +155,11 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
   const isDivergent = aiStatus === "divergente";
 
   const handleClick = () => {
-    inputRef.current?.click();
+    const input = inputRef.current;
+    if (!input) return;
+    input.setAttribute("capture", "environment");
+    input.setAttribute("accept", "image/*");
+    input.click();
   };
 
   let btnClass = "border-neutral-300 bg-white text-neutral-600";
@@ -173,8 +170,7 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
 
   return (
     <div>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} data-testid={`input-camera-${slug}`} />
-      <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handleCapture} data-testid={`input-gallery-${slug}`} />
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleCapture} data-testid={`input-camera-${slug}`} />
       <button
         onClick={handleClick}
         disabled={isAnalyzing}
@@ -196,15 +192,20 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
         {isAnalyzing && <span className="text-[10px] normal-case font-normal ml-1">IA analisando...</span>}
       </button>
       {!isAnalyzing && (
-        <button
-          type="button"
-          onClick={() => galleryRef.current?.click()}
-          className="w-full mt-1.5 h-9 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-600 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+        <label
+          className="relative w-full mt-1.5 h-9 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-600 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
           data-testid={`button-gallery-${slug}`}
         >
           <Images className="w-3.5 h-3.5" />
           Galeria
-        </button>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+            onChange={handleCapture}
+            data-testid={`input-gallery-${slug}`}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, fontSize: "16px" }}
+          />
+        </label>
       )}
       {isApproved && (
         <p className="text-[10px] text-emerald-600 mt-1 text-center font-bold flex items-center justify-center gap-1">
@@ -528,7 +529,6 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   const [updateStep, setUpdateStep] = useState<"idle" | "photo" | "message">("idle");
   const [updatePhoto, setUpdatePhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [tollOpen, setTollOpen] = useState(false);
   const [tollAmount, setTollAmount] = useState("");
@@ -625,50 +625,22 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
     return suggestions;
   };
 
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.removeAttribute("capture");
     e.target.value = "";
     if (!file) return;
-    // Foto vem direto do celular (4–8 MB). Sem compressão, estoura o limite
-    // de 2 MB do POST /api/mission/update (413 entity too large). Aqui
-    // reduzimos pra max 1280px no maior lado + JPEG q=0.7, o que tipicamente
-    // deixa a foto em ~80–250 KB, mantendo qualidade pro registro.
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const maxSize = 1280;
-        let w = img.width, h = img.height;
-        if (w > maxSize || h > maxSize) {
-          if (w > h) { h = Math.round((h / w) * maxSize); w = maxSize; }
-          else { w = Math.round((w / h) * maxSize); h = maxSize; }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          // Sem canvas, manda original como fallback
-          setUpdatePhoto(reader.result as string);
-          setUpdateStep("message");
-          return;
-        }
-        ctx.drawImage(img, 0, 0, w, h);
-        const compressed = canvas.toDataURL("image/jpeg", 0.7);
-        const origKB = Math.round((reader.result as string).length * 0.75 / 1024);
-        const newKB = Math.round(compressed.length * 0.75 / 1024);
-        console.log(`[mission-update] foto comprimida: ${origKB} KB → ${newKB} KB (${w}x${h})`);
-        setUpdatePhoto(compressed);
-        setUpdateStep("message");
-      };
-      img.onerror = () => {
-        // Não conseguiu decodificar — manda original
-        setUpdatePhoto(reader.result as string);
-        setUpdateStep("message");
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
+    try {
+      const { dataUrl } = await compressImageFile(file, { maxSide: 1280, quality: 0.7 });
+      if (!dataUrl.startsWith("data:image/")) {
+        toast({ title: "Foto inválida", description: "Escolha uma imagem da galeria.", variant: "destructive" });
+        return;
+      }
+      setUpdatePhoto(dataUrl);
+      setUpdateStep("message");
+    } catch (err: any) {
+      toast({ title: "Não foi possível ler a foto", description: err?.message || "Tente outra imagem.", variant: "destructive" });
+    }
   };
 
   const handleSkipPhoto = () => {
@@ -719,18 +691,9 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         ref={photoInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         onChange={handlePhotoCapture}
         data-testid="input-update-photo"
-      />
-      <input
-        ref={galleryInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handlePhotoCapture}
-        data-testid="input-update-gallery"
       />
 
       {updateStep === "idle" && (
@@ -753,22 +716,33 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
           </div>
           <p className="text-xs text-neutral-500">Tire uma foto do momento atual da operação.</p>
           <button
-            onClick={() => photoInputRef.current?.click()}
+            onClick={() => {
+              const input = photoInputRef.current;
+              if (!input) return;
+              input.setAttribute("capture", "environment");
+              input.setAttribute("accept", "image/*");
+              input.click();
+            }}
             className="w-full h-14 bg-neutral-900 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
             data-testid="button-take-photo"
           >
             <Camera className="w-5 h-5" />
             Tirar Foto
           </button>
-          <button
-            type="button"
-            onClick={() => galleryInputRef.current?.click()}
-            className="w-full h-10 bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+          <label
+            className="relative w-full h-10 bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
             data-testid="button-update-gallery"
           >
             <Images className="w-4 h-4" />
             Galeria
-          </button>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+              onChange={handlePhotoCapture}
+              data-testid="input-update-gallery"
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, fontSize: "16px" }}
+            />
+          </label>
           <button
             onClick={handleSkipPhoto}
             className="w-full h-10 bg-neutral-100 text-neutral-500 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center active:scale-[0.98]"

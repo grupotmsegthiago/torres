@@ -133,10 +133,21 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
                 Você precisa permitir o acesso ao GPS para continuar. Ative a localização:
               </p>
               <ol className="text-[12px] text-neutral-600 text-left ml-4 mb-4 list-decimal space-y-1">
-                <li>Abra os <strong>Ajustes</strong> do celular</li>
-                <li>Vá em <strong>Privacidade → Serviços de Localização</strong></li>
-                <li>Encontre o <strong>navegador</strong> (Safari/Chrome)</li>
-                <li>Selecione <strong>"Ao Usar o App"</strong></li>
+                {/Android/i.test(navigator.userAgent) ? (
+                  <>
+                    <li>Abra as <strong>Configurações</strong> do celular</li>
+                    <li>Em <strong>Localização</strong>, deixe o GPS ligado</li>
+                    <li>Em <strong>Apps</strong>, abra o Chrome (ou o Torres)</li>
+                    <li>Permissão de localização: <strong>Permitir</strong>, com localização precisa</li>
+                  </>
+                ) : (
+                  <>
+                    <li>Abra os <strong>Ajustes</strong> do celular</li>
+                    <li>Vá em <strong>Privacidade → Serviços de Localização</strong></li>
+                    <li>Encontre o <strong>navegador</strong> (Safari/Chrome)</li>
+                    <li>Selecione <strong>"Ao Usar o App"</strong></li>
+                  </>
+                )}
               </ol>
               {error && (
                 <p className="text-[11px] text-red-600 bg-red-50 rounded-lg p-2 mb-3" data-testid="text-geo-error">{error}</p>
@@ -184,7 +195,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col select-none" style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" } as any} data-testid="mobile-layout">
+    <div className="min-h-screen bg-neutral-50 flex flex-col select-none touch-manipulation [&_input]:select-text [&_textarea]:select-text [&_select]:select-text" style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" } as any} data-testid="mobile-layout">
       {user && <Watermark name={user.name || user.username || "—"} matricula={user.matricula || "---"} />}
       <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">

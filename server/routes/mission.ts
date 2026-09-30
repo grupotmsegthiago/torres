@@ -2470,17 +2470,31 @@ Responda APENAS com JSON: {"km_lido": number}`;
       iniciar_missao: "Antes de iniciar o deslocamento ao destino",
     };
     if (DRIVER_CHECK_STEPS[currentStep] && so.vehicleId) {
-      const { data: activeDriver } = await supabaseAdmin
+      const { data: activeSession } = await supabaseAdmin
         .from("driver_sessions")
-        .select("driver_id")
+        .select("id, driver_id")
         .eq("vehicle_id", so.vehicleId)
         .eq("status", "ativo")
         .is("ended_at", null)
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const validDriverIds = [so.assignedEmployeeId, so.assignedEmployee2Id].filter((x): x is number => !!x);
-      const driverIsValid = activeDriver && validDriverIds.includes(activeDriver.driver_id);
+      let driverIdNow: number | null = activeSession?.driver_id != null ? Number(activeSession.driver_id) : null;
+      if (activeSession?.id) {
+        const { data: shift } = await supabaseAdmin
+          .from("driver_shifts")
+          .select("driver_id")
+          .eq("session_id", activeSession.id)
+          .eq("is_active", true)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (shift?.driver_id != null) driverIdNow = Number(shift.driver_id);
+      }
+      const validDriverIds = [so.assignedEmployeeId, so.assignedEmployee2Id]
+        .map((x) => Number(x))
+        .filter((x) => Number.isInteger(x) && x > 0);
+      const driverIsValid = driverIdNow != null && validDriverIds.includes(driverIdNow);
       if (!driverIsValid) {
         return res.status(400).json({
           message: `CONDUTOR_OBRIGATORIO: ${DRIVER_CHECK_STEPS[currentStep]}, informe quem está dirigindo a viatura.`,

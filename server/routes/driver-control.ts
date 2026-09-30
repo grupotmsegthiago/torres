@@ -3,12 +3,18 @@ import { requireAuth, requireAdminRole } from "../auth";
 import { supabaseAdmin } from "../supabase";
 import { logSystemAudit } from "../audit";
 
+function sameId(a: unknown, b: unknown): boolean {
+  const na = Number(a);
+  const nb = Number(b);
+  return Number.isInteger(na) && na > 0 && na === nb;
+}
+
 function isSessionParticipant(user: any, session: { driver_id?: number | null; partner_id?: number | null }): boolean {
   if (!user) return false;
   if (user.role === "admin" || user.role === "diretoria") return true;
   const empId = user.employeeId;
   if (!empId) return false;
-  return empId === session.driver_id || empId === session.partner_id;
+  return sameId(empId, session.driver_id) || sameId(empId, session.partner_id);
 }
 
 function isAdminOrDiretoria(user: any): boolean {
@@ -59,11 +65,12 @@ export function registerDriverControlRoutes(app: Express) {
       let query = supabaseAdmin.from("driver_sessions").select("*").eq("status", "ativo");
 
       // O condutor parceiro também precisa ver a sessão ativa (rodízio bidirecional entre os 2 agentes).
+      // A mais recente: uma sessão antiga deixada aberta não pode esconder a operação de hoje.
       if (employeeId) {
         query = query.or(`driver_id.eq.${employeeId},partner_id.eq.${employeeId}`);
       }
 
-      const { data, error } = await query.limit(1).maybeSingle();
+      const { data, error } = await query.order("started_at", { ascending: false }).limit(1).maybeSingle();
       if (error) throw error;
 
       let shifts: any[] = [];
@@ -125,6 +132,78 @@ export function registerDriverControlRoutes(app: Express) {
     }
   });
 
+  // Registrada ANTES de /:id. Senão o Express trata "lookup" como id da sessão
+  // e a Consulta de Multa nunca roda.
+  app.get("/api/driver-sessions/lookup", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const plate = (req.query.plate as string || "").toUpperCase().trim();
+      const datetime = req.query.datetime as string;
+
+      if (!isAdminOrDiretoria((req as any).user)) {
+        return res.status(403).json({ message: "Acesso restrito." });
+      }
+
+      if (!plate || !datetime) {
+        return res.status(400).json({ message: "Placa e data/hora são obrigatórios." });
+      }
+
+      const when = new Date(datetime);
+      if (Number.isNaN(when.getTime())) {
+        return res.status(400).json({ message: "Data/hora da infração inválida." });
+      }
+      const ts = when.toISOString();
+
+      const { data: sessions, error: sessErr } = await supabaseAdmin.from("driver_sessions")
+        .select(DS_LIST_COLS)
+        .ilike("vehicle_plate", `%${plate}%`)
+        .lte("started_at", ts)
+        .or(`ended_at.gte.${ts},ended_at.is.null`)
+        .order("started_at", { ascending: false })
+        .limit(5);
+      if (sessErr) throw sessErr;
+
+      if (!sessions || sessions.length === 0) {
+        const { data: closest } = await supabaseAdmin.from("driver_sessions")
+          .select(DS_LIST_COLS)
+          .ilike("vehicle_plate", `%${plate}%`)
+          .lte("started_at", ts)
+          .order("started_at", { ascending: false })
+          .limit(3);
+
+        return res.json({
+          found: false,
+          message: "Nenhuma sessão ativa encontrada nesse momento exato.",
+          closest: closest || [],
+        });
+      }
+
+      const enriched = [];
+      for (const s of sessions) {
+        const { data: shifts } = await supabaseAdmin.from("driver_shifts")
+          .select("*").eq("session_id", s.id).order("started_at", { ascending: true });
+
+        const at = when.getTime();
+        const activeAtTime = (shifts || []).find((sh: any) => {
+          const shStart = new Date(sh.started_at).getTime();
+          const shEnd = sh.ended_at ? new Date(sh.ended_at).getTime() : Date.now();
+          return at >= shStart && at <= shEnd;
+        });
+
+        enriched.push({
+          ...s,
+          shifts: shifts || [],
+          driverAtTime: activeAtTime ? activeAtTime.driver_name : s.driver_name,
+          driverIdAtTime: activeAtTime ? activeAtTime.driver_id : s.driver_id,
+        });
+      }
+
+      res.json({ found: true, sessions: enriched });
+    } catch (err: any) {
+      console.error("[driver-control] lookup error:", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/driver-sessions/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -146,7 +225,10 @@ export function registerDriverControlRoutes(app: Express) {
 
   app.post("/api/driver-sessions/start", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { vehicleId, driverId, partnerId, kmStart, notes } = req.body;
+      const vehicleId = parseInt(req.body?.vehicleId);
+      const driverId = parseInt(req.body?.driverId);
+      const partnerId = req.body?.partnerId;
+      const { kmStart, notes } = req.body || {};
 
       if (!vehicleId || !driverId) {
         return res.status(400).json({ message: "Veículo e condutor são obrigatórios." });
@@ -182,7 +264,9 @@ export function registerDriverControlRoutes(app: Express) {
         if (!relatedOs) {
           return res.status(403).json({ message: "Você não está atribuído a uma OS ativa ou recém-concluída (24h) desta viatura." });
         }
-        const validDriverIds = [relatedOs.assigned_employee_id, relatedOs.assigned_employee_2_id].filter(Boolean);
+        const validDriverIds = [relatedOs.assigned_employee_id, relatedOs.assigned_employee_2_id]
+          .map((id: any) => Number(id))
+          .filter((id: number) => Number.isInteger(id) && id > 0);
         if (!validDriverIds.includes(driverId)) {
           return res.status(403).json({ message: "Condutor deve ser um dos agentes atribuídos à OS." });
         }
@@ -423,71 +507,6 @@ export function registerDriverControlRoutes(app: Express) {
         kmTotal: session.km_end && session.km_start ? session.km_end - session.km_start : null,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.get("/api/driver-sessions/lookup", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const plate = (req.query.plate as string || "").toUpperCase().trim();
-      const datetime = req.query.datetime as string;
-
-      // Lookup é ferramenta de conciliação (boletim) — restrito a admin/diretoria.
-      if (!isAdminOrDiretoria((req as any).user)) {
-        return res.status(403).json({ message: "Acesso restrito." });
-      }
-
-      if (!plate || !datetime) {
-        return res.status(400).json({ message: "Placa e data/hora são obrigatórios." });
-      }
-
-      const ts = new Date(datetime).toISOString();
-
-      const { data: sessions } = await supabaseAdmin.from("driver_sessions")
-        .select(DS_LIST_COLS)
-        .ilike("vehicle_plate", `%${plate}%`)
-        .lte("started_at", ts)
-        .or(`ended_at.gte.${ts},ended_at.is.null`)
-        .order("started_at", { ascending: false })
-        .limit(5);
-
-      if (!sessions || sessions.length === 0) {
-        const { data: closest } = await supabaseAdmin.from("driver_sessions")
-          .select(DS_LIST_COLS)
-          .ilike("vehicle_plate", `%${plate}%`)
-          .lte("started_at", ts)
-          .order("started_at", { ascending: false })
-          .limit(3);
-
-        return res.json({
-          found: false,
-          message: "Nenhuma sessão ativa encontrada nesse momento exato.",
-          closest: closest || [],
-        });
-      }
-
-      const enriched = [];
-      for (const s of sessions) {
-        const { data: shifts } = await supabaseAdmin.from("driver_shifts")
-          .select("*").eq("session_id", s.id).order("started_at", { ascending: true });
-
-        const activeAtTime = (shifts || []).find((sh: any) => {
-          const shStart = new Date(sh.started_at).getTime();
-          const shEnd = sh.ended_at ? new Date(sh.ended_at).getTime() : Date.now();
-          return new Date(datetime).getTime() >= shStart && new Date(datetime).getTime() <= shEnd;
-        });
-
-        enriched.push({
-          ...s,
-          shifts: shifts || [],
-          driverAtTime: activeAtTime ? activeAtTime.driver_name : s.driver_name,
-          driverIdAtTime: activeAtTime ? activeAtTime.driver_id : s.driver_id,
-        });
-      }
-
-      res.json({ found: true, sessions: enriched });
-    } catch (err: any) {
-      console.error("[driver-control] lookup error:", err.message);
       res.status(500).json({ message: err.message });
     }
   });

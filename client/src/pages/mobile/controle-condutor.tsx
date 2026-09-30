@@ -7,15 +7,14 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Car, Play, RefreshCw, Square, Clock, AlertTriangle, User, Gauge, ChevronDown, ChevronUp, RefreshCcw, Users, Eraser, PenLine } from "lucide-react";
 import { DRIVER_ALERT_SECONDS, DRIVER_ALERT_MS, DRIVER_ALERT_LABEL } from "@shared/driver-control";
 
 function SignaturePad({ onChange }: { onChange: (base64: string | null) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drawing = useRef(false);
-  const hasDrawn = useRef(false);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -24,29 +23,61 @@ function SignaturePad({ onChange }: { onChange: (base64: string | null) => void 
     if (!ctx) return;
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.strokeStyle = "#111827";
 
-    const pos = (e: PointerEvent) => {
+    let drawing = false;
+    let hasDrawn = false;
+
+    const pos = (clientX: number, clientY: number) => {
       const rect = canvas.getBoundingClientRect();
-      return { x: (e.clientX - rect.left) * (canvas.width / rect.width), y: (e.clientY - rect.top) * (canvas.height / rect.height) };
+      return {
+        x: (clientX - rect.left) * (canvas.width / rect.width),
+        y: (clientY - rect.top) * (canvas.height / rect.height),
+      };
     };
-    const down = (e: PointerEvent) => { e.preventDefault(); drawing.current = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
-    const move = (e: PointerEvent) => { if (!drawing.current) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasDrawn.current = true; };
+    const down = (clientX: number, clientY: number) => {
+      drawing = true;
+      const p = pos(clientX, clientY);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+    };
+    const move = (clientX: number, clientY: number) => {
+      if (!drawing) return;
+      const p = pos(clientX, clientY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      hasDrawn = true;
+    };
     const up = () => {
-      if (!drawing.current) return;
-      drawing.current = false;
-      if (hasDrawn.current) onChange(canvas.toDataURL("image/png").replace(/^data:image\/\w+;base64,/, ""));
+      if (!drawing) return;
+      drawing = false;
+      if (hasDrawn) onChangeRef.current(canvas.toDataURL("image/png").replace(/^data:image\/\w+;base64,/, ""));
     };
 
-    canvas.addEventListener("pointerdown", down);
-    canvas.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    return () => {
-      canvas.removeEventListener("pointerdown", down);
-      canvas.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      canvas.setPointerCapture?.(e.pointerId);
+      down(e.clientX, e.clientY);
     };
-  }, [onChange]);
+    const onPointerMove = (e: PointerEvent) => {
+      if (!drawing) return;
+      e.preventDefault();
+      move(e.clientX, e.clientY);
+    };
+    const listen: AddEventListenerOptions = { passive: false };
+    canvas.addEventListener("pointerdown", onPointerDown, listen);
+    canvas.addEventListener("pointermove", onPointerMove, listen);
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
+    return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", up);
+    };
+  }, []);
 
   const clear = () => {
     const canvas = canvasRef.current;
@@ -284,10 +315,12 @@ export default function MobileControleCondutorPage() {
                 <div className="space-y-2">
                   <Label className="text-xs font-bold text-neutral-700">KM Final (para encerrar)</Label>
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="Informe o KM atual"
                     value={kmEnd}
-                    onChange={e => setKmEnd(e.target.value)}
+                    onChange={e => setKmEnd(e.target.value.replace(/\D/g, ""))}
                     className="h-11"
                     data-testid="input-km-end"
                   />
@@ -358,34 +391,38 @@ export default function MobileControleCondutorPage() {
             </div>
 
             <div>
-              <Label className="text-xs font-bold text-neutral-600">VTR (Veículo) *</Label>
-              <Select value={vehicleId} onValueChange={setVehicleId}>
-                <SelectTrigger className="h-11 mt-1" data-testid="select-vehicle">
-                  <SelectValue placeholder="Selecione a viatura" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(vehicles || []).filter((v: any) => v.status !== "inativo").map((v: any) => (
-                    <SelectItem key={v.id} value={String(v.id)}>
-                      {v.frota ? `${v.frota} — ` : ""}{v.plate} ({v.model || v.brand || ""})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="vtr-condutor" className="text-xs font-bold text-neutral-600">VTR (Veículo) *</Label>
+              <select
+                id="vtr-condutor"
+                value={vehicleId}
+                onChange={(e) => { setVehicleId(e.target.value); setPartnerId(""); }}
+                className="mt-1 h-11 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900"
+                data-testid="select-vehicle"
+              >
+                <option value="">Selecione a viatura</option>
+                {(vehicles || []).filter((v: any) => v.status !== "inativo").map((v: any) => (
+                  <option key={v.id} value={String(v.id)}>
+                    {v.frota ? `${v.frota} — ` : ""}{v.plate} ({v.model || v.brand || ""})
+                  </option>
+                ))}
+              </select>
             </div>
 
             {vehicleId && partnerOptions.length > 0 && (
               <div>
-                <Label className="text-xs font-bold text-neutral-600 flex items-center gap-1"><Users className="w-3.5 h-3.5" /> Condutor Parceiro (rodízio)</Label>
-                <Select value={partnerId} onValueChange={setPartnerId}>
-                  <SelectTrigger className="h-11 mt-1" data-testid="select-partner">
-                    <SelectValue placeholder="Selecione o parceiro" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {partnerOptions.map((p: any) => (
-                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="parceiro-condutor" className="text-xs font-bold text-neutral-600 flex items-center gap-1"><Users className="w-3.5 h-3.5" /> Condutor Parceiro (rodízio)</Label>
+                <select
+                  id="parceiro-condutor"
+                  value={partnerId}
+                  onChange={(e) => setPartnerId(e.target.value)}
+                  className="mt-1 h-11 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900"
+                  data-testid="select-partner"
+                >
+                  <option value="">Selecione o parceiro</option>
+                  {partnerOptions.map((p: any) => (
+                    <option key={p.id} value={String(p.id)}>{p.name}</option>
+                  ))}
+                </select>
                 <p className="text-[10px] text-neutral-400 mt-1">Quem assume o volante na troca de direção.</p>
               </div>
             )}
@@ -393,10 +430,12 @@ export default function MobileControleCondutorPage() {
             <div>
               <Label className="text-xs font-bold text-neutral-600">KM de Saída</Label>
               <Input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 placeholder="KM atual do veículo"
                 value={kmStart}
-                onChange={e => setKmStart(e.target.value)}
+                onChange={e => setKmStart(e.target.value.replace(/\D/g, ""))}
                 className="h-11 mt-1"
                 data-testid="input-km-start"
               />
