@@ -2,8 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyPedagioClientMarkup,
+  isEstimativaPedagioDescricao,
+  isLancamentoPedagioVigilante,
   osCobraMarkupPedagio,
   pedagioCobrancaCliente,
+  pedagioCustoEmpresa,
+  pedagioCustoOsAprovada,
+  sumPedagioComprovante,
   PEDAGIO_CLIENT_MARKUP_FACTOR,
 } from "../shared/pedagio-markup.ts";
 import {
@@ -24,6 +29,32 @@ test("markup de pedágio é 20% e só liga quando operacao_dhl é false", () => 
   assert.equal(applyPedagioClientMarkup(5.7, true), 6.84);
   assert.equal(pedagioCobrancaCliente(50, true, true), 120);
   assert.equal(pedagioCobrancaCliente(50, true, false), 100);
+});
+
+test("custo do Balanço: comprovante da OS aprovada, sem estimativa e sem os 20%", () => {
+  assert.equal(pedagioCustoEmpresa(60, true), 50);
+  assert.equal(pedagioCustoEmpresa(6.84, true), 5.7);
+  assert.equal(pedagioCustoEmpresa(50, false), 50);
+  assert.equal(isEstimativaPedagioDescricao("[ESTIMATIVA_MANUAL] Pedágio Ida"), true);
+  assert.equal(sumPedagioComprovante([
+    { amount: 40, category: "Pedágio", cost_type: "expense", description: "Praça Anhanguera" },
+    { amount: 10, category: "Pedágio", cost_type: "expense", description: "[ESTIMATIVA_MANUAL] Pedágio Ida" },
+    { amount: 48, category: "Pedágio", cost_type: "revenue", description: "Praça Anhanguera" },
+  ]), 40);
+  assert.equal(pedagioCustoOsAprovada({ billStatus: "APROVADA", pedagioPago: 40 }), 40);
+  assert.equal(pedagioCustoOsAprovada({ billStatus: "FATURADO", pedagioPago: 50 }), 50);
+  assert.equal(pedagioCustoOsAprovada({ billStatus: "A_VERIFICAR", pedagioPago: 40 }), 0);
+  assert.equal(pedagioCustoOsAprovada({ billStatus: "APROVADA", pedagioPago: 0 }), 0);
+  assert.equal(isLancamentoPedagioVigilante({
+    origin_type: "mission_cost",
+    description: "CUSTO MISSÃO OS-1 - PEDÁGIO JOÃO",
+    category_name: "Custos de Missão",
+  }), true);
+  assert.equal(isLancamentoPedagioVigilante({
+    origin_type: "mission_cost",
+    description: "CUSTO MISSÃO OS-1 - ESTACIONAMENTO",
+    category_name: "Custos de Missão",
+  }), false);
 });
 
 test("calcularEscolta: +20% entra no fat_total e o reembolso fica no custo", () => {

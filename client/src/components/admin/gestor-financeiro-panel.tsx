@@ -777,7 +777,7 @@ export function GestorFinanceiroPanel(props: Props) {
             ["RH (Custo Empresa CCT — cadastro)", totals.provisaoRH, "bg-amber-400"],
             ["Fixos", totals.custosFixosRateados, "bg-violet-400"],
             ["Combustível (abastecimento)", totals.desp_combustivel, "bg-orange-400"],
-            ["Pedágio", totals.desp_pedagio, "bg-yellow-400"],
+            ["Pedágio (Ticketlog)", totals.desp_pedagio, "bg-yellow-400"],
             ["Manutenção", totals.desp_manutencao, "bg-pink-400"],
           ].map(([label, val, bar]) => (
             <div key={String(label)} className="space-y-0.5">
@@ -799,7 +799,7 @@ export function GestorFinanceiroPanel(props: Props) {
             → Ver todos os funcionários da folha ({folhaAgents.length})
           </button>
           <p className="text-[9px] text-slate-500">
-            Soma das barras = custo da DRE. Mão de obra entra só pela folha RH.
+            Soma das barras = custo da DRE. Mão de obra entra só pela folha RH. Pedágio = custo real Ticketlog lançado em Pedágio: Pago × Cobrado.
           </p>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaCustos(gestorInput))} data-testid="button-memoria-custos">
             Ver memória de cálculo
@@ -815,6 +815,7 @@ export function GestorFinanceiroPanel(props: Props) {
           <p className={`text-xl font-black font-mono ${totals.lucro >= 0 ? "text-sky-300" : "text-rose-400"}`}>{fmt(totals.lucro)}</p>
           <p className="text-[11px] text-slate-400">Margem <b className="text-slate-100">{fmtPct(totals.margem)}</b></p>
           <p className="text-[10px] text-slate-400">Operacional <b className="font-mono text-slate-200">{fmt(totals.lucro)}</b></p>
+          <p className="text-[10px] text-slate-400">Pedágio do boletim <b className="font-mono text-sky-200">{fmt(Number((totals as any).pedagio_boletim) || 0)}</b> <span className="normal-case font-normal">(já incluso no faturamento — entra no lucro)</span></p>
           <p className="text-[10px] text-slate-500">Financeiro <b className="font-mono text-slate-400">{fmt(0)}</b> <span className="normal-case font-normal">(sem lançamento separado no motor)</span></p>
           <p className="text-[10px] text-slate-400">Acumulado no período <b className="font-mono text-slate-200">{fmt(lucroAcumulado)}</b></p>
           <p className={`text-[10px] font-bold ${tend.delta >= 0 ? "text-emerald-400" : "text-rose-300"}`}>{tend.label}</p>

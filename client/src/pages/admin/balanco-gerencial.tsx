@@ -9,6 +9,7 @@ import { metaPeriodoFromMensal } from "@shared/balanco-meta";
 import { useBalancoMetaFaturamento } from "@/lib/balanco-meta-faturamento";
 import { computeProjection } from "@/lib/balanco-projection";
 import { resolveBalancoOsRevenue } from "@/lib/balanco-revenue";
+import { isLancamentoPedagioVigilante, pedagioCustoOsAprovada } from "@shared/pedagio-markup";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -341,9 +342,9 @@ export default function BalancoGerencialPage() {
   // os dois painéis baterem. Faturamento recalculado ao vivo (incl. hora extra nas concluídas),
   // recusada fica de fora (R$ 0) e cancelada entra com acionamento+extras.
   const { data: gridDataRaw, isFetching: gridFetching, isPlaceholderData: gridPlaceholder, isError: gridError } = useQuery<any[]>({
-    queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"],
+    queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached", "pedagio-pago"],
     queryFn: async () => {
-      const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1`);
+      const res = await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&cv=pedagio-pago`);
       if (!res.ok) throw new Error(`Falha ao carregar o grid do período (${res.status})`);
       return res.json();
     },
@@ -352,6 +353,17 @@ export default function BalancoGerencialPage() {
     placeholderData: (prev: any) => prev,
     retry: 1,
   });
+  const { data: ticketlogCusto } = useQuery<{ valor: number }>({
+    queryKey: ["/api/controladoria/pedagio-ticketlog", gridRange.from, gridRange.to],
+    queryFn: async () => {
+      const res = await authFetch(`/api/controladoria/pedagio-ticketlog?inicio=${gridRange.from}&fim=${gridRange.to}`);
+      if (!res.ok) return { valor: 0 };
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+  const pedagioTicketlog = Number(ticketlogCusto?.valor) || 0;
+
   // Enquanto a query do NOVO período ainda não chegou, não usa OS/RH do período anterior.
   const gridData = gridPlaceholder ? [] : (gridDataRaw || []);
   const periodDataPending = !gridError && !rhError && (gridPlaceholder || rhPlaceholder || gridFetching || rhFetching);
@@ -436,7 +448,7 @@ export default function BalancoGerencialPage() {
         const despCombustivel = bill ? Number(bill.despesas_combustivel || 0) : 0;
         const desp = bill ? Number(bill.despesas || 0) : 0;
         // Labor-only: remove fuel/toll reimbursements from agent/OS payment.
-        // Fuel and toll enter company totals ONLY via official FTs (fueling / mission_cost).
+        // Combustível entra por abastecimento. Custo de pedágio = Ticketlog lançado à mão.
         const pagLabor = bill?.pag_labor != null
           ? Number(bill.pag_labor)
           : Math.max(0, Math.round((pag - despPedagio - despCombustivel) * 100) / 100);
@@ -477,6 +489,10 @@ export default function BalancoGerencialPage() {
           pag_labor: pagLabor,
           despesas: desp,
           despesas_pedagio: despPedagio,
+          pedagio_custo: pedagioCustoOsAprovada({
+            billStatus: bill?.status,
+            pedagioPago: (o as any).pedagioPago,
+          }),
           despesas_combustivel: despCombustivel,
           // Uma vez: labor + despesas (pedágio/comb/outras). Não usa pag_bruto + desp.
           lucro: fat - pagLabor - desp,
@@ -485,6 +501,7 @@ export default function BalancoGerencialPage() {
           horas_trabalhadas: bill?.horas_trabalhadas || 0,
           boletim: bill?.boletim || "",
           status: o.status,
+          bill_status: String(bill?.status || "").toUpperCase(),
           // Origem do faturamento desta linha: `true` = valor TRAVADO (APROVADA/FATURADO/PAGO
           // ou CANCELADO §8.1b) — entra em "Finalizado". `false` = recálculo ao vivo (previsão)
           // — entra em "Em Aberto". Cancelada sem snapshot também fica frozen (fail-closed).
@@ -505,11 +522,9 @@ export default function BalancoGerencialPage() {
     // Lançamentos manuais nestas categorias NÃO podem entrar em Operacional, senão dobra.
     const RH_CATS = new Set(["folha de pagamento", "recursos humanos", "vale refeição", "vale refeicao", "vale alimentação", "vale alimentacao", "salário", "salario", "salarios", "salários"]);
     const FIXED_CATS = new Set(["aluguel", "frota (aluguel)", "infraestrutura/tecnologia", "infraestrutura", "tecnologia", "internet", "energia", "telefone", "softwares", "serviços", "servicos"]);
-    // IMPORTANTE: lançamentos manuais com categoria "Combustível"/"Pedágio"/"Manutenção" e SEM
-    // origin_type correspondente são DESCONSIDERADOS — todo abastecimento real (vehicle_fueling) e
-    // todo custo de missão real (mission_cost) já gera financial_transaction automaticamente, então
-    // entradas manuais com essas categorias são duplicidade ou despesa mal classificada e inflavam
-    // os custos totais. Apenas as fontes oficiais (origin_type) contam para Combustível/Pedágio/Manutenção.
+    // O lançamento de pedágio no ledger não entra aqui (senão dobra).
+    // O custo é o comprovante pago da OS aprovada, somado por OS em pedagio_custo.
+    // Manuais "Combustível/Pedágio/Manutenção" sem origem oficial continuam ignorados.
     const FUEL_CATS = new Set(["combustível", "combustivel", "abastecimento"]);
     const TOLL_CATS = new Set(["pedágio", "pedagio", "pedagios", "pedágios"]);
     const MAINT_CATS = new Set(["manutenção", "manutencao", "manutenção de viatura", "manutencao de viatura", "manutenção de viaturas", "manutencao de viaturas"]);
@@ -517,8 +532,12 @@ export default function BalancoGerencialPage() {
     periodExpenses.forEach(t => {
       const amt = t.amount;
       const cat = (t.category_name || "").toLowerCase().trim();
+      if (isLancamentoPedagioVigilante(t)) return;
       if (t.origin_type === "fueling") expenseSums.fueling += amt;
-      else if (t.origin_type === "mission_cost") expenseSums.mission_cost += amt;
+      else if (t.origin_type === "mission_cost") {
+        if (cat.includes("combust")) expenseSums.fueling += amt;
+        else expenseSums.maintenance += amt;
+      }
       else if (t.origin_type === "maintenance") expenseSums.maintenance += amt;
       // Ignora manuais "Combustível/Pedágio/Manutenção" sem origem oficial — duplicidade conhecida.
       else if (FUEL_CATS.has(cat) || TOLL_CATS.has(cat) || MAINT_CATS.has(cat)) { return; }
@@ -537,9 +556,8 @@ export default function BalancoGerencialPage() {
         const plate = plateMatch?.[1] || descPlate?.[1] || null;
         if (plate) {
           if (!expensesByVehicle[plate]) expensesByVehicle[plate] = { fueling: 0, mission_cost: 0, maintenance: 0, total: 0 };
-          if (t.origin_type === "fueling") expensesByVehicle[plate].fueling += amt;
-          else if (t.origin_type === "mission_cost") expensesByVehicle[plate].mission_cost += amt;
-          else if (t.origin_type === "maintenance") expensesByVehicle[plate].maintenance += amt;
+          if (t.origin_type === "fueling" || (t.origin_type === "mission_cost" && cat.includes("combust"))) expensesByVehicle[plate].fueling += amt;
+          else if (t.origin_type === "mission_cost" || t.origin_type === "maintenance") expensesByVehicle[plate].maintenance += amt;
           expensesByVehicle[plate].total += amt;
         }
       }
@@ -555,7 +573,7 @@ export default function BalancoGerencialPage() {
           plate, model: orig?.model || "", fat_total: 0, pag_total: 0, missions: 0,
           despesas: vExpenses?.total || 0,
           desp_combustivel: vExpenses?.fueling || 0,
-          desp_pedagio: vExpenses?.mission_cost || 0,
+          desp_pedagio: 0,
           desp_manutencao: vExpenses?.maintenance || 0,
         };
       }
@@ -622,8 +640,11 @@ export default function BalancoGerencialPage() {
   const totals = useMemo(() => {
     const fat = filtered.missions.reduce((a, m) => a + m.fat_total, 0);
     // pag = mão de obra teórica do boletim (não entra no DRE / custoTotal — custo real = RH).
-    // Combustível e pedágio entram exclusivamente por financial_transactions (fueling / mission_cost).
+    // Combustível entra por abastecimento. Custo de pedágio = valor Ticketlog do período.
+    // O pedágio do boletim (fat_pedagio) já está dentro do faturamento e compõe o lucro.
     const pag = filtered.missions.reduce((a, m) => a + (m.pag_labor ?? m.pag_total), 0);
+    const pedagioOs = Number(pedagioTicketlog) || 0;
+    const pedagioBoletim = filtered.missions.reduce((a, m) => a + (Number(m.fat_pedagio) || 0), 0);
     const despFin = filtered.expenses;
     const despReais = despFin.total;
     // Lançamentos com categoria de RH (folha automática + manuais "Folha de Pagamento",
@@ -638,7 +659,8 @@ export default function BalancoGerencialPage() {
     const custosFixosMensal = Number(fixedCostsSummary?.monthly || 0);
     const custosFixosRateados = (custosFixosMensal / 30) * costDays;
     // Pagamento teórico da missão NÃO entra no custoTotal: mão de obra = folha RH.
-    const custoTotal = despReaisOperacional + provisaoRH + custosFixosRateados;
+    // Pedágio do vigilante já foi excluído de despReaisOperacional; entra o da OS aprovada.
+    const custoTotal = despReaisOperacional + pedagioOs + provisaoRH + custosFixosRateados;
     const lucro = fat - custoTotal;
     const margem = fat > 0 ? (lucro / fat) * 100 : 0;
     const km = filtered.missions.reduce((a, m) => a + m.km_total, 0);
@@ -653,7 +675,8 @@ export default function BalancoGerencialPage() {
       fat, pag, desp: despReais, lucro, margem, km, horas, total: filtered.missions.length,
       fatCongelado, fatAberto, countCongelado,
       desp_combustivel: despFin.fueling,
-      desp_pedagio: despFin.mission_cost,
+      desp_pedagio: pedagioOs,
+      pedagio_boletim: pedagioBoletim,
       desp_manutencao: despFin.maintenance,
       desp_folha: despFin.payroll,
       desp_outras: despFin.other,
@@ -663,7 +686,7 @@ export default function BalancoGerencialPage() {
       custosFixosRateados,
       custoTotal,
     };
-  }, [filtered, provisaoRH, fixedCostsSummary, costDays]);
+  }, [filtered, provisaoRH, fixedCostsSummary, costDays, pedagioTicketlog]);
 
   const eficiencia = useMemo(() => {
     if (!data) return { mediaKmL: 0, totalKm: 0, totalLiters: 0, perVehicle: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[], abaixo: [] as { plate: string; model: string; km: number; liters: number; kmL: number }[] };
@@ -758,7 +781,7 @@ export default function BalancoGerencialPage() {
       const respostas = await Promise.all([
         authFetch(`/api/financial/dashboard?cached=1&force=1`),
         authFetch(`/api/fixed-costs/rh-summary?cached=1&force=1&from=${gridRange.from}&to=${gridRange.to}`),
-        authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`),
+        authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1&cv=pedagio-pago`),
       ]);
       if (respostas.some((r) => !r.ok)) throw new Error("Falha ao recalcular");
       // Invalidar pelo PREFIXO — a query ativa é v16; chave antiga deixava Folha
@@ -811,8 +834,8 @@ export default function BalancoGerencialPage() {
         throw new Error(j?.message || "Falha ao concluir a OS");
       }
       toast({ title: "OS concluída", description: `OS ${label} concluída com sucesso.` });
-      await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1`).catch(() => null);
-      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached"] });
+      await authFetch(`/api/operational-grid?from=${gridRange.from}&to=${gridRange.to}&cached=1&force=1&cv=pedagio-pago`).catch(() => null);
+      await queryClient.invalidateQueries({ queryKey: ["/api/operational-grid", gridRange.from, gridRange.to, "cached", "pedagio-pago"] });
       invalidateRelatedQueries("service-order");
     } catch (e: any) {
       toast({ title: "Erro ao concluir OS", description: e?.message || "", variant: "destructive" });
@@ -2005,7 +2028,7 @@ function BalancoTab({
   totals: {
     fat: number; pag: number; desp: number; lucro: number; margem: number; km: number; horas: number; total: number;
     fatCongelado: number; fatAberto: number; countCongelado: number;
-    desp_combustivel: number; desp_pedagio: number; desp_manutencao: number; desp_outras: number;
+    desp_combustivel: number; desp_pedagio: number; pedagio_boletim?: number; desp_manutencao: number; desp_outras: number;
     provisaoRH: number; custoTotal: number; custosFixosRateados: number; custosFixosMensal?: number;
   };
   expenses: { fueling: number; mission_cost: number; maintenance: number; other: number; total: number };
@@ -2067,22 +2090,17 @@ function BalancoTab({
       const amt = Number(t.amount) || 0;
       if (!(amt > 0)) return;
 
+      if (isLancamentoPedagioVigilante(t)) return;
       const isFueling = origin === "fueling" || origin === "vehicle_fueling";
       const isMission = origin === "mission_cost";
       const isMaint = origin === "maintenance";
       if (!isFueling && !isMission && !isMaint) return;
 
       const row = ensure(d);
-      if (isFueling) {
+      if (isFueling || (isMission && cat.includes("combust"))) {
         row.combustivel += amt;
-      } else if (isMaint) {
+      } else if (isMaint || isMission) {
         row.manutencao += amt;
-      } else if (isMission) {
-        // mission_cost: classificar pela categoria — não jogar tudo em pedágio
-        if (cat.includes("combust")) row.combustivel += amt;
-        else if (cat.includes("manut")) row.manutencao += amt;
-        else if (cat.includes("pedág") || cat.includes("pedag") || !cat) row.pedagio += amt;
-        else row.pedagio += amt; // pedágio é o caso típico de mission_cost
       }
       row.custoReal += amt;
       row.custo += amt;
@@ -2094,11 +2112,12 @@ function BalancoTab({
     // Fixos: rateio IGUAL por dia do período (não proporcional ao fat do dia)
     const fixoDia = (totals.custosFixosRateados || 0) / Math.max(daysInPeriod, 1);
     const rhDia = (totals.provisaoRH || 0) / Math.max(daysInPeriod, 1);
+    const pedDia = (totals.desp_pedagio || 0) / Math.max(daysInPeriod, 1);
     // Pagamento teórico da missão não entra no custo do dia (mão de obra = RH).
     return dailyData.map((d) => {
       const custo =
         (d.combustivel || 0) +
-        (d.pedagio || 0) +
+        pedDia +
         (d.manutencao || 0) +
         rhDia +
         fixoDia;
@@ -2109,7 +2128,7 @@ function BalancoTab({
         lucro: Math.round(d.fat - custo),
       };
     });
-  }, [dailyData, totals.custosFixosRateados, totals.provisaoRH, daysInPeriod]);
+  }, [dailyData, totals.custosFixosRateados, totals.provisaoRH, totals.desp_pedagio, daysInPeriod]);
 
   return (
     <div className="space-y-4">
@@ -2942,7 +2961,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
           <div className="divide-y divide-neutral-100">
             {missions.map(m => {
               // labor + despesas uma vez (pag_total já é pag_labor após o fix anti-duplicidade)
-              const custoTotal = (m.pag_labor ?? m.pag_total) + (m.despesas || 0);
+              const custoTotal = (m.pag_labor ?? m.pag_total) + Math.max(0, (m.despesas || 0) - (m.despesas_pedagio || 0));
               const isCancelada = m.status === "CANCELADO";
               const isExpanded = expandedId === m.id;
               return (
@@ -3045,7 +3064,7 @@ function MissoesTab({ missions }: { missions: any[] }) {
                             {m.fat_adicional_noturno > 0 && <div className="flex justify-between"><span className="text-neutral-500">Adic. Noturno</span><span className="font-bold text-neutral-800">{fmt(m.fat_adicional_noturno)}</span></div>}
                             {m.fat_estadia > 0 && <div className="flex justify-between"><span className="text-neutral-500">Estadia</span><span className="font-bold text-neutral-800">{fmt(m.fat_estadia)}</span></div>}
                             {m.fat_pernoite > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pernoite</span><span className="font-bold text-neutral-800">{fmt(m.fat_pernoite)}</span></div>}
-                            {m.fat_pedagio > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pedágio (repasse)</span><span className="font-bold text-neutral-800">{fmt(m.fat_pedagio)}</span></div>}
+                            {m.fat_pedagio > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pedágio do boletim (lucro)</span><span className="font-bold text-neutral-800">{fmt(m.fat_pedagio)}</span></div>}
                             {m.receitas_os > 0 && <div className="flex justify-between"><span className="text-neutral-500">Receitas Extras</span><span className="font-bold text-neutral-800">{fmt(m.receitas_os)}</span></div>}
                             <div className="flex justify-between border-t border-neutral-200 pt-1 mt-1"><span className="font-black text-green-700">TOTAL FATURAMENTO</span><span className="font-black text-green-700">{fmt(m.fat_total)}</span></div>
                           </div>
@@ -3054,7 +3073,6 @@ function MissoesTab({ missions }: { missions: any[] }) {
                           <p className="text-[10px] font-black text-red-700 uppercase tracking-wide mb-2">Custos</p>
                           <div className="space-y-1 text-xs">
                             {m.pag_total > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pag. Missão</span><span className="font-bold text-neutral-800">{fmt(m.pag_total)}</span></div>}
-                            {m.despesas_pedagio > 0 && <div className="flex justify-between"><span className="text-neutral-500">Pedágio</span><span className="font-bold text-neutral-800">{fmt(m.despesas_pedagio)}</span></div>}
                             {m.despesas_combustivel > 0 && <div className="flex justify-between"><span className="text-neutral-500">Combustível</span><span className="font-bold text-neutral-800">{fmt(m.despesas_combustivel)}</span></div>}
                             {m.despesas > 0 && m.despesas !== (m.despesas_pedagio || 0) + (m.despesas_combustivel || 0) && <div className="flex justify-between"><span className="text-neutral-500">Outras Despesas</span><span className="font-bold text-neutral-800">{fmt(m.despesas - (m.despesas_pedagio || 0) - (m.despesas_combustivel || 0))}</span></div>}
                             <div className="flex justify-between border-t border-neutral-200 pt-1 mt-1"><span className="font-black text-red-700">TOTAL CUSTOS</span><span className="font-black text-red-700">{fmt(custoTotal)}</span></div>

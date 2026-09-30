@@ -17,6 +17,7 @@ import type { Express } from "express";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { isBillingProtected } from "../lib/billing-frozen";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
+import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
   import { buildRecusadaZeroPayload, osIsRecusada } from "../lib/recusada-guard";
   import {
     allowedClientIdsFromRequest,
@@ -2396,7 +2397,12 @@ import type { Express } from "express";
         const despOutras = Number(data?.despesas_outras || 0);
         const receitasOs = Number(data?.receitas_os || 0);
         const totalCalc = fatAcion + fatHoraExtra + fatKm + pedagio + adNoturno + estadia + pernoite + despOutras + receitasOs;
-        await supabaseAdmin.from("service_orders").update({ fat_calculado: totalCalc }).eq("id", existing.service_order_id).then(() => {});
+        const osUpdate: Record<string, number> = { fat_calculado: totalCalc };
+        if (despesas_pedagio !== undefined) {
+          osUpdate.pedagio_estimado = pedagio;
+          osUpdate.custo_pedagio_alocado = pedagio;
+        }
+        await supabaseAdmin.from("service_orders").update(osUpdate).eq("id", existing.service_order_id).then(() => {});
       }
 
       const changes: string[] = [];
@@ -2512,6 +2518,7 @@ import type { Express } from "express";
           });
         }
         if (data.service_order_id) {
+          await syncPedagioOsComBoletim(Number(data.service_order_id), Number(data.despesas_pedagio || 0));
           await supabaseAdmin.from("service_orders").update({ status: "concluida" }).eq("id", data.service_order_id);
         }
         await logSystemAudit({

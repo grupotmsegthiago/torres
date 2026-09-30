@@ -2280,7 +2280,7 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   }
 
   return (
-    <div className="relative rounded-lg overflow-hidden border border-neutral-200 shadow-sm">
+    <div className="relative rounded-[1.75rem] overflow-hidden border border-border shadow-sm">
       <div ref={mapRef} id="map-container" className="w-full h-[450px]" data-testid="map-container" />
       <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-xl px-4 py-2.5 shadow-lg border border-neutral-200/80">
         <div className="flex items-center gap-4 text-xs font-medium text-neutral-700">
@@ -5305,10 +5305,9 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
 
   return (
     <>
-    <Card className="overflow-hidden shadow-sm border-0 ring-1 ring-neutral-200">
+    <Card className="overflow-hidden shadow-sm border border-border rounded-[1.75rem]">
       <div
-        className="flex items-center justify-between px-5 py-3.5 cursor-pointer transition-colors"
-        style={{ background: "linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 50%, #1a1a1a 100%)" }}
+        className="flex items-center justify-between px-5 py-3.5 cursor-pointer transition-colors bg-primary text-primary-foreground"
         onClick={() => setExpanded(!expanded)}
         data-testid="toggle-vehicles-table"
       >
@@ -5318,11 +5317,11 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
           <span className="text-xs text-neutral-400 font-medium ml-0.5">({onlyVehicles.length})</span>
         </div>
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center bg-white/5 border border-white/10 rounded-md overflow-hidden text-[10px] font-bold uppercase tracking-wider" data-testid="grid-layout-toggle">
+          <div className="flex items-center bg-white/5 border border-white/10 rounded-full overflow-hidden text-[10px] font-bold uppercase tracking-wider" data-testid="grid-layout-toggle">
             <button
               type="button"
               onClick={() => setGridLayout("cockpit")}
-              className={`px-2.5 py-1 transition-colors ${gridLayout === "cockpit" ? "bg-emerald-500 text-white" : "text-neutral-300 hover:text-white"}`}
+              className={`px-3 py-1 transition-colors rounded-full ${gridLayout === "cockpit" ? "bg-white text-primary" : "text-neutral-300 hover:text-white"}`}
               data-testid="button-layout-cockpit"
               title="Layout novo (Cockpit) com foto, anel de progresso e blocos compactos"
             >
@@ -5331,7 +5330,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
             <button
               type="button"
               onClick={() => setGridLayout("classic")}
-              className={`px-2.5 py-1 transition-colors ${gridLayout === "classic" ? "bg-emerald-500 text-white" : "text-neutral-300 hover:text-white"}`}
+              className={`px-3 py-1 transition-colors rounded-full ${gridLayout === "classic" ? "bg-white text-primary" : "text-neutral-300 hover:text-white"}`}
               data-testid="button-layout-classic"
               title="Layout antigo (12 colunas, mais detalhado)"
             >
@@ -6210,7 +6209,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       >
                         {/* # index */}
                         <div className="flex items-center justify-center px-1 py-2 bg-neutral-50/40">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 text-white font-bold text-xs shadow-sm tabular-nums">
+                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-sm tabular-nums">
                             {String(index + 1).padStart(2, "0")}
                           </span>
                         </div>
@@ -6218,7 +6217,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         {/* Identidade: foto + placa + modelo + OS */}
                         <div className="flex items-center gap-3 px-3 py-2 min-w-0">
                           <div
-                            className="w-16 h-16 rounded-lg overflow-hidden border-2 flex-shrink-0 shadow-sm bg-white"
+                            className="w-16 h-16 rounded-2xl overflow-hidden border-2 flex-shrink-0 shadow-sm bg-white"
                             style={{ borderColor: statusColor }}
                           >
                             <img
@@ -8853,11 +8852,11 @@ export default function OperationalGridPage() {
             </div>
           </div>
         )}
-        <div className="rounded-xl overflow-hidden shadow-lg" style={{ background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #2C3E50 100%)" }}>
+        <div className="rounded-[1.75rem] overflow-hidden shadow-lg bg-primary text-primary-foreground">
           <div className="px-6 py-5">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
                   <Radio className="w-5 h-5 text-white" />
                 </div>
                 <div>
@@ -8871,14 +8870,14 @@ export default function OperationalGridPage() {
                 <TrucksControlStatus />
               </div>
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2" data-testid="brt-central-clock">
+                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl px-3 py-2" data-testid="brt-central-clock">
                   <Clock className="w-4 h-4 text-emerald-400" />
                   <div className="flex flex-col items-end leading-tight">
                     <span className="text-sm font-black text-white tabular-nums tracking-wider" data-testid="text-brt-time">{brtClock.time}</span>
                     <span className="text-[9px] text-neutral-400 font-medium uppercase">{brtClock.date}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-neutral-300 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2" data-testid="countdown-timer">
+                <div className="flex items-center gap-2 text-xs text-neutral-300 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-3 py-2" data-testid="countdown-timer">
                   <Timer className="w-3.5 h-3.5 text-neutral-400" />
                   <span>Próxima <span className="font-bold text-white">{countdown.display}</span></span>
                   <span className="text-neutral-500">|</span>
@@ -8889,7 +8888,7 @@ export default function OperationalGridPage() {
                   size="sm"
                   onClick={handleRefresh}
                   disabled={isFetching}
-                  className="bg-white/10 hover:bg-white/20 text-white border border-white/10 backdrop-blur-sm rounded-lg gap-2 font-semibold shadow-none"
+                  className="bg-white/10 hover:bg-white/20 text-white border border-white/10 backdrop-blur-sm rounded-2xl gap-2 font-semibold shadow-none"
                   data-testid="button-refresh-grid"
                 >
                   <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
@@ -8899,21 +8898,21 @@ export default function OperationalGridPage() {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 mt-5">
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Truck className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Veículos</span>
                 </div>
                 <p className="text-2xl font-bold text-white font-heading">{onlyVehicles.length}</p>
               </div>
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Satellite className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Rastreados</span>
                 </div>
                 <p className="text-2xl font-bold text-white font-heading">{trackedCount}{tcCount > 0 && <span className="text-sm text-neutral-400 font-medium ml-1">({tcCount} TC)</span>}</p>
               </div>
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <MapPin className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Com Posição</span>
@@ -8921,7 +8920,7 @@ export default function OperationalGridPage() {
                 <p className="text-2xl font-bold text-white font-heading">{withPositionCount}</p>
               </div>
               {noSignalCount > 0 && (
-                <div className="bg-white/5 backdrop-blur-sm border border-amber-500/30 rounded-lg px-4 py-3">
+                <div className="bg-white/5 backdrop-blur-sm border border-amber-500/30 rounded-2xl px-4 py-3">
                   <div className="flex items-center gap-2 mb-1">
                     <WifiOff className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Sem Sinal</span>
@@ -8929,7 +8928,7 @@ export default function OperationalGridPage() {
                   <p className="text-2xl font-bold text-amber-300 font-heading">{noSignalCount}</p>
                 </div>
               )}
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg px-4 py-3">
+              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Navigation className="w-3.5 h-3.5 text-neutral-400" />
                   <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Operações</span>

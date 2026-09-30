@@ -1,11 +1,11 @@
 // Service Worker — Torres ERP
 // Versão é atualizada a cada deploy (build inclui timestamp)
-const SW_VERSION = "v1.0.0-2026-05-02";
+const SW_VERSION = "v1.0.1-2026-09-30";
 
 self.addEventListener("install", (event) => {
-  // NÃO chama skipWaiting() automaticamente — espera mensagem do cliente
-  // pra que o usuário receba o toast "Nova versão disponível"
   console.log("[SW] install", SW_VERSION);
+  // Substitui na hora o worker antigo, que interceptava o cancelamento da NF.
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
@@ -60,5 +60,5 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-// Fetch handler vazio — não cacheamos via SW (cache é via headers HTTP)
-self.addEventListener("fetch", () => {});
+// Sem listener de fetch. Um handler vazio faz o Chrome tratar o pedido como
+// controlado pelo service worker e devolver "Failed to fetch" (ex.: cancelar NF).

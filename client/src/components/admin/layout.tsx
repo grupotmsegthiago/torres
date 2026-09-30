@@ -11,7 +11,6 @@ import {
   Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck, Database, Video, FileSpreadsheet, FileSignature
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import WhatsAppFab from "@/components/whatsapp-fab";
 import { SiWhatsapp } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 
@@ -598,7 +597,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </main>
       </div>
-      <WhatsAppFab />
     </div>
   );
 }

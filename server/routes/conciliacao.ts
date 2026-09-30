@@ -8,6 +8,7 @@ import { supabaseAdmin } from "../supabase";
 import { requireAuth, requireAdminRole } from "../auth";
 import { createAutoTransaction } from "./_helpers";
 import { rodarAuditoriaPedagiosCsv } from "../lib/auditoria-pedagios-ticketlog";
+import { isPeriodoQuinzena, resolverCustoTicketlog } from "../lib/pedagio-ticketlog-custo";
 
 interface TicketLogTx {
   code: string;
@@ -610,7 +611,16 @@ export function registerConciliacaoRoutes(app: Express) {
       }
 
       if (osIds.length === 0) {
-        return res.json({ inicio, fim, totalCobrado: 0, qtdOs: 0 });
+        const { data: ticketlogVazio } = await supabaseAdmin
+          .from("pedagio_ticketlog_periodo")
+          .select("valor")
+          .eq("periodo_inicio", inicio)
+          .eq("periodo_fim", fim)
+          .maybeSingle();
+        return res.json({
+          inicio, fim, totalCobrado: 0, qtdOs: 0,
+          ticketlogValor: ticketlogVazio ? Number(ticketlogVazio.valor) || 0 : null,
+        });
       }
 
       // 2. mission_costs de receita pedágio dessas OS. Paginar em chunks de IDs.
@@ -639,14 +649,200 @@ export function registerConciliacaoRoutes(app: Express) {
         }
       }
 
+      const { data: ticketlogRow } = await supabaseAdmin
+        .from("pedagio_ticketlog_periodo")
+        .select("valor")
+        .eq("periodo_inicio", inicio)
+        .eq("periodo_fim", fim)
+        .maybeSingle();
+
       res.json({
         inicio,
         fim,
         totalCobrado: Math.round(totalCobrado * 100) / 100,
         qtdOs: osComPedagio.size,
+        ticketlogValor: ticketlogRow ? Number(ticketlogRow.valor) || 0 : null,
       });
     } catch (err: any) {
       console.error("[pedagio-cobrado] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Custo real da fatura Ticketlog, lançado à mão. O Balanço lê este valor
+  // como custo de pedágio do período (o pedágio do boletim entra no lucro).
+  app.get("/api/controladoria/pedagio-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const inicio = String(req.query.inicio || "").trim();
+      const fim = String(req.query.fim || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim)) {
+        return res.status(400).json({ message: "Parâmetros 'inicio' e 'fim' (YYYY-MM-DD) obrigatórios" });
+      }
+      const { data: rows, error } = await supabaseAdmin
+        .from("pedagio_ticketlog_periodo")
+        .select("periodo_inicio, periodo_fim, valor, updated_at, updated_by")
+        .lte("periodo_inicio", fim)
+        .gte("periodo_fim", inicio);
+      if (error) return res.status(500).json({ message: error.message });
+      const lista = rows || [];
+      const exato = lista.find((r) => String(r.periodo_inicio).slice(0, 10) === inicio && String(r.periodo_fim).slice(0, 10) === fim);
+      const valor = resolverCustoTicketlog(inicio, fim, lista.map((r) => ({
+        periodo_inicio: String(r.periodo_inicio).slice(0, 10),
+        periodo_fim: String(r.periodo_fim).slice(0, 10),
+        valor: Number(r.valor) || 0,
+      })));
+      res.json({
+        inicio,
+        fim,
+        valor,
+        valorExato: exato ? Number(exato.valor) || 0 : null,
+        preenchido: !!exato,
+        updatedAt: exato?.updated_at || null,
+        updatedBy: exato?.updated_by || null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/controladoria/pedagio-ticketlog/historico", requireAuth, requireAdminRole, async (_req, res) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("pedagio_ticketlog_historico")
+        .select("id, periodo_inicio, periodo_fim, valor, arquivo_nome, arquivo_path, created_at, created_by")
+        .order("created_at", { ascending: false })
+        .limit(80);
+      if (error) return res.status(500).json({ message: error.message });
+      res.json((data || []).map((r) => ({
+        id: r.id,
+        inicio: String(r.periodo_inicio).slice(0, 10),
+        fim: String(r.periodo_fim).slice(0, 10),
+        valor: Number(r.valor) || 0,
+        arquivoNome: r.arquivo_nome || null,
+        temAnexo: !!r.arquivo_path,
+        createdAt: r.created_at,
+        createdBy: r.created_by || null,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/controladoria/pedagio-ticketlog/anexo/:id", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const { data: row, error } = await supabaseAdmin
+        .from("pedagio_ticketlog_historico")
+        .select("arquivo_path, arquivo_nome")
+        .eq("id", req.params.id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ message: error.message });
+      if (!row?.arquivo_path) return res.status(404).json({ message: "Esta gravação não tem fatura anexada." });
+      const { data: signed, error: signErr } = await supabaseAdmin.storage
+        .from("comprovantes-pagamento")
+        .createSignedUrl(row.arquivo_path, 600);
+      if (signErr || !signed?.signedUrl) return res.status(500).json({ message: signErr?.message || "Não foi possível abrir o anexo." });
+      res.json({ url: signed.signedUrl, nome: row.arquivo_nome || "fatura" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/controladoria/pedagio-ticketlog", requireAuth, requireAdminRole, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const inicio = String(req.body?.inicio || "").trim();
+      const fim = String(req.body?.fim || "").trim();
+      const valor = Number(req.body?.valor);
+      if (!isPeriodoQuinzena(inicio, fim)) {
+        return res.status(400).json({ message: "Lance por quinzena: dia 1 ao 15, ou dia 16 ao último dia do mês." });
+      }
+      if (!Number.isFinite(valor) || valor < 0) return res.status(400).json({ message: "Valor inválido" });
+      const rounded = Math.round(valor * 100) / 100;
+      const autor = user?.name || user?.email || null;
+
+      const { data: anterior } = await supabaseAdmin
+        .from("pedagio_ticketlog_historico")
+        .select("arquivo_path, arquivo_nome")
+        .eq("periodo_inicio", inicio)
+        .eq("periodo_fim", fim)
+        .not("arquivo_path", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let arquivoPath: string | null = anterior?.arquivo_path || null;
+      let arquivoNome: string | null = anterior?.arquivo_nome || null;
+      const fileBase64 = req.body?.fileBase64;
+      const fileName = String(req.body?.fileName || "").trim();
+      if (fileBase64 && fileName) {
+        const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(cleanBase64, "base64");
+        if (buffer.length > 5 * 1024 * 1024) return res.status(400).json({ message: "Arquivo excede 5 MB" });
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+        if (!["pdf", "jpg", "jpeg", "png"].includes(ext)) {
+          return res.status(400).json({ message: "Anexe a fatura em PDF, JPG ou PNG." });
+        }
+        const safe = `${inicio}_${fim}_${Date.now()}.${ext}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+        arquivoPath = `ticketlog/${safe}`;
+        arquivoNome = fileName.slice(0, 180);
+        const { error: upErr } = await supabaseAdmin.storage
+          .from("comprovantes-pagamento")
+          .upload(arquivoPath, buffer, {
+            contentType: req.body?.contentType || "application/octet-stream",
+            upsert: false,
+          });
+        if (upErr) return res.status(500).json({ message: upErr.message });
+      }
+      if (!arquivoPath) {
+        return res.status(400).json({ message: "Anexe a fatura Ticketlog (PDF, JPG ou PNG)." });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("pedagio_ticketlog_periodo")
+        .upsert({
+          periodo_inicio: inicio,
+          periodo_fim: fim,
+          valor: rounded,
+          updated_at: new Date().toISOString(),
+          updated_by: autor,
+        }, { onConflict: "periodo_inicio,periodo_fim" })
+        .select("valor, updated_at, updated_by")
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+
+      const { error: histErr } = await supabaseAdmin.from("pedagio_ticketlog_historico").insert({
+        periodo_inicio: inicio,
+        periodo_fim: fim,
+        valor: rounded,
+        arquivo_path: arquivoPath,
+        arquivo_nome: arquivoNome,
+        created_by: autor,
+      });
+      if (histErr) return res.status(500).json({ message: histErr.message });
+
+      const { data: internos } = await supabaseAdmin
+        .from("pedagio_ticketlog_periodo")
+        .select("id, periodo_inicio, periodo_fim")
+        .gte("periodo_inicio", inicio)
+        .lte("periodo_fim", fim);
+      const ids = (internos || [])
+        .filter((r) => {
+          const a = String(r.periodo_inicio).slice(0, 10);
+          const b = String(r.periodo_fim).slice(0, 10);
+          return !(a === inicio && b === fim) && a >= inicio && b <= fim;
+        })
+        .map((r) => r.id);
+      if (ids.length) await supabaseAdmin.from("pedagio_ticketlog_periodo").delete().in("id", ids);
+
+      res.json({
+        inicio,
+        fim,
+        valor: Number(data.valor) || 0,
+        updatedAt: data.updated_at,
+        updatedBy: data.updated_by,
+        temAnexo: true,
+      });
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });

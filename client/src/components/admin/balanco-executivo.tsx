@@ -188,7 +188,8 @@ export function BalancoExecutivoPanel({
     const rh = cols.map(() => rhDia);
     const fixos = cols.map(() => fixoDia);
     const combVals = cols.map((c) => c.combustivel || 0);
-    const pedVals = cols.map((c) => c.pedagio || 0);
+    const pedDia = totals.desp_pedagio / denom;
+    const pedVals = cols.map(() => pedDia);
     const manVals = cols.map((c) => c.manutencao || 0);
     // Mão de obra da missão NÃO entra no DRE — custo real do vigilante é a folha RH.
     const custo = cols.map((_, i) => combVals[i] + pedVals[i] + manVals[i] + rh[i] + fixos[i]);
@@ -200,7 +201,7 @@ export function BalancoExecutivoPanel({
     return [
       { key: "fat", label: "Faturamento Bruto", color: "#34d399", values: fat, total: sum(fat) || totals.fat, kind: "money", emphasize: true },
       { key: "comb", label: "Combustível", color: "#fb923c", values: combVals, total: sum(combVals) || totals.desp_combustivel, kind: "money", negative: true },
-      { key: "ped", label: "Pedágio", color: "#fbbf24", values: pedVals, total: sum(pedVals) || totals.desp_pedagio, kind: "money", negative: true },
+      { key: "ped", label: "Pedágio (Ticketlog)", color: "#fbbf24", values: pedVals, total: totals.desp_pedagio, kind: "money", negative: true },
       { key: "man", label: "Manutenção", color: "#f472b6", values: manVals, total: sum(manVals) || totals.desp_manutencao, kind: "money", negative: true },
       { key: "rh", label: "RH · Folha", color: "#fcd34d", values: rh, total: totals.provisaoRH, kind: "money", negative: true },
       { key: "fix", label: "Custos Fixos", color: "#a78bfa", values: fixos, total: totals.custosFixosRateados, kind: "money", negative: true },
@@ -213,7 +214,14 @@ export function BalancoExecutivoPanel({
   const drillRows = useMemo(() => {
     if (!drill) return [] as Array<{ label: string; detail?: string; amount: number }>;
     const day = drill.date;
-    if (drill.key === "comb" || drill.key === "ped" || drill.key === "man") {
+    if (drill.key === "ped") {
+      return [{
+        label: "Custo real Ticketlog",
+        detail: "Valor lançado em Pedágio: Pago × Cobrado neste período. O pedágio do boletim entra no lucro.",
+        amount: drill.amount,
+      }];
+    }
+    if (drill.key === "comb" || drill.key === "man") {
       return periodExpenses
         .filter((t) => (t.date || "").split("T")[0] === day)
         .filter((t) => {
@@ -225,8 +233,7 @@ export function BalancoExecutivoPanel({
           if (drill.key === "man") {
             return o === "maintenance" || (o === "mission_cost" && c.includes("manut"));
           }
-          // pedágio
-          return o === "mission_cost" && !c.includes("combust") && !c.includes("manut");
+          return false;
         })
         .map((t) => ({
           label: t.description || t.entity_name || t.category_name || t.origin_type || "Lançamento",

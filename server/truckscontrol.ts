@@ -610,8 +610,11 @@ export async function fetchAllPositions(): Promise<TrucksControlPosition[]> {
   if (fetchAllLock) return fetchAllLock;
 
   const now = Date.now();
+  // Não chamar getCachedPositions aqui: ele volta para fetchAllPositions e estoura a pilha
+  // quando o cache de veículos está quente e o de posições ainda não.
   if (now - lastFetchAllTime < FETCH_ALL_MIN_INTERVAL && vehicleCache.length > 0) {
-    return getCachedPositions();
+    if (positionCache?.data?.length) return positionCache.data;
+    return _buildPositions(vehicleCache, spyCache);
   }
 
   fetchAllLock = (async () => {

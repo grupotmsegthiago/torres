@@ -6,7 +6,7 @@ import type { Express } from "express";
   import { processTelemetry } from "../telemetry-engine";
   import { nominatimGeocode } from "../db-init";
   import { getHorasElapsedFromDB, calcHorasElapsedLocal, calcularFaturamentoLive, calcularEscolta, extractKmFromText, calcDistanciaGPS, splitMissionCostsForBilling } from "../billing-calc";
-  import { osCobraMarkupPedagio } from "../../shared/pedagio-markup";
+  import { osCobraMarkupPedagio, pedagioCustoOsAprovada, sumPedagioComprovante } from "../../shared/pedagio-markup";
   import { haversineDist } from "./_helpers";
   import { resolveVehicleIcon } from "@shared/vehicle-icons";
   import { withSwrCache } from "../lib/swr-cache";
@@ -349,14 +349,15 @@ import type { Express } from "express";
       ? Promise.resolve({ data: cachedContracts })
       : supabaseAdmin.from("escort_contracts").select("*");
 
-    const [allClients, allEmployees, updatesRes, tcPositions, photosRes, contractsRes, missionCostsRes] = await Promise.all([
+    const [allClients, allEmployees, updatesRes, tcPositions, photosRes, contractsRes, missionCostsRes, billingsRes] = await Promise.all([
       storage.getClients(),
       storage.getEmployees(),
       safeFrom("mission_updates", osIds, "id, service_order_id, mission_step, message, created_at, read_by_admin, latitude, longitude"),
       truckscontrol.getCachedPositions(),
       fetchByServiceOrderIdsChunked("mission_photos", osIds, "service_order_id, step, km_value, created_at"),
       contractsPromise,
-      fetchByServiceOrderIdsChunked("mission_costs", osIds, "service_order_id, amount, category, cost_type, vehicle_id"),
+      fetchByServiceOrderIdsChunked("mission_costs", osIds, "service_order_id, amount, category, cost_type, vehicle_id, description, employee_id"),
+      fetchByServiceOrderIdsChunked("escort_billings", osIds, "service_order_id, status, despesas_pedagio"),
     ]);
 
     if (!cachedContracts && contractsRes.data) {
@@ -414,6 +415,18 @@ import type { Express } from "express";
       if (!valorDiaria || ids.length === 0) continue;
       const share = valorDiaria / ids.length;
       for (const id of ids) addRateio(rateioDiaria, id, share);
+    }
+
+    const billingsByOs = new Map<number, { status: string; despesasPedagio: number }>();
+    for (const b of toCamelArray(billingsRes.data || [])) {
+      const sid = Number(b.serviceOrderId);
+      if (!sid) continue;
+      const status = String(b.status || "").toUpperCase();
+      const prev = billingsByOs.get(sid);
+      const approved = ["APROVADA", "FATURADO", "FATURADA", "PAGO"].includes(status);
+      if (!prev || approved) {
+        billingsByOs.set(sid, { status, despesasPedagio: Number(b.despesasPedagio) || 0 });
+      }
     }
 
     const allMissionCosts = toCamelArray(missionCostsRes.data || []);
@@ -740,6 +753,17 @@ import type { Express } from "express";
             const baseFat = useFrozen ? (Number((o as any).fatCalculado) || frozenFat) : frozenFat;
             const resultadoFinal = baseFat - custoTotalFinal;
             const margemFinal = baseFat > 0 ? (resultadoFinal / baseFat) * 100 : 0;
+            const pedAtual = useFrozen ? (Number((o as any).custoPedagioAlocado) || frozenPed) : frozenPed;
+            const billPed = billingsByOs.get(o.id);
+            const pedagioPagoOs = sumPedagioComprovante(missionCostsByOS.get(o.id) || []);
+            const pedExibido = pedagioCustoOsAprovada({
+              billStatus: billPed?.status,
+              pedagioPago: pedagioPagoOs,
+            });
+            const pedDelta = Math.round((pedExibido - pedAtual) * 100) / 100;
+            const custoTotalEspelho = Math.round((custoTotalFinal + pedDelta) * 100) / 100;
+            const resultadoEspelho = Math.round((baseFat - custoTotalEspelho) * 100) / 100;
+            const margemEspelho = baseFat > 0 ? (resultadoEspelho / baseFat) * 100 : 0;
 
             liveCost = {
               km_inicial: kmInicial,
@@ -758,15 +782,15 @@ import type { Express } from "express";
               horas_excedentes: billing.horas_excedentes,
               pagamento: useFrozen ? (Number((o as any).custoPagamentoAlocado) || frozenPag) : frozenPag,
               custo_combustivel: combFinal,
-              custo_pedagio: useFrozen ? (Number((o as any).custoPedagioAlocado) || frozenPed) : frozenPed,
+              custo_pedagio: pedExibido,
               custo_outros: useFrozen ? (Number((o as any).custoOutrosAlocado) || frozenOut) : frozenOut,
               custo_salario: rSal,
               custo_diaria: rDia,
               custo_manutencao: rManu,
               custo_multa: rMul,
-              custo_total: custoTotalFinal,
-              resultado: resultadoFinal,
-              margem_pct: margemFinal,
+              custo_total: custoTotalEspelho,
+              resultado: resultadoEspelho,
+              margem_pct: margemEspelho,
               frozen: useFrozen,
               fuel_allocated: o.fuelAllocated !== false && (useFrozen ? Number((o as any).custoCombustivelAlocado) > 0 : custoCombustivel > 0),
               fuel_allocated_hint: fuelAllocatedHint,
@@ -796,6 +820,8 @@ import type { Express } from "express";
           createdAt: o.createdAt || null,
           type: o.type || null,
           pedagioEstimado: (o as any).pedagioEstimado || null,
+          pedagioPago: sumPedagioComprovante(missionCostsByOS.get(o.id) || []),
+          operacaoDhl: (o as any).operacaoDhl === true ? true : (o as any).operacaoDhl === false ? false : null,
           pedagioIdaVolta: (o as any).pedagioIdaVolta || false,
           tollValue: (o as any).tollValue || null,
           priceTableId: o.priceTableId || null,

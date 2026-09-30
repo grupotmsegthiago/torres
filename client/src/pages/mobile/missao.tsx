@@ -9,7 +9,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { enqueueAction, getPendingCount, startOfflineSync, isOnline, isNetworkError, forceFlush, subscribeQueue } from "@/lib/offlineQueue";
 import { supabase } from "@/lib/supabase";
 import {
-  Camera, CheckCircle2, Car, Crosshair, Truck, User,
+  Camera, CheckCircle2, Car, Crosshair, Truck, User, Images,
   Siren, Gauge, Route, Lock, ArrowRight, MapPin,
   Loader2, AlertCircle, Navigation, ExternalLink, Phone,
   Bell, Shield, Home, ClipboardCheck, Eye, Sparkles, DollarSign,
@@ -129,9 +129,12 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
   onRetake?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const slug = label.toLowerCase().replace(/\s/g, "-");
 
   const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
@@ -170,12 +173,13 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
 
   return (
     <div>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} data-testid={`input-camera-${label.toLowerCase().replace(/\s/g, '-')}`} />
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCapture} data-testid={`input-camera-${slug}`} />
+      <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handleCapture} data-testid={`input-gallery-${slug}`} />
       <button
         onClick={handleClick}
         disabled={isAnalyzing}
         className={`w-full h-14 rounded-xl border-2 flex items-center justify-center gap-3 text-sm font-bold uppercase tracking-wider transition-all active:scale-[0.98] disabled:opacity-70 ${btnClass}`}
-        data-testid={`button-photo-${label.toLowerCase().replace(/\s/g, '-')}`}
+        data-testid={`button-photo-${slug}`}
       >
         {isAnalyzing ? (
           <Loader2 className="w-5 h-5 animate-spin" />
@@ -191,6 +195,17 @@ function CameraCapture({ label, onCapture, captured, hint, aiStatus, aiResult, o
         {label}
         {isAnalyzing && <span className="text-[10px] normal-case font-normal ml-1">IA analisando...</span>}
       </button>
+      {!isAnalyzing && (
+        <button
+          type="button"
+          onClick={() => galleryRef.current?.click()}
+          className="w-full mt-1.5 h-9 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-600 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+          data-testid={`button-gallery-${slug}`}
+        >
+          <Images className="w-3.5 h-3.5" />
+          Galeria
+        </button>
+      )}
       {isApproved && (
         <p className="text-[10px] text-emerald-600 mt-1 text-center font-bold flex items-center justify-center gap-1">
           <Sparkles className="w-3 h-3" /> IA Aprovada — {aiResult?.observacao ? aiResult.observacao.substring(0, 60) : "Foto dentro do padrão"}
@@ -513,6 +528,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
   const [updateStep, setUpdateStep] = useState<"idle" | "photo" | "message">("idle");
   const [updatePhoto, setUpdatePhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [tollOpen, setTollOpen] = useState(false);
   const [tollAmount, setTollAmount] = useState("");
@@ -611,6 +627,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
 
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
     // Foto vem direto do celular (4–8 MB). Sem compressão, estoura o limite
     // de 2 MB do POST /api/mission/update (413 entity too large). Aqui
@@ -707,6 +724,14 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
         onChange={handlePhotoCapture}
         data-testid="input-update-photo"
       />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handlePhotoCapture}
+        data-testid="input-update-gallery"
+      />
 
       {updateStep === "idle" && (
         <button
@@ -734,6 +759,15 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
           >
             <Camera className="w-5 h-5" />
             Tirar Foto
+          </button>
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            className="w-full h-10 bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 active:scale-[0.98]"
+            data-testid="button-update-gallery"
+          >
+            <Images className="w-4 h-4" />
+            Galeria
           </button>
           <button
             onClick={handleSkipPhoto}

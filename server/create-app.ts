@@ -60,6 +60,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
     // Assinatura de contrato: selfie + desenho (base64)
     /^\/api\/permanent-contracts\/\d+\/sign$/,
     /^\/api\/probation-contracts\/\d+\/sign$/,
+    // Fatura Ticketlog (PDF/imagem em base64) da quinzena
+    "/api/controladoria/pedagio-ticketlog",
   ];
   const rawBodyVerify = (req: IncomingMessage, _res: ServerResponse, buf: Buffer) => {
     req.rawBody = buf;

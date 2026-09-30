@@ -585,7 +585,7 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
   return {
     indicator: "Custos Totais",
     formula:
-      "Combustível (FT fueling) + Pedágio (FT mission_cost) + Manutenção + RH Custo Empresa CCT (cadastro) rateado + Fixos rateados (÷30 × dias). Pagamento teórico da missão NÃO entra (mão de obra = RH CCT).",
+      "Combustível (abastecimento) + Pedágio (custo real Ticketlog lançado em Pedágio: Pago × Cobrado) + Manutenção + RH Custo Empresa CCT rateado + Fixos rateados (÷30 × dias). O pedágio do boletim entra no faturamento e no lucro. Pagamento teórico da missão NÃO entra (mão de obra = RH CCT).",
     modules: ["Financeiro", "RH (cadastro CCT)", "Custos Fixos", "Abastecimento"],
     tables: ["financial_transactions(fueling)", "financial_transactions(mission_cost)", "rh-summary", "fixed_costs", "employee_salaries"],
     recordsConsidered: input.missions.length,
@@ -602,7 +602,7 @@ export function buildMemoriaCustos(input: GestorInput): MemoriaCalculo {
     lastUser: input.auditUser || null,
     notes: [
       `Combustível (abastecimento): ${money(input.totals.desp_combustivel)}`,
-      `Pedágio: ${money(input.totals.desp_pedagio)}`,
+      `Pedágio (OS aprovada, sem 20%): ${money(input.totals.desp_pedagio)}`,
       `Manutenção: ${money(input.totals.desp_manutencao)}`,
       `RH (Custo Empresa CCT do cadastro): ${money(input.totals.provisaoRH)}`,
       `Fixos rateados: ${money(input.totals.custosFixosRateados)}`,

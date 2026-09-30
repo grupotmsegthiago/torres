@@ -135,6 +135,13 @@ const fmtBRL = (v?: number | null): string => {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
+/** Ordem das colunas: em curso (0) → agendadas, inclusive atrasadas (1) → vazias (2). */
+function agendaColumnRank(g: { active: unknown[]; scheduled: unknown[]; overdue: unknown[] }): number {
+  if (g.active.length > 0) return 0;
+  if (g.scheduled.length > 0 || g.overdue.length > 0) return 1;
+  return 2;
+}
+
 const fmtOverdue = (iso?: string | null, nowMs?: number) => {
   if (!iso || !nowMs) return "";
   const diffMin = Math.floor((nowMs - new Date(iso).getTime()) / 60000);
@@ -172,7 +179,7 @@ export default function AgendaVtrPage() {
     const overdue = scheduledAll.filter((o) => isOverdue(o, nowMs));
     const scheduled = scheduledAll.filter((o) => !isOverdue(o, nowMs));
     return { vehicle: v, active, scheduled, overdue };
-  });
+  }).sort((a, b) => agendaColumnRank(a) - agendaColumnRank(b));
 
   const orphanOrders = gridOrders.filter((o) => !o.vehicle?.plate && (isActive(o) || isScheduled(o)));
 
@@ -184,31 +191,33 @@ export default function AgendaVtrPage() {
 
   return (
     <AdminLayout>
-    <div className="p-4 sm:p-6 space-y-5">
+    <div className="space-y-5">
+      <div className="rounded-[1.75rem] bg-primary text-primary-foreground px-6 py-5 shadow-md">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-black text-neutral-900 tracking-tight" data-testid="text-page-title">Agenda da VTR</h1>
-          <p className="text-xs text-neutral-500 mt-1">Visão por viatura · missões em curso e próximos agendamentos</p>
+          <h1 className="text-2xl font-black tracking-tight" data-testid="text-page-title">Agenda da VTR</h1>
+          <p className="text-xs text-white/60 mt-1">Visão por viatura · missões em curso e próximos agendamentos</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]" data-testid="badge-active-total">
+          <Badge className="bg-white/10 text-white border border-white/15 font-bold text-[10px] rounded-full" data-testid="badge-active-total">
             <Activity className="w-3 h-3 mr-1" /> {totalActive} ativas
           </Badge>
-          <Badge className="bg-blue-50 text-blue-700 border border-blue-200 font-bold text-[10px]" data-testid="badge-scheduled-total">
+          <Badge className="bg-white/10 text-white border border-white/15 font-bold text-[10px] rounded-full" data-testid="badge-scheduled-total">
             <Calendar className="w-3 h-3 mr-1" /> {totalScheduled} agendadas
           </Badge>
           {totalOverdue > 0 && (
-            <Badge className="bg-red-50 text-red-700 border border-red-300 font-bold text-[10px] animate-pulse" data-testid="badge-overdue-total">
+            <Badge className="bg-destructive text-destructive-foreground border-0 font-bold text-[10px] rounded-full animate-pulse" data-testid="badge-overdue-total">
               <AlertCircle className="w-3 h-3 mr-1" /> {totalOverdue} ATRASADA{totalOverdue > 1 ? "S" : ""}
             </Badge>
           )}
-          <Badge className="bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]" data-testid="badge-busy-vehicles">
+          <Badge className="bg-white text-primary border-0 font-bold text-[10px] rounded-full" data-testid="badge-busy-vehicles">
             <Car className="w-3 h-3 mr-1" /> {busyVehicles} VTR ocupadas
           </Badge>
-          <Badge className="bg-neutral-50 text-neutral-700 border border-neutral-200 font-bold text-[10px]" data-testid="badge-idle-vehicles">
+          <Badge className="bg-white/10 text-white border border-white/15 font-bold text-[10px] rounded-full" data-testid="badge-idle-vehicles">
             {idleVehicles} VTR livres
           </Badge>
         </div>
+      </div>
       </div>
 
       {isLoading ? (
@@ -226,27 +235,25 @@ export default function AgendaVtrPage() {
             {grouped.map(({ vehicle, active, scheduled, overdue }) => {
               const hasActivity = active.length > 0 || scheduled.length > 0 || overdue.length > 0;
               const cardBorder = overdue.length > 0
-                ? "border-red-300 ring-2 ring-red-100"
+                ? "border-destructive/30"
                 : active.length > 0
-                  ? "border-emerald-300 ring-2 ring-emerald-100"
-                  : scheduled.length > 0
-                    ? "border-blue-200"
-                    : "border-neutral-200";
+                  ? "border-primary/20"
+                  : "border-border";
               return (
                 <Card
                   key={vehicle.id}
-                  className={`w-[320px] flex-shrink-0 flex flex-col bg-white border-2 ${cardBorder} shadow-sm overflow-hidden`}
+                  className={`w-[320px] flex-shrink-0 flex flex-col bg-card border ${cardBorder} shadow-sm overflow-hidden rounded-[1.75rem]`}
                   data-testid={`card-vehicle-${vehicle.id}`}
                 >
-                  <div className={`px-4 py-3 border-b ${overdue.length > 0 ? "bg-red-50 border-red-200" : active.length > 0 ? "bg-emerald-50 border-emerald-200" : "bg-neutral-50 border-neutral-200"}`}>
+                  <div className={`px-4 py-4 border-b ${overdue.length > 0 ? "bg-destructive/5 border-destructive/15" : active.length > 0 ? "bg-primary text-primary-foreground border-transparent" : "bg-muted/50 border-border"}`}>
                     <div className="flex items-center gap-2 justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${active.length > 0 ? "bg-emerald-600" : "bg-neutral-800"}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${active.length > 0 ? "bg-white/15" : "bg-primary"}`}>
                           <Car size={16} className="text-white" />
                         </div>
-                        <div>
-                          <p className="text-sm font-black text-neutral-900 font-mono uppercase tracking-wider">{vehicle.plate}</p>
-                          <p className="text-[10px] text-neutral-500 font-semibold uppercase">{vehicle.brand || ""} {vehicle.model}</p>
+                        <div className="min-w-0">
+                          <p className={`text-sm font-black font-mono uppercase tracking-wider ${active.length > 0 ? "text-white" : "text-foreground"}`}>{vehicle.plate}</p>
+                          <p className={`text-[10px] font-semibold uppercase truncate ${active.length > 0 ? "text-white/60" : "text-muted-foreground"}`}>{vehicle.brand || ""} {vehicle.model}</p>
                           {(() => {
                             const dayTotal = Math.max(
                               ...[...active, ...scheduled, ...overdue].map(o => Number(o.vehicleDayTotal) || 0),
@@ -254,7 +261,7 @@ export default function AgendaVtrPage() {
                             );
                             if (dayTotal >= 2) {
                               return (
-                                <p className="text-[10px] text-amber-700 font-bold mt-0.5 flex items-center gap-1" data-testid={`text-day-total-${vehicle.id}`}>
+                                <p className={`text-[10px] font-bold mt-0.5 flex items-center gap-1 ${active.length > 0 && overdue.length === 0 ? "text-amber-200" : "text-amber-700"}`} data-testid={`text-day-total-${vehicle.id}`}>
                                   <Calendar className="w-2.5 h-2.5" />
                                   {dayTotal} missões hoje (custos rateados)
                                 </p>
@@ -262,22 +269,41 @@ export default function AgendaVtrPage() {
                             }
                             return null;
                           })()}
+                          {(active.length > 0 || scheduled.length > 0 || overdue.length > 0) && (
+                            <div className="mt-1 space-y-0.5" data-testid={`ocupacao-${vehicle.id}`}>
+                              {active.map((os) => (
+                                <p key={`h-a-${os.id}`} className={`text-[10px] font-bold truncate ${active.length > 0 && overdue.length === 0 ? "text-emerald-300" : "text-emerald-800"}`}>
+                                  OS {os.osNumber} · em curso{os.clientName ? ` · ${os.clientName}` : ""}
+                                </p>
+                              ))}
+                              {overdue.map((os) => (
+                                <p key={`h-o-${os.id}`} className="text-[10px] font-bold text-red-700 truncate">
+                                  OS {os.osNumber} · {fmtTimeOnly(os.scheduledDate)} atrasada{os.clientName ? ` · ${os.clientName}` : ""}
+                                </p>
+                              ))}
+                              {scheduled.map((os) => (
+                                <p key={`h-s-${os.id}`} className={`text-[10px] font-bold truncate ${active.length > 0 && overdue.length === 0 ? "text-white/80" : "text-foreground"}`}>
+                                  OS {os.osNumber} · {fmtTimeOnly(os.scheduledDate)}{os.clientName ? ` · ${os.clientName}` : ""}
+                                </p>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                       {overdue.length > 0 ? (
-                        <Badge className="bg-red-600 text-white border-0 font-bold text-[9px] animate-pulse">
+                        <Badge className="bg-destructive text-destructive-foreground border-0 font-bold text-[9px] rounded-full shrink-0 animate-pulse">
                           <AlertCircle className="w-2.5 h-2.5 mr-1" /> {overdue.length} ATRASADA{overdue.length > 1 ? "S" : ""}
                         </Badge>
                       ) : active.length > 0 ? (
-                        <Badge className="bg-emerald-600 text-white border-0 font-bold text-[9px]">
+                        <Badge className="bg-white text-primary border-0 font-bold text-[9px] rounded-full shrink-0">
                           <Radio className="w-2.5 h-2.5 mr-1 animate-pulse" /> EM CURSO
                         </Badge>
                       ) : scheduled.length > 0 ? (
-                        <Badge className="bg-blue-100 text-blue-700 border border-blue-200 font-bold text-[9px]">
+                        <Badge className="bg-secondary text-secondary-foreground border border-border font-bold text-[9px] rounded-full shrink-0">
                           <Calendar className="w-2.5 h-2.5 mr-1" /> {scheduled.length} AGEND.
                         </Badge>
                       ) : (
-                        <Badge className="bg-neutral-100 text-neutral-500 border border-neutral-200 font-bold text-[9px]">LIVRE</Badge>
+                        <Badge className="bg-muted text-muted-foreground border border-border font-bold text-[9px] rounded-full shrink-0">LIVRE</Badge>
                       )}
                     </div>
                   </div>
@@ -293,12 +319,12 @@ export default function AgendaVtrPage() {
                     {overdue.map((os) => (
                       <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
                         <a
-                          className="block bg-red-50 border-2 border-red-300 rounded-lg p-3 hover:bg-red-100 transition-colors cursor-pointer"
+                          className="block bg-destructive/5 border border-destructive/25 rounded-2xl p-3 hover:bg-destructive/10 transition-colors cursor-pointer"
                           data-testid={`mission-overdue-${os.id}`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <span className="text-[10px] font-black text-red-800 font-mono">{os.osNumber}</span>
-                            <Badge className="bg-red-600 text-white border-0 font-bold text-[9px] animate-pulse">
+                            <Badge className="bg-destructive text-destructive-foreground border-0 font-bold text-[9px] rounded-full animate-pulse">
                               <AlertCircle className="w-2.5 h-2.5 mr-1" /> ATRASADA
                             </Badge>
                           </div>
@@ -341,12 +367,12 @@ export default function AgendaVtrPage() {
                     {active.map((os) => (
                       <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
                         <a
-                          className="block bg-emerald-50/70 border-2 border-emerald-300 rounded-lg p-3 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          className="block bg-muted/40 border border-border rounded-2xl p-3 hover:bg-muted/70 transition-colors cursor-pointer"
                           data-testid={`mission-active-${os.id}`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <span className="text-[10px] font-black text-emerald-800 font-mono">{os.osNumber}</span>
-                            <Badge className="bg-emerald-600 text-white border-0 font-bold text-[9px]">
+                            <Badge className="bg-primary text-primary-foreground border-0 font-bold text-[9px] rounded-full">
                               <Radio className="w-2.5 h-2.5 mr-1 animate-pulse" /> ATIVA
                             </Badge>
                           </div>
@@ -494,12 +520,12 @@ export default function AgendaVtrPage() {
                     {scheduled.map((os) => (
                       <Link key={os.id} href={`/admin/service-orders?os=${os.id}`}>
                         <a
-                          className="block bg-white border border-neutral-200 rounded-lg p-2.5 hover:border-blue-300 hover:bg-blue-50/30 transition-colors cursor-pointer"
+                          className="block bg-card border border-border rounded-2xl p-2.5 hover:border-primary/30 hover:bg-muted/40 transition-colors cursor-pointer"
                           data-testid={`mission-scheduled-${os.id}`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <span className="text-[10px] font-black text-neutral-700 font-mono">{os.osNumber}</span>
-                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                            <span className="text-[10px] font-bold text-primary bg-muted px-2 py-0.5 rounded-full">
                               {fmtScheduled(os.scheduledDate)}
                             </span>
                           </div>
@@ -615,15 +641,15 @@ function OrphanWeekCalendar({ orders }: { orders: GridOs[] }) {
     setWeekStart(d);
   };
 
-  if (orders.length === 0) return null;
+  const hasOrders = orders.length > 0;
 
   return (
-    <Card className="border-amber-200 bg-white">
-      <div className="px-4 py-3 border-b border-amber-200 flex items-center justify-between gap-3 flex-wrap bg-amber-50/40">
+    <Card className="border-border bg-card rounded-[1.75rem] overflow-hidden" data-testid="agenda-semanal">
+      <div className={`px-4 py-3 border-b flex items-center justify-between gap-3 flex-wrap ${hasOrders ? "border-amber-200 bg-amber-50/40" : "border-border bg-muted/40"}`}>
         <div className="flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-amber-600" />
-          <p className="text-xs font-black text-amber-800 uppercase tracking-wider">
-            {orders.length} OS sem viatura — agenda semanal
+          {hasOrders ? <AlertCircle className="w-4 h-4 text-amber-600" /> : <Calendar className="w-4 h-4 text-foreground" />}
+          <p className={`text-xs font-black uppercase tracking-wider ${hasOrders ? "text-amber-800" : "text-foreground"}`}>
+            {hasOrders ? `${orders.length} OS sem viatura — agenda semanal` : "Agenda semanal"}
           </p>
         </div>
         <div className="flex items-center gap-2">

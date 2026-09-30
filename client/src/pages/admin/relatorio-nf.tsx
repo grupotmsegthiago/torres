@@ -330,7 +330,17 @@ export default function RelatorioNFPage() {
       setCancelModal(null);
       invalidateRelatedQueries("invoice");
     },
-    onError: (e: any) => toast({ title: "Erro ao cancelar NF", description: e?.message, variant: "destructive" }),
+    onError: (e: any) => {
+      const raw = String(e?.message || "");
+      const dropped = /failed to fetch|networkerror|load failed/i.test(raw);
+      toast({
+        title: "Erro ao cancelar NF",
+        description: dropped
+          ? "A conexão caiu antes da resposta. A nota não foi cancelada e a configuração da Focus permanece a mesma. Atualize a página e tente de novo."
+          : raw,
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteRowMutation = useMutation({
