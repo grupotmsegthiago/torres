@@ -17,6 +17,7 @@ import type { Express } from "express";
   import { randomUUID } from "crypto";
   import { applyPedagioAjustes, buildPedagioConferidoLog } from "../lib/pedagio-conferencia";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
+import { checklistViaturaObrigatorio } from "../../shared/mission-checklist";
 
   const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition" | "odometer" | "agent" | "weapon" | "scene"; expectedItem?: string }> = {
     viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
@@ -46,6 +47,8 @@ import type { Express } from "express";
     chave_roda: "chave de roda",
     macaco: "macaco hidráulico ou mecânico",
     triangulo: "triângulo de sinalização",
+    agua: "nível de água do radiador",
+    oleo: "nível de óleo do motor",
   };
 
   const LEARNING_MODE = true;
@@ -640,6 +643,12 @@ Responda APENAS com JSON: {"km_lido": number}`;
     }
   }
 
+  async function exigeChecklistViatura(so: { id: number; priority?: string | null; assignedEmployeeId?: number | null }, employeeId: number | null) {
+    const id = employeeId || so.assignedEmployeeId || null;
+    const outras = id ? await storage.getServiceOrdersByEmployee(id) : [];
+    return checklistViaturaObrigatorio({ priority: so.priority, osId: so.id, outras });
+  }
+
   export function registerMissionRoutes(app: Express) {
     app.get("/api/truckscontrol/test", requireAuth, requireAdminRole, async (_req, res) => {
     const result = await truckscontrol.testConnection();
@@ -1004,6 +1013,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         route: active.route || null,
         agentLocation,
         scheduledMissions: [],
+        checklistViaturaObrigatorio: await exigeChecklistViatura(active, active.assignedEmployeeId),
       });
     }
 
@@ -1080,6 +1090,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
       destination: active.destination || null,
       route: active.route || null,
       scheduledMissions,
+      checklistViaturaObrigatorio: checklistViaturaObrigatorio({
+        priority: active.priority,
+        osId: active.id,
+        outras: orders,
+      }),
     });
   });
 
@@ -2535,7 +2550,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
       if (!so.baseCleanStatus) {
         return res.status(400).json({ message: "Status de limpeza da viatura obrigatório" });
       }
-      if (!so.baseChecklistConfirmed) {
+      if (!so.baseChecklistConfirmed && await exigeChecklistViatura(so, user.employeeId)) {
         return res.status(400).json({ message: "Checklist da viatura obrigatório" });
       }
     }
@@ -2807,7 +2822,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
     if (!baseReturnKm || Number(baseReturnKm) <= 0) {
       return res.status(400).json({ message: "Quilometragem de retorno obrigatória" });
     }
-    if (!checklistConfirmed) {
+    const exigeChecklist = await exigeChecklistViatura(so, user.employeeId);
+    if (exigeChecklist && !checklistConfirmed) {
       return res.status(400).json({ message: "Checklist da viatura obrigatório" });
     }
 
@@ -2815,7 +2831,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
       baseCleanStatus: cleanStatus,
       baseCleanNotes: cleanStatus === "suja" ? cleanNotes.trim() : null,
       baseReturnKm: String(baseReturnKm),
-      baseChecklistConfirmed: true,
+      baseChecklistConfirmed: exigeChecklist ? true : !!so.baseChecklistConfirmed,
     });
 
     if (so.vehicleId && Number(baseReturnKm) > 0) {

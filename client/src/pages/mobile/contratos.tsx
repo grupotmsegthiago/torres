@@ -124,8 +124,8 @@ function ContratoCard({ c, onSign, onView }: { c: any; onSign?: () => void; onVi
   const isPermanent = c.kind === "permanent";
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid={`card-contrato-${c.kind}-${c.id}`}>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-black text-neutral-800 flex items-center gap-1">
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+        <p className="text-sm font-black text-neutral-800 flex items-center gap-1 min-w-0">
           <FileText className={`w-4 h-4 ${isPermanent ? "text-emerald-600" : "text-indigo-600"}`} />
           {isPermanent ? "Contrato Definitivo (CLT)" : `Contrato de Experiência (${c.durationDays} dias)`}
         </p>
@@ -158,7 +158,7 @@ function ContratoCard({ c, onSign, onView }: { c: any; onSign?: () => void; onVi
       </div>
 
       {onView && (
-        <Button onClick={onView} variant="outline" className="w-full h-9 text-xs mb-2" data-testid={`button-ver-pdf-${c.id}`}>
+        <Button onClick={onView} variant="outline" className="mobile-action w-full text-xs mb-2" data-testid={`button-ver-pdf-${c.id}`}>
           <FileText className="w-3.5 h-3.5 mr-1" /> Ver contrato completo
         </Button>
       )}
@@ -170,7 +170,7 @@ function ContratoCard({ c, onSign, onView }: { c: any; onSign?: () => void; onVi
       )}
 
       {!isAssinado && onSign && (
-        <Button onClick={onSign} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-contrato-${c.kind}-${c.id}`}>
+        <Button onClick={onSign} className="mobile-action w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-contrato-${c.kind}-${c.id}`}>
           <ShieldCheck className="w-4 h-4 mr-1" /> Assinar contrato
         </Button>
       )}
@@ -216,10 +216,10 @@ function AuthPdfFrame({ url, title, onClose }: { url: string; title: string; onC
   }, [url]);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-white flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 bg-neutral-900 text-white">
-        <h3 className="font-black text-sm">{title}</h3>
-        <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-viewer"><X className="w-5 h-5" /></button>
+    <div className="mobile-sheet mobile-sheet-front">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-neutral-900 text-white shrink-0">
+        <h3 className="font-black text-sm truncate">{title}</h3>
+        <button onClick={onClose} className="p-2 -mr-2 shrink-0" data-testid="button-close-viewer"><X className="w-5 h-5" /></button>
       </div>
       {loading && (
         <div className="flex-1 flex items-center justify-center">
@@ -231,7 +231,7 @@ function AuthPdfFrame({ url, title, onClose }: { url: string; title: string; onC
           <p className="text-sm text-red-700 text-center">{error}</p>
         </div>
       )}
-      {blobUrl && <iframe src={blobUrl} className="flex-1 w-full" title="Contrato" />}
+      {blobUrl && <iframe src={blobUrl} className="min-h-0 flex-1 w-full" title="Contrato" />}
     </div>
   );
 }
@@ -292,16 +292,16 @@ function SignatureFlow({ contrato, onClose }: { contrato: any; onClose: () => vo
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 bg-neutral-900 text-white">
-        <div>
-          <h3 className="font-black text-sm">Assinatura — {isPermanent ? "Contrato Definitivo (CLT)" : "Contrato de Experiência"}</h3>
+    <div className="mobile-sheet">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-neutral-200 bg-neutral-900 text-white shrink-0">
+        <div className="min-w-0">
+          <h3 className="font-black text-sm truncate">Assinatura — {isPermanent ? "Contrato Definitivo (CLT)" : "Contrato de Experiência"}</h3>
           <p className="text-[10px] text-neutral-400">Etapa {step} de 3</p>
         </div>
-        <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-signature"><X className="w-5 h-5" /></button>
+        <button onClick={onClose} className="p-2 -mr-2 shrink-0" data-testid="button-close-signature"><X className="w-5 h-5" /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         {step === 1 && (
           <Step1Termo
             contrato={contrato}
@@ -364,7 +364,7 @@ function Step1Termo({ contrato, termoTexto, aceito, setAceito, onNext }: any) {
       <Button
         onClick={() => { setShowPdf(true); setPdfChecked(true); }}
         variant="outline"
-        className="w-full h-11"
+        className="mobile-action w-full"
         data-testid="button-ler-pdf-completo"
       >
         <FileText className="w-4 h-4 mr-1" /> Ler contrato completo (PDF)
@@ -395,9 +395,11 @@ function Step1Termo({ contrato, termoTexto, aceito, setAceito, onNext }: any) {
         <p className="text-[11px] text-neutral-500 text-center">Abra o PDF acima antes de prosseguir.</p>
       )}
 
-      <Button onClick={onNext} disabled={!aceito || !pdfChecked} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-step-next">
+      <div className="sticky bottom-0 z-10 -mx-4 border-t border-neutral-200 bg-white px-4 pt-3">
+      <Button onClick={onNext} disabled={!aceito || !pdfChecked} className="mobile-action w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold" data-testid="button-step-next">
         Continuar para reconhecimento facial
       </Button>
+      </div>
     </div>
   );
 }
@@ -489,7 +491,7 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
       {error && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700" data-testid="text-facial-error">{error}</div>}
       {uploadError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">{uploadError}</div>}
 
-      <div className="aspect-square bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
+      <div className="mx-auto aspect-square w-full max-w-[min(100%,46dvh)] bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
         {foto ? (
           <img src={foto} alt="Selfie capturada" className="w-full h-full object-cover" data-testid="img-facial-preview" />
         ) : (
@@ -507,28 +509,30 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
         data-testid="input-facial-upload"
       />
 
-      <div className="flex gap-2">
-        <Button onClick={onBack} variant="outline" className="flex-1 h-12" data-testid="button-step-back">Voltar</Button>
+      <div className="sticky bottom-0 z-10 -mx-4 space-y-2 border-t border-neutral-200 bg-white px-4 pt-3">
+        {!foto && !error && (
+          <Button onClick={() => fileInputRef.current?.click()} variant="ghost" className="mobile-action w-full text-xs text-neutral-500" data-testid="button-enviar-facial-alt">
+            Câmera não funciona? Tirar / enviar foto
+          </Button>
+        )}
+        <div className="flex gap-2">
+        <Button onClick={onBack} variant="outline" className="mobile-action flex-1" data-testid="button-step-back">Voltar</Button>
         {foto ? (
           <>
-            <Button onClick={() => setFoto(null)} variant="outline" className="flex-1 h-12" data-testid="button-refazer-facial">Refazer</Button>
-            <Button onClick={onNext} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-step-next">Avançar</Button>
+            <Button onClick={() => setFoto(null)} variant="outline" className="mobile-action flex-1" data-testid="button-refazer-facial">Refazer</Button>
+            <Button onClick={onNext} className="mobile-action flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold" data-testid="button-step-next">Avançar</Button>
           </>
         ) : error ? (
-          <Button onClick={() => fileInputRef.current?.click()} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-enviar-facial">
+          <Button onClick={() => fileInputRef.current?.click()} className="mobile-action flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold" data-testid="button-enviar-facial">
             <Camera className="w-4 h-4 mr-1" /> Tirar / Enviar Selfie
           </Button>
         ) : (
-          <Button onClick={capturar} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-capturar-facial">
+          <Button onClick={capturar} className="mobile-action flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold" data-testid="button-capturar-facial">
             <Camera className="w-4 h-4 mr-1" /> Capturar Foto
           </Button>
         )}
+        </div>
       </div>
-      {!foto && !error && (
-        <Button onClick={() => fileInputRef.current?.click()} variant="ghost" className="w-full h-9 text-xs text-neutral-500" data-testid="button-enviar-facial-alt">
-          Câmera não funciona? Tirar / enviar foto
-        </Button>
-      )}
     </div>
   );
 }
@@ -603,7 +607,7 @@ function Step3Assinatura({ assinatura, setAssinatura, onBack, onSubmit, isPendin
         <p className="text-xs text-neutral-500">Use o dedo para assinar dentro do campo abaixo</p>
       </div>
 
-      <div className="bg-white border-2 border-dashed border-neutral-300 rounded-xl overflow-hidden" style={{ height: 220 }}>
+      <div className="bg-white border-2 border-dashed border-neutral-300 rounded-xl overflow-hidden" style={{ height: "min(220px, 32dvh)" }}>
         <canvas
           ref={canvasRef}
           className="w-full h-full touch-none cursor-crosshair"
@@ -617,9 +621,9 @@ function Step3Assinatura({ assinatura, setAssinatura, onBack, onSubmit, isPendin
         <Eraser className="w-3.5 h-3.5 mr-1" /> Limpar e desenhar novamente
       </Button>
 
-      <div className="flex gap-2">
-        <Button onClick={onBack} variant="outline" className="flex-1 h-12" disabled={isPending} data-testid="button-step-back">Voltar</Button>
-        <Button onClick={confirmar} disabled={!hasInk || isPending} className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-confirmar-assinatura">
+      <div className="sticky bottom-0 z-10 -mx-4 flex gap-2 border-t border-neutral-200 bg-white px-4 pt-3">
+        <Button onClick={onBack} variant="outline" className="mobile-action flex-1" disabled={isPending} data-testid="button-step-back">Voltar</Button>
+        <Button onClick={confirmar} disabled={!hasInk || isPending} className="mobile-action flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold" data-testid="button-confirmar-assinatura">
           {isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Enviando...</> : <><CheckCircle2 className="w-4 h-4 mr-1" />Confirmar e Assinar</>}
         </Button>
       </div>

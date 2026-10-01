@@ -11,6 +11,7 @@ import {
 } from "../shared/client-duplicates";
 import { sendBillingEmail, maybeSendInvoiceReadyEmail } from "./lib/invoice-billing-email";
 import { applyPaymentToInvoice } from "./lib/invoice-payment";
+import { syncInvoiceReceivableById } from "./lib/invoice-receivable";
 import { bustBalancoCaches } from "./lib/balanco-cache";
 import { fetchBillingsByScheduledWindow } from "./lib/billing-period";
 import { notifyComissaoInvoiceEvent } from "./lib/comissao-ingest";
@@ -1381,6 +1382,7 @@ export async function emitInvoiceAuto(
 
   notifyComissaoInvoiceEvent("FATURADO", { invoiceId });
   await maybeSendInvoiceReadyEmail(invoiceId);
+  await mirrorInvoiceReceivable(invoiceId);
 
   return {
     success: true,
@@ -1388,6 +1390,15 @@ export async function emitInvoiceAuto(
     nfEmitted,
     paymentId: payment.id,
   };
+}
+
+async function mirrorInvoiceReceivable(invoiceId: number | null | undefined) {
+  if (!invoiceId) return;
+  try {
+    await syncInvoiceReceivableById(Number(invoiceId));
+  } catch (e: any) {
+    console.error(`[invoice-receivable] fatura #${invoiceId}:`, e?.message || e);
+  }
 }
 
 export function registerAsaasRoutes(app: Express) {
@@ -1923,6 +1934,7 @@ export function registerAsaasRoutes(app: Express) {
       console.log(`[billing-email] Fatura #${data.id} criada — aguardando anexo de NF para envio.`);
 
       notifyComissaoInvoiceEvent("FATURADO", { invoiceId: data.id, invoice: data });
+      await mirrorInvoiceReceivable(data.id);
       if (emiteNf && asaasPaymentId) await emitIsolatedNfse(data.id, "create");
 
       const { data: withNf } = await supabaseAdmin.from("invoices").select("*").eq("id", data.id).maybeSingle();
@@ -1968,6 +1980,7 @@ export function registerAsaasRoutes(app: Express) {
       if (updates.status === "CANCELLED" || updates.status === "CANCELED") {
         notifyComissaoInvoiceEvent("CANCELADO", { invoiceId: id, invoice: data || existing });
       }
+      await mirrorInvoiceReceivable(id);
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -2117,6 +2130,7 @@ export function registerAsaasRoutes(app: Express) {
 
       const { error } = await supabaseAdmin.from("invoices").delete().eq("id", id);
       if (error) throw error;
+      await mirrorInvoiceReceivable(id);
       notifyComissaoInvoiceEvent("CANCELADO", { invoice: existing });
       res.json({ success: true });
     } catch (err: any) {
@@ -2205,6 +2219,7 @@ export function registerAsaasRoutes(app: Express) {
       const message = isNfFullyIssued(data?.nfse_status, data?.nfse_number)
         ? `NF emitida: nº ${data.nfse_number}`
         : `${data?.nfse_error_message || wait || `Consultado na Focus (${nfSync.source}). Status NF: ${data?.nfse_status || "sem NF"}.`}${retryMsg}${ccmBit}`;
+      await mirrorInvoiceReceivable(id);
       res.json({ ...data, nfSyncSource: nfSync.source, ccmSync, message });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -2417,6 +2432,7 @@ export function registerAsaasRoutes(app: Express) {
       if (paymentCanceled) {
         notifyComissaoInvoiceEvent("CANCELADO", { invoiceId: id, invoice: updated || invoice });
       }
+      await mirrorInvoiceReceivable(id);
 
       res.json({ success: true, message: cancelMessage + paymentCancelMsg, invoice: updated });
     } catch (err: any) {
@@ -2595,6 +2611,7 @@ export function registerAsaasRoutes(app: Express) {
       });
 
       notifyComissaoInvoiceEvent("FATURADO", { invoiceId: id, invoice: updated });
+      await mirrorInvoiceReceivable(id);
 
       const { data: afterNf } = emiteNf
         ? await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle()
@@ -2919,18 +2936,6 @@ export function registerAsaasRoutes(app: Express) {
           console.error("[asaas] Falha atômica ao marcar billings como PAGO:", billingError.message);
           throw billingError;
         }
-
-        try {
-          const { createAutoTransaction } = await import("./routes/_helpers");
-          await createAutoTransaction({
-            description: `Recebimento Asaas - ${updatedInvoice.client_name} (${payment.id})`,
-            amount: payment.netValue || updatedInvoice.value,
-            type: "INCOME",
-            category: "Faturamento",
-            origin_type: "invoice",
-            origin_id: String(updatedInvoice.id),
-          });
-        } catch (_e) {}
       }
 
       if (updatedInvoice && (newStatus === "CONFIRMED" || newStatus === "RECEIVED")) {
@@ -2941,6 +2946,8 @@ export function registerAsaasRoutes(app: Express) {
       } else if (updatedInvoice && (newStatus === "CANCELLED" || newStatus === "CANCELED" || newStatus === "REFUNDED")) {
         notifyComissaoInvoiceEvent("CANCELADO", { invoiceId: updatedInvoice.id, invoice: updatedInvoice });
       }
+
+      if (updatedInvoice) await mirrorInvoiceReceivable(updatedInvoice.id);
 
       await logSystemAudit({
         userId: null, userName: "Asaas Webhook", userRole: "system",
@@ -3390,6 +3397,7 @@ export function registerAsaasRoutes(app: Express) {
           if (spInvErr) throw spInvErr;
           createdInvoices.push(spInvoice);
           notifyComissaoInvoiceEvent("FATURADO", { invoiceId: spInvoice.id, invoice: spInvoice });
+          await mirrorInvoiceReceivable(spInvoice.id);
           if (emiteNfConsolidado && spAsaasPaymentId) await emitIsolatedNfse(spInvoice.id, "split");
           await maybeSendInvoiceReadyEmail(spInvoice.id);
 
@@ -3563,6 +3571,7 @@ export function registerAsaasRoutes(app: Express) {
       if (invErr) throw invErr;
 
       notifyComissaoInvoiceEvent("FATURADO", { invoiceId: invoice.id, invoice });
+      await mirrorInvoiceReceivable(invoice.id);
       if (emiteNfConsolidado && asaasPaymentId) await emitIsolatedNfse(invoice.id, "consolidado");
       await maybeSendInvoiceReadyEmail(invoice.id);
 
@@ -3643,6 +3652,7 @@ export function registerAsaasRoutes(app: Express) {
 
       await supabaseAdmin.from("financial_transactions").delete().eq("reference_id", `INV-${invoiceId}`);
       await supabaseAdmin.from("invoices").delete().eq("id", invoiceId);
+      await mirrorInvoiceReceivable(invoiceId);
 
       notifyComissaoInvoiceEvent("CANCELADO", { invoice });
 
@@ -4202,6 +4212,7 @@ export function registerAsaasRoutes(app: Express) {
 
         const { error } = await supabaseAdmin.from("invoices").delete().eq("id", sourceId);
         if (error) throw error;
+        await mirrorInvoiceReceivable(sourceId);
         notifyComissaoInvoiceEvent("CANCELADO", { invoice });
         console.log(`[relatorio-nf] Invoice ${sourceId} (cliente=${invoice.client_id}, R$${invoice.value}) EXCLUÍDA por ${user.email}. Motivo: ${reason || "—"}`);
         return res.json({ success: true, removed: { source, sourceId, value: Number(invoice.value || 0) } });
@@ -4370,6 +4381,7 @@ export function registerAsaasRoutes(app: Express) {
         if (relinkedPaymentId) dbUpdate.asaas_payment_id = relinkedPaymentId;
         const { error } = await supabaseAdmin.from("invoices").update(dbUpdate).eq("id", invoiceId);
         if (error) throw error;
+        await mirrorInvoiceReceivable(invoiceId);
 
         notifyComissaoInvoiceEvent("PAGO", {
           invoiceId,
@@ -4869,6 +4881,7 @@ export function registerAsaasRoutes(app: Express) {
         }
         const { error } = await supabaseAdmin.from("invoices").delete().in("id", safeIds);
         if (error) throw error;
+        for (const invoiceId of safeIds) await mirrorInvoiceReceivable(invoiceId);
 
         console.log(`[cleanup-orphans] ${safeIds.length} invoice(s) órfã(s) deletada(s) por ${user.email}: [${safeIds.join(", ")}]`);
         res.json({ deleted: safeIds.length, skipped: ids.length - safeIds.length, deletedIds: safeIds });

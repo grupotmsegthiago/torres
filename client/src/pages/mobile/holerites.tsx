@@ -106,7 +106,7 @@ function PayslipCard({ p, onSign }: { p: any; onSign?: () => void }) {
       )}
 
       {!isAssinado && onSign && (
-        <Button onClick={onSign} className="mt-3 w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-${p.id}`}>
+        <Button onClick={onSign} className="mobile-action mt-3 w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-${p.id}`}>
           <ShieldCheck className="w-4 h-4 mr-1" /> Assinar holerite
         </Button>
       )}
@@ -144,7 +144,7 @@ function SignatureFlow({ payslip, onClose }: { payslip: any; onClose: () => void
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col">
+    <div className="mobile-sheet">
       <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 bg-neutral-900 text-white">
         <div>
           <h3 className="font-black text-sm">Assinatura — {MONTHS[payslip.month - 1]}/{payslip.year}</h3>
@@ -153,7 +153,7 @@ function SignatureFlow({ payslip, onClose }: { payslip: any; onClose: () => void
         <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-signature"><X className="w-5 h-5" /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         {step === 1 && (
           <Step1Termo
             payslip={payslip}
@@ -215,7 +215,7 @@ function Step1Termo({ payslip, aceito, setAceito, onNext }: any) {
         </span>
       </label>
 
-      <Button onClick={onNext} disabled={!aceito} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-step-next">
+      <Button onClick={onNext} disabled={!aceito} className="mobile-action w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold" data-testid="button-step-next">
         Continuar para reconhecimento facial
       </Button>
     </div>
@@ -279,7 +279,7 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">{error}</div>}
 
-      <div className="aspect-square bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
+      <div className="mx-auto aspect-square w-full max-w-[min(100%,46dvh)] bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
         {foto ? (
           <img src={foto} alt="Selfie capturada" className="w-full h-full object-cover" data-testid="img-facial-preview" />
         ) : (
@@ -289,14 +289,14 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
       </div>
 
       <div className="flex gap-2">
-        <Button onClick={onBack} variant="outline" className="flex-1 h-12" data-testid="button-step-back">Voltar</Button>
+        <Button onClick={onBack} variant="outline" className="mobile-action flex-1" data-testid="button-step-back">Voltar</Button>
         {foto ? (
           <>
-            <Button onClick={refazer} variant="outline" className="flex-1 h-12" data-testid="button-refazer-facial">Refazer</Button>
+            <Button onClick={refazer} variant="outline" className="mobile-action flex-1" data-testid="button-refazer-facial">Refazer</Button>
             <Button onClick={onNext} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-step-next">Avançar</Button>
           </>
         ) : (
-          <Button onClick={capturar} disabled={!!error} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-capturar-facial">
+          <Button onClick={capturar} disabled={!!error} className="mobile-action flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold" data-testid="button-capturar-facial">
             <Camera className="w-4 h-4 mr-1" /> Capturar Foto
           </Button>
         )}
@@ -393,8 +393,8 @@ function Step3Assinatura({ assinatura, setAssinatura, onBack, onSubmit, isPendin
       </Button>
 
       <div className="flex gap-2">
-        <Button onClick={onBack} variant="outline" className="flex-1 h-12" disabled={isPending} data-testid="button-step-back">Voltar</Button>
-        <Button onClick={confirmar} disabled={!hasInk || isPending} className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-confirmar-assinatura">
+        <Button onClick={onBack} variant="outline" className="mobile-action flex-1" disabled={isPending} data-testid="button-step-back">Voltar</Button>
+        <Button onClick={confirmar} disabled={!hasInk || isPending} className="mobile-action flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold" data-testid="button-confirmar-assinatura">
           {isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Enviando...</> : <><CheckCircle2 className="w-4 h-4 mr-1" />Confirmar e Assinar</>}
         </Button>
       </div>

@@ -399,6 +399,8 @@ export const vehicleMaintenance = pgTable("vehicle_maintenance", {
   provider: text("provider"),
   status: text("status").notNull().default("realizada"),
   notes: text("notes"),
+  /** Quem confirmou o aviso obrigatório. Permanece no registro como histórico. */
+  ciencia: jsonb("ciencia").$type<Array<{ userId: number; name: string; at: string }>>().notNull().default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

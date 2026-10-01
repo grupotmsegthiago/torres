@@ -14,6 +14,7 @@ import type { Express } from "express";
   import { applyPedagioClientMarkup, osCobraMarkupPedagio } from "../../shared/pedagio-markup";
   import { logFinancialAudit, haversineDist, removeAutoTransaction, createAutoTransaction } from "./_helpers";
   import { canCancelAguardando } from "../lib/financial-cancel-guard";
+import { ensureInvoiceReceivables } from "../lib/invoice-receivable";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { isBillingProtected } from "../lib/billing-frozen";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
@@ -203,6 +204,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
 
   app.get("/api/financial/transactions", requireAdminRole, async (req, res) => {
     try {
+      await ensureInvoiceReceivables();
       const { type, status, from, to, search, exclude_mission, only_mission } = req.query;
       // Lançamentos AGUARDANDO_APROVACAO/RECUSADA são visíveis para TODOS os usuários
       // com acesso ao módulo financeiro (transparência). Apenas a ação de aprovar/recusar
@@ -464,7 +466,9 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       const user = req.user!;
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
-      if (existing.status !== "AGUARDANDO_APROVACAO") {
+      const semCarimbo = !existing.aprovado_em && !existing.aprovado_por;
+      const podeAprovar = existing.status === "AGUARDANDO_APROVACAO" || (existing.type === "EXPENSE" && existing.status === "PENDING" && semCarimbo);
+      if (!podeAprovar) {
         return res.status(400).json({ message: `Status atual (${existing.status}) não permite aprovação` });
       }
       const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
@@ -483,7 +487,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       if (error) throw error;
 
       await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
-        [{ field: "status", old: "AGUARDANDO_APROVACAO", new_val: "PENDING" }],
+        [{ field: "status", old: existing.status, new_val: "PENDING" }],
         user.name, user.id, "Aprovação diretoria");
 
       res.json(data);
@@ -503,13 +507,14 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
         return res.status(400).json({ message: "Lançamento não pertence a uma série parcelada" });
       }
 
-      const { data: pendingSeries, error: listErr } = await supabaseAdmin
+      const { data: seriesRows, error: listErr } = await supabaseAdmin
         .from("financial_transactions")
-        .select("id, installment_number")
-        .eq("installment_group", existing.installment_group)
-        .eq("status", "AGUARDANDO_APROVACAO");
+        .select("id, installment_number, status, aprovado_em, aprovado_por")
+        .eq("installment_group", existing.installment_group);
       if (listErr) throw listErr;
-      const ids = (pendingSeries || []).map((r: any) => r.id);
+      const ids = (seriesRows || [])
+        .filter((r: any) => r.status === "AGUARDANDO_APROVACAO" || (r.status === "PENDING" && !r.aprovado_em && !r.aprovado_por))
+        .map((r: any) => r.id);
       if (ids.length === 0) return res.status(400).json({ message: "Nenhuma parcela aguardando aprovação nessa série" });
 
       const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
@@ -547,7 +552,11 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       const { data: existing, error: chkErr } = await supabaseAdmin.from("financial_transactions").select("*").eq("id", req.params.id).single();
       if (chkErr || !existing) return res.status(404).json({ message: "Lançamento não encontrado" });
       if (existing.status !== "AGUARDANDO_APROVACAO") {
-        return res.status(400).json({ message: `Status atual (${existing.status}) não permite recusa` });
+        const semCarimbo = !existing.aprovado_em && !existing.aprovado_por;
+        const podeRecusar = existing.type === "EXPENSE" && existing.status === "PENDING" && semCarimbo;
+        if (!podeRecusar) {
+          return res.status(400).json({ message: `Status atual (${existing.status}) não permite recusa` });
+        }
       }
       const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
       const { data, error } = await supabaseAdmin
@@ -564,7 +573,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
 
       await logFinancialAudit("financial_transactions", req.params.id, "UPDATE",
         [
-          { field: "status", old: "AGUARDANDO_APROVACAO", new_val: "RECUSADA" },
+          { field: "status", old: existing.status, new_val: "RECUSADA" },
           { field: "recusado_motivo", old: null, new_val: motivo },
         ],
         user.name, user.id, "Recusa diretoria");
@@ -948,6 +957,9 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       if (existing.status === "AGUARDANDO_APROVACAO" || existing.status === "RECUSADA") {
         return res.status(400).json({ message: "Lançamento ainda não foi aprovado pela diretoria" });
       }
+      if (existing.origin_type === "invoice") {
+        return res.status(400).json({ message: "O recebimento da fatura segue a cobrança. A baixa é feita no Relatório de NFs." });
+      }
       const newStatus = existing.status === "PAID" ? "PENDING" : "PAID";
       // O comprovante NÃO é mais obrigatório aqui — pode ser anexado depois
       // via botão "Anexar". O badge "COMPROVANTE PENDENTE" sinaliza a falta.
@@ -1052,7 +1064,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       const txs = all || [];
       const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
       const expenses = txs.filter((t: any) => t.type === "EXPENSE");
-      const incomes = txs.filter((t: any) => t.type === "INCOME");
+      const incomes = txs.filter((t: any) => t.type === "INCOME" && t.origin_type !== "invoice");
       res.json({
         totalExpenses: expenses.reduce((a: number, t: any) => a + Number(t.amount), 0),
         paidExpenses: expenses.filter((t: any) => t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount), 0),
@@ -1578,7 +1590,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       const txs = all || [];
       const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-      const incomes = txs.filter((t: any) => t.type === "INCOME");
+      const incomes = txs.filter((t: any) => t.type === "INCOME" && t.origin_type !== "invoice");
       const expenses = txs.filter((t: any) => t.type === "EXPENSE");
       const paidIncomes = incomes.filter((t: any) => t.status === "PAID");
       const paidExpenses = expenses.filter((t: any) => t.status === "PAID");
@@ -3042,8 +3054,10 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
         }
       }
 
-      const incomeTotal = txns.filter((t: any) => t.type === "INCOME").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
-      const incomePaid = txns.filter((t: any) => t.type === "INCOME" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      // Fatura emitida espelha Contas a Receber. O faturamento deste painel já
+      // conta escort_billing; somar origin_type invoice duplicaria a receita.
+      const incomeTotal = txns.filter((t: any) => t.type === "INCOME" && t.origin_type !== "invoice").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
+      const incomePaid = txns.filter((t: any) => t.type === "INCOME" && t.origin_type !== "invoice" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
       const expenseTotal = txns.filter((t: any) => t.type === "EXPENSE").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
       const expensePaid = txns.filter((t: any) => t.type === "EXPENSE" && t.status === "PAID").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
       const escortIncome = txns.filter((t: any) => t.origin_type === "escort_billing").reduce((a: number, t: any) => a + Number(t.amount || 0), 0);
@@ -3059,7 +3073,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       };
 
       const revenueByDay: Record<string, number> = {};
-      txns.filter((t: any) => t.type === "INCOME").forEach((t: any) => {
+      txns.filter((t: any) => t.type === "INCOME" && t.origin_type !== "invoice").forEach((t: any) => {
         const d = safeDateKey(t.due_date);
         if (!d) return;
         revenueByDay[d] = (revenueByDay[d] || 0) + Number(t.amount || 0);

@@ -1554,21 +1554,15 @@ export async function buildFolhaStats(
   const cestaBasicaReal = isClt ? +(cestaBasica * fatorRateio).toFixed(2) : 0;
   const ajudaCustoReal = isClt ? +(ajudaCustoMensal * fatorRateio).toFixed(2) : 0;
 
-  // Diárias de missão (escolta/operacional) — só CLT; PJ = valor fixo.
+  // Diárias — só CLT. Mesma soma do custo mensal: pagamentos operacionais
+  // tipo diaria + agent_daily_allowances (inclui a marca manual da folha).
   let diarias = 0;
   if (isClt) {
     try {
       const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
-      const { data: diariaRows } = await supabaseAdmin
-        .from("operational_payments")
-        .select("amount")
-        .eq("employee_id", employeeId)
-        .eq("type", "diaria")
-        .gte("payment_date", from)
-        .lte("payment_date", cutoffStr);
-      if (Array.isArray(diariaRows)) {
-        diarias = diariaRows.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
-      }
+      const { sumDiariasForEmployee } = await import("./lib/employee-monthly-cost");
+      const soma = await sumDiariasForEmployee(employeeId, from, cutoffStr);
+      diarias = soma.total;
     } catch { /* tabela pode não existir em ambientes antigos */ }
   }
   diarias = +diarias.toFixed(2);

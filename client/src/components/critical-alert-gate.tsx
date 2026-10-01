@@ -4,6 +4,7 @@ import { AlertTriangle, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { ocultarAvisoManutencao } from "@shared/manutencao-ciencia";
 
 type CriticalNotification = {
   id: number;
@@ -34,12 +35,13 @@ export function CriticalAlertGate() {
     },
   });
 
-  if (!user || data.length === 0) return null;
+  const avisos = data.filter((n) => !ocultarAvisoManutencao(user?.role, n.type));
+  if (!user || avisos.length === 0) return null;
 
-  const current = data[0];
+  const current = avisos[0];
   const isVehicleMaint = current.type === "vehicle_maintenance";
   const Icon = isVehicleMaint ? Wrench : AlertTriangle;
-  const totalRemaining = data.length;
+  const totalRemaining = avisos.length;
 
   const handleAck = async () => {
     setAcking(true);

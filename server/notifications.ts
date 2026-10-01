@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./routes/_helpers";
+import { appendCiencia, manutencaoAberta } from "./lib/manutencao-ciencia";
 
 const ESCOLTA_EMAIL = "escolta@torresseguranca.com.br";
 const ADM_EMAIL = "adm@torresseguranca.com.br";
@@ -32,6 +33,61 @@ export async function createSystemNotification(input: {
     return null;
   }
   return data;
+}
+
+/** Encerra o aviso na tela. A lista de quem clicou em ciente fica na manutenção. */
+export async function encerrarAvisosManutencao(vehicleId: number) {
+  const now = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("system_notifications")
+    .update({ expires_at: now, require_ack: false })
+    .eq("type", "vehicle_maintenance")
+    .eq("related_type", "vehicle")
+    .eq("related_id", vehicleId)
+    .eq("require_ack", true);
+  if (error) console.error("[system-notification] encerrar aviso:", error.message);
+}
+
+export async function registrarCienciaManutencao(input: {
+  vehicleId: number;
+  userId: number;
+  name: string;
+  title?: string | null;
+  message?: string | null;
+}) {
+  const { data: rows, error } = await supabaseAdmin
+    .from("vehicle_maintenance")
+    .select("id, status, ciencia")
+    .eq("vehicle_id", input.vehicleId)
+    .order("created_at", { ascending: false })
+    .limit(30);
+  if (error) {
+    console.error("[manutencao-ciencia] list:", error.message);
+    return;
+  }
+  const aberta = (rows || []).find((row) => manutencaoAberta(row.status));
+  const at = new Date().toISOString();
+  if (aberta) {
+    const ciencia = appendCiencia(aberta.ciencia, { userId: input.userId, name: input.name, at });
+    const { error: updErr } = await supabaseAdmin.from("vehicle_maintenance").update({ ciencia }).eq("id", aberta.id);
+    if (updErr) console.error("[manutencao-ciencia] update:", updErr.message);
+    return;
+  }
+
+  const { data: vehicle } = await supabaseAdmin.from("vehicles").select("km").eq("id", input.vehicleId).maybeSingle();
+  const texto = `${input.title || ""} ${input.message || ""}`.toLowerCase();
+  const type = texto.includes("óleo") || texto.includes("oleo") ? "troca_oleo" : "preventiva";
+  const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const { error: insErr } = await supabaseAdmin.from("vehicle_maintenance").insert({
+    vehicle_id: input.vehicleId,
+    type,
+    description: input.title || "Aviso de manutenção",
+    date: hoje,
+    km: vehicle?.km ?? null,
+    status: "em_andamento",
+    ciencia: appendCiencia([], { userId: input.userId, name: input.name, at }),
+  });
+  if (insErr) console.error("[manutencao-ciencia] insert:", insErr.message);
 }
 
 export async function notifyVehicleMaintenance(vehicle: {

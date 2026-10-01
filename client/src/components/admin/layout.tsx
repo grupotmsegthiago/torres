@@ -11,6 +11,7 @@ import {
   Briefcase, Radar, UserCheck, Landmark, Activity, Wifi, WifiOff, Settings, Trash2, Bell, ShieldCheck, Database, Video, FileSpreadsheet, FileSignature
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CriticalAlertGate } from "@/components/critical-alert-gate";
 import { SiWhatsapp } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 
@@ -520,6 +521,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="h-screen bg-neutral-100 flex overflow-hidden" data-testid="admin-layout">
+      <CriticalAlertGate />
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-neutral-900 text-white transform transition-transform duration-200 lg:translate-x-0 lg:static flex flex-col ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"

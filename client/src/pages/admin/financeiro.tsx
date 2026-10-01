@@ -28,6 +28,7 @@ import {
 } from "recharts";
 import html2canvas from "html2canvas";
 import { filterTransactionsByPeriod, brtTodayStr } from "@shared/financeiroPeriod";
+import { isLancamentoPedagioVigilante } from "@shared/pedagio-markup";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
@@ -115,6 +116,7 @@ const ORIGIN_LABELS: Record<string, string> = {
   service_order: "RECEITA OS",
   manual: "MANUAL",
   ticketlog_pedagio_fatura: "FATURA TICKETLOG",
+  invoice: "FATURA",
 };
 
 const ORIGIN_ROUTES: Record<string, string> = {
@@ -123,7 +125,90 @@ const ORIGIN_ROUTES: Record<string, string> = {
   maintenance: "/admin/maintenance",
   mission_cost: "/admin/operational-grid",
   service_order: "/admin/operational-grid",
+  invoice: "/admin/relatorio-nf",
 };
+
+function isContaOperacional(t: { origin_type?: string | null }) {
+  return !t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura" || t.origin_type === "invoice";
+}
+
+/**
+ * Não entra em Contas a Pagar: o pagamento real é lançado à mão
+ * (fatura de pedágio/abastecimento, ou Flash da diária).
+ */
+function isDespesaExcluidaContasPagar(t: {
+  origin_type?: string | null;
+  origin_id?: string | null;
+  category_name?: string | null;
+  description?: string | null;
+}) {
+  if (t.origin_type === "fueling") return true;
+  if (isLancamentoPedagioVigilante(t)) return true;
+  const originId = String(t.origin_id || "");
+  const desc = String(t.description || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  if (t.origin_type === "payroll" && originId.startsWith("payroll-diario-")) return true;
+  if (desc.startsWith("PROVISAO DIARIA")) return true;
+  return false;
+}
+
+/** Ainda não passou pela diretoria. Pago permanece em Contas a Pagar. */
+function faltaAprovacaoDiretoria(t: {
+  status?: string | null;
+  aprovado_em?: string | null;
+  aprovado_por?: string | null;
+}) {
+  if (t.status === "PAID" || t.status === "RECUSADA" || t.status === "CANCELLED") return false;
+  return !(t.aprovado_em || t.aprovado_por);
+}
+
+function textoUmaLinha(value: string | null | undefined) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function LancamentoTitulo({ description, notes, entityName }: { description: string; notes?: string | null; entityName?: string | null }) {
+  const completo = textoUmaLinha(description);
+  const detalhe = textoUmaLinha(notes);
+  const titulo = completo.length > 42 ? `${completo.slice(0, 42).trimEnd()}…` : completo;
+  const descricaoHover = detalhe || completo;
+  const [tip, setTip] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  const abrir = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const above = r.top > 140;
+    setTip({ left: r.left, top: above ? r.top - 8 : r.bottom + 8, above });
+  };
+  return (
+    <span
+      className="relative inline-block max-w-[240px] align-middle"
+      onMouseEnter={(e) => abrir(e.currentTarget)}
+      onMouseLeave={() => setTip(null)}
+    >
+      <span className="font-bold text-neutral-800 text-sm uppercase cursor-help block truncate" title={descricaoHover}>{titulo || "—"}</span>
+      {tip && (
+        <span
+          className="pointer-events-none fixed z-[80] w-max max-w-xs rounded-xl bg-neutral-900 px-3 py-2 text-left text-[10px] font-bold normal-case tracking-normal text-white shadow-[0_12px_24px_-10px_rgba(0,0,0,0.55)] whitespace-normal"
+          data-testid="tip-lancamento"
+          style={{ left: tip.left, top: tip.top, transform: tip.above ? "translateY(-100%)" : undefined }}
+        >
+          <span className="block text-[8px] font-black uppercase tracking-widest text-neutral-400">Favorecido</span>
+          <span className="block uppercase">{entityName || "Geral"}</span>
+          {detalhe ? (
+            <>
+              <span className="block text-[8px] font-black uppercase tracking-widest text-neutral-400 mt-1.5">Título</span>
+              <span className="block uppercase">{completo || "—"}</span>
+              <span className="block text-[8px] font-black uppercase tracking-widest text-neutral-400 mt-1.5">Descrição</span>
+              <span className="block">{detalhe}</span>
+            </>
+          ) : (
+            <>
+              <span className="block text-[8px] font-black uppercase tracking-widest text-neutral-400 mt-1.5">Descrição</span>
+              <span className="block uppercase">{completo || "—"}</span>
+            </>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
 
 // Extrai o código da fatura TicketLog a partir do origin_id.
 // Modo único: origin_id == codigoFatura. Modo rateado: codigoFatura:placa.
@@ -378,8 +463,12 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               className={`flex-1 py-2 text-xs font-bold uppercase rounded-md transition-all ${type === "EXPENSE" ? "bg-neutral-900 text-white shadow-sm" : "text-neutral-500"}`}>Despesa</button>
           </div>
           <div>
-            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Tag size={12} /> Descrição</label>
-            <input required type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" placeholder="Ex: Pagamento Fornecedor" value={description} onChange={e => setDescription(e.target.value)} data-testid="input-description" />
+            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 flex items-center gap-1"><Tag size={12} /> Título</label>
+            <input required type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm font-bold uppercase bg-white" placeholder="Ex: IPVA Mobi" value={description} onChange={e => setDescription(e.target.value)} data-testid="input-description" />
+          </div>
+          <div>
+            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Descrição</label>
+            <textarea className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" rows={2} placeholder="Detalhe do lançamento. Na lista aparece ao passar o mouse." value={notes} onChange={e => setNotes(e.target.value)} data-testid="input-notes" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -721,7 +810,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                       </span>
                     )}
                   </div>
-                  <p className="text-[9px] font-bold text-neutral-400 mt-1">Foto das contas assinadas. Opcional neste momento — também pode anexar depois na listagem.</p>
+                  <p className="text-[9px] font-bold text-neutral-400 mt-1">Foto das contas assinadas. Anexe agora ou na fila de Aguardando aprovação, antes da diretoria liberar.</p>
                 </div>
               )}
 
@@ -732,10 +821,6 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               )}
             </div>
           )}
-          <div>
-            <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Observações</label>
-            <input type="text" className="w-full p-2.5 border border-neutral-200 rounded-lg text-sm bg-white" placeholder="Opcional" value={notes} onChange={e => setNotes(e.target.value)} data-testid="input-notes" />
-          </div>
           <button disabled={saveMutation.isPending} type="submit" data-testid="button-save-transaction"
             className="w-full bg-neutral-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-50">
             {saveMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
@@ -2067,6 +2152,10 @@ export default function FinanceiroPage() {
   const handleTogglePago = (t: FinancialTransaction) => {
     const goingToPaid = t.status !== "PAID";
     const isManualExpense = t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura");
+    if (t.origin_type === "invoice") {
+      toast({ title: "Status da fatura", description: "Este lançamento segue a cobrança. A baixa é feita no Relatório de NFs." });
+      return;
+    }
     if (goingToPaid && isManualExpense && !t.comprovante_url) {
       toast({ title: "Comprovante obrigatório", description: "Anexe o comprovante antes de marcar como pago." });
       handleUploadComprovante(t.id, () => toggleMutation.mutate(t.id));
@@ -2143,7 +2232,11 @@ export default function FinanceiroPage() {
 
   // Derivam do conjunto já filtrado por período: o filtro de data vale também na
   // aba de aprovação. Aguardando e recusados respeitam o período selecionado.
-  const aguardandoAprovacao = useMemo(() => periodFilteredTransactions.filter(t => t.status === "AGUARDANDO_APROVACAO"), [periodFilteredTransactions]);
+  const aguardandoAprovacao = useMemo(() => periodFilteredTransactions.filter(t => {
+    if (t.status === "RECUSADA") return false;
+    if (t.status === "AGUARDANDO_APROVACAO") return true;
+    return t.type === "EXPENSE" && t.status === "PENDING" && faltaAprovacaoDiretoria(t) && !isDespesaExcluidaContasPagar(t);
+  }), [periodFilteredTransactions]);
   const totalAguardando = useMemo(() => aguardandoAprovacao.reduce((s, t) => s + Number(t.amount || 0), 0), [aguardandoAprovacao]);
   const recusados = useMemo(() => periodFilteredTransactions.filter(t => t.status === "RECUSADA"), [periodFilteredTransactions]);
 
@@ -2156,16 +2249,21 @@ export default function FinanceiroPage() {
     if (!typeFilter) {
       list = list.filter(t => t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA");
     }
-    // Em PAGAR/RECEBER esconder lançamentos automáticos de missão (Mission/Combustível/OS)
-    // — eles aparecem em Conferência/Relatório, mas o operacional ADM não os manuseia aqui.
-    if (typeFilter) {
-      list = list.filter(t => !t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura");
-      // Excluir categorias de missão (já visíveis em Conferência)
+    // Contas a Pagar mostra a despesa da Conferência, exceto pedágio e abastecimento
+    // automáticos e a provisão diária (o pagamento entra pela fatura ou pela Flash).
+    // Contas a Receber continua só com lançamento operacional.
+    if (typeFilter === "INCOME") {
+      list = list.filter(t => isContaOperacional(t));
       list = list.filter(t => {
         const cat = String(t.category_name || "").toUpperCase();
         return !["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"].includes(cat);
       });
-      // Ocultar AGUARDANDO_APROVACAO e RECUSADA das abas operacionais (ficam em sua própria aba)
+    }
+    if (typeFilter === "EXPENSE") {
+      list = list.filter(t => !isDespesaExcluidaContasPagar(t));
+      list = list.filter(t => !faltaAprovacaoDiretoria(t));
+    }
+    if (typeFilter) {
       list = list.filter(t => t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA");
     }
     const todayStr = brtTodayStr();
@@ -2184,22 +2282,27 @@ export default function FinanceiroPage() {
     return list;
   }, [periodFilteredTransactions, activeStep, statusFilter, origemFilter, searchTerm]);
 
-  // Lançamentos manuais (sem origem automática de missão), excluindo categorias
-  // de missão e fora do fluxo de aprovação/recusa. Aplicado a todos os totais e
-  // cards das abas Pagar/Receber para consistência com a tabela.
+  // Contas a Receber: só lançamento operacional, fora de aprovação/recusa.
+  // Contas a Pagar usa despesasPagar (o mesmo conjunto da Conferência).
   const MISSION_CATEGORIES = ["CUSTOS DE MISSÃO", "COMBUSTÍVEL", "CUSTOS DE MISSAO", "COMBUSTIVEL"];
   const manualOperationalTx = useMemo(() => {
     return periodFilteredTransactions.filter(t => {
       const cat = String(t.category_name || "").toUpperCase();
-      return (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura") &&
+      return isContaOperacional(t) &&
         !MISSION_CATEGORIES.includes(cat) &&
         t.status !== "AGUARDANDO_APROVACAO" &&
         t.status !== "RECUSADA";
     });
   }, [periodFilteredTransactions]);
 
+  // Despesas da Conferência, sem pedágio/abastecimento automático nem provisão diária.
+  const despesasPagar = useMemo(
+    () => periodFilteredTransactions.filter(t => t.type === "EXPENSE" && t.status !== "AGUARDANDO_APROVACAO" && t.status !== "RECUSADA" && !isDespesaExcluidaContasPagar(t) && !faltaAprovacaoDiretoria(t)),
+    [periodFilteredTransactions],
+  );
+
   const summaryPagar = useMemo(() => {
-    const expenses = manualOperationalTx.filter(t => t.type === "EXPENSE");
+    const expenses = despesasPagar;
     return {
       total: expenses.reduce((a, t) => a + Number(t.amount), 0),
       paid: expenses.filter(t => t.status === "PAID").reduce((a, t) => a + Number(t.amount), 0),
@@ -2207,7 +2310,25 @@ export default function FinanceiroPage() {
       count: expenses.length,
       paidCount: expenses.filter(t => t.status === "PAID").length,
     };
-  }, [manualOperationalTx]);
+  }, [despesasPagar]);
+
+  // Aprovado = diretoria já liberou na fila. Provisionado = só o que ainda está
+  // em Aguardando aprovação (o total daquela aba). Valor total = os dois.
+  const pagarAprovadoProvisionado = useMemo(() => {
+    const expenses = periodFilteredTransactions.filter(t => t.type === "EXPENSE" && t.status !== "RECUSADA" && !isDespesaExcluidaContasPagar(t));
+    const aprovado = expenses.filter(t => !!(t.aprovado_em || t.aprovado_por) && t.status !== "AGUARDANDO_APROVACAO");
+    const provisionado = aguardandoAprovacao.filter(t => t.type === "EXPENSE");
+    const sum = (list: typeof expenses) => list.reduce((a, t) => a + Number(t.amount || 0), 0);
+    const totalAprovado = sum(aprovado);
+    const totalProvisionado = sum(provisionado);
+    return {
+      totalAprovado,
+      totalProvisionado,
+      valorTotal: totalAprovado + totalProvisionado,
+      countAprovado: aprovado.length,
+      countProvisionado: provisionado.length,
+    };
+  }, [periodFilteredTransactions, aguardandoAprovacao]);
 
   const summaryReceber = useMemo(() => {
     const incomes = manualOperationalTx.filter(t => t.type === "INCOME");
@@ -2222,8 +2343,8 @@ export default function FinanceiroPage() {
 
   const overduePagar = useMemo(() => {
     const today = brtTodayStr();
-    return manualOperationalTx.filter(t => t.type === "EXPENSE" && t.status === "PENDING" && t.due_date.split("T")[0] < today);
-  }, [manualOperationalTx]);
+    return despesasPagar.filter(t => t.status === "PENDING" && t.due_date && t.due_date.split("T")[0] < today);
+  }, [despesasPagar]);
 
   const overdueReceber = useMemo(() => {
     const today = brtTodayStr();
@@ -2287,16 +2408,16 @@ export default function FinanceiroPage() {
   );
 
   const renderFilters = () => (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-neutral-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end" data-testid="filters-panel">
+    <div className="bg-gradient-to-br from-white to-neutral-50 p-4 rounded-3xl border border-white shadow-[0_16px_36px_-22px_rgba(15,23,42,0.45),inset_0_1px_0_#fff] grid grid-cols-1 lg:grid-cols-12 gap-4 items-end" data-testid="filters-panel">
       <div className="relative lg:col-span-9">
         <label className="text-[10px] font-black text-neutral-400 uppercase mb-1.5 block tracking-widest">Buscar</label>
-        <input type="text" placeholder="Fornecedor, cliente..." className="w-full pl-10 pr-4 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:border-neutral-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search" />
+        <input type="text" placeholder="Fornecedor, cliente..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-neutral-200 rounded-2xl text-sm shadow-[inset_0_2px_6px_rgba(15,23,42,0.05)] focus:border-neutral-400 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search" />
         <Search size={18} className="absolute left-3 bottom-2.5 text-neutral-400" />
       </div>
-      <div className="lg:col-span-3 flex gap-1 bg-neutral-100 p-1 rounded-lg">
+      <div className="lg:col-span-3 flex gap-1 bg-neutral-100/80 p-1 rounded-full shadow-[inset_0_2px_6px_rgba(15,23,42,0.08)]">
         {([["ALL", "Tudo"], ["PENDING", "Pendente"], ["PAID", "Pago"], ["OVERDUE", "Vencido"]] as [StatusFilter, string][]).map(([id, label]) => (
           <button key={id} onClick={() => setStatusFilter(id)} data-testid={`button-status-${id.toLowerCase()}`}
-            className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
+            className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-full transition-all ${
               statusFilter === id
                 ? id === "PAID" ? "bg-green-500 text-white shadow-sm"
                 : id === "OVERDUE" ? "bg-red-500 text-white shadow-sm"
@@ -2310,10 +2431,10 @@ export default function FinanceiroPage() {
       </div>
       <div className="lg:col-span-12">
         <label className="text-[10px] font-black text-neutral-400 uppercase mb-1.5 block tracking-widest">Origem</label>
-        <div className="flex gap-1 bg-neutral-100 p-1 rounded-lg">
+        <div className="flex gap-1 bg-neutral-100/80 p-1 rounded-full shadow-[inset_0_2px_6px_rgba(15,23,42,0.08)]">
           {([["ALL", "Todas"], ["MANUAL", "Manual"], ["TICKETLOG", "TicketLog Pedágios"]] as [OrigemFilter, string][]).map(([id, label]) => (
             <button key={id} onClick={() => setOrigemFilter(id)} data-testid={`button-origem-${id.toLowerCase()}`}
-              className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
+              className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-full transition-all ${
                 origemFilter === id
                   ? id === "TICKETLOG" ? "bg-amber-500 text-white shadow-sm"
                   : id === "MANUAL" ? "bg-neutral-700 text-white shadow-sm"
@@ -2329,15 +2450,14 @@ export default function FinanceiroPage() {
   );
 
   const renderTable = (list: FinancialTransaction[]) => (
-    <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden" data-testid="transactions-table">
+    <div className="rounded-[28px] border border-white bg-gradient-to-b from-neutral-100 via-neutral-50 to-neutral-200/70 p-3 shadow-[0_28px_60px_-32px_rgba(15,23,42,0.55),inset_0_1px_0_rgba(255,255,255,0.9)]" data-testid="transactions-table">
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
+        <table className="min-w-full w-max text-left border-separate border-spacing-y-2 whitespace-nowrap">
           <thead>
-            <tr className="bg-neutral-900 text-white text-[10px] font-black uppercase tracking-widest">
+            <tr className="text-[10px] font-black uppercase tracking-widest [&>th]:bg-neutral-900 [&>th]:text-white [&>th]:shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_18px_-14px_rgba(0,0,0,0.7)] [&>th:first-child]:rounded-l-2xl [&>th:last-child]:rounded-r-2xl">
               <th className="px-4 py-3">ID</th>
-              <th className="px-4 py-3">Favorecido</th>
               <th className="px-4 py-3">Categoria</th>
-              <th className="px-4 py-3">Descrição</th>
+              <th className="px-4 py-3">Título</th>
               <th className="px-4 py-3">Vencimento</th>
               <th className="px-4 py-3 text-center">Status</th>
               <th className="px-4 py-3 text-center">Conferência</th>
@@ -2347,29 +2467,26 @@ export default function FinanceiroPage() {
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-100">
+          <tbody>
             {isLoading ? (
-              <tr><td colSpan={11} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
+              <tr><td colSpan={10} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-neutral-700" /></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={11} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
+              <tr><td colSpan={10} className="p-12 text-center text-neutral-400 font-bold uppercase italic text-sm" data-testid="text-empty-table">Nenhum lançamento encontrado.</td></tr>
             ) : list.map(t => {
               const isOverdue = t.status === "PENDING" && t.due_date.split("T")[0] < brtTodayStr();
               return (
-                <tr key={t.id} className={`hover:bg-neutral-50 transition-colors ${isOverdue ? "bg-red-50/50" : ""}`} data-testid={`row-transaction-${t.id}`}>
+                <tr key={t.id} className={`relative transition-transform hover:z-20 ${isOverdue ? "[&>td]:bg-red-50" : "[&>td]:bg-white"} [&>td]:border-y [&>td]:border-white [&>td:first-child]:rounded-l-2xl [&>td:first-child]:border-l [&>td:last-child]:rounded-r-2xl [&>td:last-child]:border-r [&>td]:shadow-[0_10px_18px_-16px_rgba(15,23,42,0.7)] hover:[&>td]:shadow-[0_16px_28px_-16px_rgba(15,23,42,0.55)]`} data-testid={`row-transaction-${t.id}`}>
                   <td className="px-4 py-3">
                     <span className="text-[10px] font-mono font-bold text-neutral-400" data-testid={`text-seq-${t.id}`}>{t.seq != null ? `#${t.seq}` : "—"}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-bold text-neutral-600 uppercase">{t.entity_name || "Geral"}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-[10px] font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200 uppercase">
+                    <span className="text-[10px] font-bold text-neutral-700 bg-neutral-100 px-2.5 py-0.5 rounded-full border border-neutral-200 uppercase shadow-[inset_0_1px_0_#fff]">
                       {t.category_name || "—"}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 relative hover:z-30">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-neutral-800 text-sm uppercase">{t.description}</span>
+                      <LancamentoTitulo description={t.description} notes={t.notes} entityName={t.entity_name} />
                       {t.origin_type && t.origin_type !== "manual" && (
                         (() => {
                           const isTicketLog = t.origin_type === "ticketlog_pedagio_fatura";
@@ -2382,6 +2499,10 @@ export default function FinanceiroPage() {
                               onClick={() => {
                                 if (t.origin_type === "service_order" && t.origin_id) {
                                   setDreOsId(t.origin_id);
+                                  return;
+                                }
+                                if (t.origin_type === "invoice" && t.origin_id) {
+                                  navigate(`/admin/relatorio-nf?invoiceId=${t.origin_id}`);
                                   return;
                                 }
                                 const route = ORIGIN_ROUTES[t.origin_type!];
@@ -2411,22 +2532,33 @@ export default function FinanceiroPage() {
                     <span className={`text-xs font-mono font-bold ${isOverdue ? "text-red-600" : "text-neutral-500"}`}>
                       {new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}
                     </span>
-                    {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
+                    {isOverdue && <span className="ml-1 text-[8px] font-black text-red-500 uppercase">Vencido</span>}
                     {t.installment_total && t.installment_total > 1 && (
-                      <span className="block text-[8px] font-bold text-neutral-400">{t.installment_number}/{t.installment_total}</span>
+                      <span className="ml-1 text-[8px] font-bold text-neutral-400">{t.installment_number}/{t.installment_total}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => handleTogglePago(t)} data-testid={`button-toggle-${t.id}`}
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${
-                        t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : isOverdue ? "bg-red-100 text-red-700 border-red-200 animate-pulse" : "bg-amber-50 text-amber-700 border-amber-200"
-                      }`}>
-                      {t.status === "PAID" ? "Pago" : isOverdue ? "Vencido" : "Pendente"}
-                    </button>
+                    <div className="inline-flex items-center justify-center gap-1">
+                      <button onClick={() => handleTogglePago(t)} data-testid={`button-toggle-${t.id}`}
+                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${
+                          t.status === "PAID" ? "bg-green-100 text-green-800 border-green-200" : isOverdue ? "bg-red-100 text-red-700 border-red-200 animate-pulse" : "bg-amber-50 text-amber-700 border-amber-200"
+                        }`}>
+                        {t.status === "PAID" ? "Pago" : isOverdue ? "Vencido" : "Pendente"}
+                      </button>
+                      {(t.aprovado_em || t.aprovado_por) && (
+                        <span
+                          className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          title={t.aprovado_por ? `Aprovado por ${t.aprovado_por}` : "Aprovado pela diretoria"}
+                          data-testid={`badge-aprovado-${t.id}`}
+                        >
+                          Aprovado
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-center" data-testid={`cell-conferencia-${t.id}`}>
                     {t.type === "EXPENSE" && (!t.origin_type || t.origin_type === "manual" || t.origin_type === "ticketlog_pedagio_fatura") ? (
-                      <div className="inline-flex items-center gap-1 flex-wrap justify-center">
+                      <div className="inline-flex items-center gap-1 flex-nowrap justify-center">
                         {/* 1 — BOLETO (só obrigatório se método=boleto) */}
                         {t.payment_method === "boleto" ? (
                           t.boleto_url ? (
@@ -2463,7 +2595,7 @@ export default function FinanceiroPage() {
                         {t.protocolo_url ? (
                           <button onClick={() => openDoc(t.id, "protocolo")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Protocolo anexado" data-testid={`badge-prot-ok-${t.id}`}>4-PROT ✓</button>
                         ) : (
-                          <button onClick={() => canEditDocs(t) ? handleUploadDoc(t.id, "protocolo") : blockDocEdit()} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title={canEditDocs(t) ? "Anexar protocolo de assinatura" : "Sem permissão para anexar"} data-testid={`badge-prot-pend-${t.id}`}>4-PROT ?</button>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="O protocolo de assinatura entra em Aguardando aprovação" data-testid={`badge-prot-pend-${t.id}`}>4-PROT —</span>
                         )}
                       </div>
                     ) : (
@@ -2526,7 +2658,7 @@ export default function FinanceiroPage() {
                         {t.status === "RECUSADA" ? "Recusada" : "Aguardando aprovação"}
                       </span>
                     ) : (
-                      <div className="flex justify-end gap-1">
+                      <div className="flex justify-end gap-1 flex-nowrap">
                         <button onClick={() => { setEditingTransaction(t); setIsFormOpen(true); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" data-testid={`button-edit-${t.id}`}><Edit size={14} /></button>
                         {isDiretoria && <button onClick={() => handleDelete(t.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" data-testid={`button-delete-${t.id}`}><Trash2 size={14} /></button>}
                       </div>
@@ -2538,7 +2670,7 @@ export default function FinanceiroPage() {
           </tbody>
         </table>
       </div>
-      <div className="p-3 bg-neutral-50 border-t border-neutral-200 flex justify-between items-center text-xs font-bold text-neutral-500 uppercase">
+      <div className="mt-1 px-4 py-3 rounded-2xl bg-white/80 border border-white shadow-[0_10px_24px_-18px_rgba(15,23,42,0.5),inset_0_1px_0_#fff] flex justify-between items-center text-xs font-bold text-neutral-500 uppercase">
         <span>{list.length} registro(s)</span>
         <span className="font-mono font-black text-neutral-900">Total: {formatCurrency(list.reduce((a, t) => a + Number(t.amount), 0))}</span>
       </div>
@@ -2554,9 +2686,37 @@ export default function FinanceiroPage() {
         <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">
           Visão Geral ({viewPeriod === "DAY" ? "Hoje" : viewPeriod === "WEEK" ? "Semana Atual" : viewPeriod === "MONTH" ? "Mês Atual" : viewPeriod === "CUSTOM" ? "Período Personalizado" : "Todos os Registros"})
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="p-4 flex items-center gap-3 border-neutral-200 shadow-sm" data-testid="card-total">
-            <div className={`p-2.5 rounded-full ${isPagar ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>
+        <div className={`grid grid-cols-2 gap-4 ${isPagar ? "lg:grid-cols-4 xl:grid-cols-7" : "md:grid-cols-4"}`}>
+          {isPagar && (
+            <>
+              <Card className="p-4 flex items-center gap-3 rounded-3xl border-white bg-gradient-to-br from-white to-emerald-50/80 shadow-[0_18px_36px_-22px_rgba(16,185,129,0.65),inset_0_1px_0_#fff] ring-1 ring-emerald-100" data-testid="card-total-aprovado" title="Despesas que a diretoria já aprovou em Aguardando aprovação">
+                <div className="p-2.5 rounded-2xl bg-emerald-500 text-white shadow-[0_8px_16px_-8px_rgba(16,185,129,0.9)]"><Shield size={18} /></div>
+                <div>
+                  <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Total aprovado</p>
+                  <p className="text-lg font-black font-mono text-emerald-700">{formatCurrency(pagarAprovadoProvisionado.totalAprovado)}</p>
+                  <p className="text-[9px] text-neutral-400 font-bold">{pagarAprovadoProvisionado.countAprovado} título(s)</p>
+                </div>
+              </Card>
+              <Card className="p-4 flex items-center gap-3 rounded-3xl border-white bg-gradient-to-br from-white to-sky-50/80 shadow-[0_18px_36px_-22px_rgba(14,165,233,0.65),inset_0_1px_0_#fff] ring-1 ring-sky-100" data-testid="card-total-provisionado" title="Soma do que está em Aguardando aprovação da diretoria">
+                <div className="p-2.5 rounded-2xl bg-sky-500 text-white shadow-[0_8px_16px_-8px_rgba(14,165,233,0.9)]"><Calculator size={18} /></div>
+                <div>
+                  <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Total provisionado</p>
+                  <p className="text-lg font-black font-mono text-sky-700">{formatCurrency(pagarAprovadoProvisionado.totalProvisionado)}</p>
+                  <p className="text-[9px] text-neutral-400 font-bold">{pagarAprovadoProvisionado.countProvisionado} título(s)</p>
+                </div>
+              </Card>
+              <Card className="p-4 flex items-center gap-3 rounded-3xl border-white bg-gradient-to-br from-white to-neutral-100 shadow-[0_18px_36px_-22px_rgba(15,23,42,0.55),inset_0_1px_0_#fff] ring-1 ring-neutral-200" data-testid="card-valor-total-pagar">
+                <div className="p-2.5 rounded-2xl bg-neutral-900 text-white shadow-[0_8px_16px_-8px_rgba(15,23,42,0.8)]"><Wallet size={18} /></div>
+                <div>
+                  <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Valor total</p>
+                  <p className="text-lg font-black font-mono text-neutral-900">{formatCurrency(pagarAprovadoProvisionado.valorTotal)}</p>
+                  <p className="text-[9px] text-neutral-400 font-bold">Aprovado + provisionado</p>
+                </div>
+              </Card>
+            </>
+          )}
+          <Card className="p-4 flex items-center gap-3 rounded-3xl border-white bg-gradient-to-br from-white to-neutral-50 shadow-[0_18px_36px_-22px_rgba(15,23,42,0.45),inset_0_1px_0_#fff] ring-1 ring-neutral-100" data-testid="card-total">
+            <div className={`p-2.5 rounded-2xl text-white shadow-[0_8px_16px_-8px_rgba(15,23,42,0.45)] ${isPagar ? "bg-red-500" : "bg-green-500"}`}>
               {isPagar ? <ArrowDownCircle size={18} /> : <ArrowUpCircle size={18} />}
             </div>
             <div>
@@ -2564,24 +2724,24 @@ export default function FinanceiroPage() {
               <p className={`text-lg font-black font-mono ${isPagar ? "text-red-600" : "text-green-600"}`}>{formatCurrency(summary.total)}</p>
             </div>
           </Card>
-          <Card className="p-4 flex items-center gap-3 border-neutral-200 shadow-sm" data-testid="card-paid">
-            <div className="p-2.5 bg-green-50 text-green-600 rounded-full"><CheckCircle2 size={18} /></div>
+          <Card className="p-4 flex items-center gap-3 rounded-3xl border-white bg-gradient-to-br from-white to-green-50/70 shadow-[0_18px_36px_-22px_rgba(22,163,74,0.45),inset_0_1px_0_#fff] ring-1 ring-green-100" data-testid="card-paid">
+            <div className="p-2.5 bg-green-500 text-white rounded-2xl shadow-[0_8px_16px_-8px_rgba(22,163,74,0.8)]"><CheckCircle2 size={18} /></div>
             <div>
               <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">{isPagar ? "Pago" : "Recebido"}</p>
               <p className="text-lg font-black font-mono text-green-600">{formatCurrency(summary.paid)}</p>
               <p className="text-[9px] text-neutral-400 font-bold">{summary.paidCount} título(s)</p>
             </div>
           </Card>
-          <Card className="p-4 flex items-center gap-3 border-neutral-200 shadow-sm" data-testid="card-pending">
-            <div className="p-2.5 bg-amber-50 text-amber-600 rounded-full"><Clock size={18} /></div>
+          <Card className="p-4 flex items-center gap-3 rounded-3xl border-white bg-gradient-to-br from-white to-amber-50/80 shadow-[0_18px_36px_-22px_rgba(217,119,6,0.45),inset_0_1px_0_#fff] ring-1 ring-amber-100" data-testid="card-pending">
+            <div className="p-2.5 bg-amber-500 text-white rounded-2xl shadow-[0_8px_16px_-8px_rgba(217,119,6,0.75)]"><Clock size={18} /></div>
             <div>
               <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Pendente</p>
               <p className="text-lg font-black font-mono text-amber-600">{formatCurrency(summary.pending)}</p>
               <p className="text-[9px] text-neutral-400 font-bold">{summary.count - summary.paidCount} título(s)</p>
             </div>
           </Card>
-          <Card className={`p-4 flex items-center gap-3 shadow-sm ${overdue.length > 0 ? "bg-red-50 border-red-200" : "border-neutral-200"}`} data-testid="card-overdue">
-            <div className={`p-2.5 rounded-full ${overdue.length > 0 ? "bg-red-100 text-red-600" : "bg-neutral-200 text-neutral-400"}`}><AlertCircle size={18} /></div>
+          <Card className={`p-4 flex items-center gap-3 rounded-3xl border-white shadow-[0_18px_36px_-22px_rgba(15,23,42,0.45),inset_0_1px_0_#fff] ${overdue.length > 0 ? "bg-gradient-to-br from-white to-red-50 ring-1 ring-red-200" : "bg-gradient-to-br from-white to-neutral-50 ring-1 ring-neutral-100"}`} data-testid="card-overdue">
+            <div className={`p-2.5 rounded-2xl text-white shadow-[0_8px_16px_-8px_rgba(15,23,42,0.4)] ${overdue.length > 0 ? "bg-red-500" : "bg-neutral-300 text-neutral-500"}`}><AlertCircle size={18} /></div>
             <div>
               <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Vencidos</p>
               <p className={`text-lg font-black font-mono ${overdue.length > 0 ? "text-red-600" : "text-neutral-400"}`}>{overdue.length}</p>
@@ -3238,8 +3398,8 @@ export default function FinanceiroPage() {
 
         {(activeStep === "PAGAR" || activeStep === "RECEBER") && renderPagarReceber()}
         {activeStep === "AGUARDANDO" && (
-          <div className="bg-white rounded-xl shadow-sm border border-amber-200 overflow-hidden" data-testid="table-aguardando">
-            <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+          <div className="rounded-[28px] border border-white bg-gradient-to-b from-neutral-100 via-neutral-50 to-neutral-200/70 p-3 shadow-[0_28px_60px_-32px_rgba(15,23,42,0.55),inset_0_1px_0_rgba(255,255,255,0.9)]" data-testid="table-aguardando">
+            <div className="mb-3 px-4 py-3 rounded-2xl bg-white/90 border border-amber-100 shadow-[0_10px_24px_-18px_rgba(180,83,9,0.45),inset_0_1px_0_#fff] flex items-center gap-2">
               <AlertTriangle size={16} className="text-amber-700" />
               <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Aguardando aprovação da diretoria — {aguardandoAprovacao.length} lançamento(s)</h3>
               {aguardandoAprovacao.length > 0 && (
@@ -3249,13 +3409,12 @@ export default function FinanceiroPage() {
               )}
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left">
+              <table className="min-w-full w-max text-left border-separate border-spacing-y-2 whitespace-nowrap">
                 <thead>
-                  <tr className="bg-neutral-900 text-white text-[10px] font-black uppercase tracking-widest">
+                  <tr className="text-[10px] font-black uppercase tracking-widest [&>th]:bg-neutral-900 [&>th]:text-white [&>th]:shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_18px_-14px_rgba(0,0,0,0.7)] [&>th:first-child]:rounded-l-2xl [&>th:last-child]:rounded-r-2xl">
                     <th className="px-4 py-3">Solicitado em</th>
                     <th className="px-4 py-3">Vencimento</th>
-                    <th className="px-4 py-3">Descrição</th>
-                    <th className="px-4 py-3">Fornecedor</th>
+                    <th className="px-4 py-3">Título</th>
                     <th className="px-4 py-3">Categoria</th>
                     <th className="px-4 py-3">Solicitante</th>
                     <th className="px-4 py-3 text-center">Documentos</th>
@@ -3263,22 +3422,23 @@ export default function FinanceiroPage() {
                     <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100">
+                <tbody>
                   {aguardandoAprovacao.length === 0 ? (
-                    <tr><td colSpan={9} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
+                    <tr><td colSpan={8} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
                   ) : aguardandoAprovacao.map(t => {
                     const isSeries = !!t.installment_group && (t.installment_total || 0) > 1;
                     const pendingInSeries = isSeries ? aguardandoAprovacao.filter(x => x.installment_group === t.installment_group).length : 0;
                     return (
-                    <tr key={t.id} className="hover:bg-amber-50/50" data-testid={`row-aguardando-${t.id}`}>
+                    <tr key={t.id} className="relative hover:z-20 [&>td]:bg-white [&>td]:border-y [&>td]:border-white [&>td:first-child]:rounded-l-2xl [&>td:first-child]:border-l [&>td:last-child]:rounded-r-2xl [&>td:last-child]:border-r [&>td]:shadow-[0_10px_18px_-16px_rgba(15,23,42,0.7)] hover:[&>td]:shadow-[0_16px_28px_-16px_rgba(15,23,42,0.55)]" data-testid={`row-aguardando-${t.id}`}>
                       <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(t.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                       <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-700">{new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-neutral-800 uppercase">{t.description}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-neutral-700 uppercase">{t.entity_name || "—"}</td>
-                      <td className="px-4 py-3 text-[10px] font-bold text-neutral-700 uppercase">{t.category_name || "—"}</td>
-                      <td className="px-4 py-3 text-xs font-bold text-neutral-600">{t.solicitado_por || "—"}</td>
+                      <td className="px-4 py-3 relative hover:z-30"><LancamentoTitulo description={t.description} notes={t.notes} entityName={t.entity_name} /></td>
+                      <td className="px-4 py-3">
+                        <span className="text-[10px] font-bold text-neutral-700 bg-neutral-100 px-2.5 py-0.5 rounded-full border border-neutral-200 uppercase shadow-[inset_0_1px_0_#fff]">{t.category_name || "—"}</span>
+                      </td>
+                      <td className="px-4 py-3 text-xs font-bold text-neutral-600 uppercase">{t.solicitado_por || "—"}</td>
                       <td className="px-4 py-3 text-center">
-                        <div className="inline-flex items-center gap-1 flex-wrap justify-center">
+                        <div className="inline-flex items-center gap-1 flex-nowrap justify-center">
                           {t.boleto_url && (
                             <button onClick={() => openDoc(t.id, "boleto")} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title="Ver boleto anexado" data-testid={`link-boleto-aguardando-${t.id}`}>
                               <FileText size={10} /> Boleto
@@ -3294,19 +3454,26 @@ export default function FinanceiroPage() {
                               <FileText size={10} /> Compr.
                             </button>
                           )}
-                          {t.protocolo_url && (
+                          {t.protocolo_url ? (
                             <button onClick={() => openDoc(t.id, "protocolo")} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-indigo-100 text-indigo-700 border border-indigo-300 hover:bg-indigo-200" title="Ver protocolo anexado" data-testid={`link-protocolo-aguardando-${t.id}`}>
                               <FileText size={10} /> Prot.
                             </button>
-                          )}
-                          {!t.boleto_url && !t.nf_url && !t.comprovante_url && !t.protocolo_url && (
-                            <span className="text-[9px] font-bold text-neutral-300 italic" data-testid={`text-sem-doc-aguardando-${t.id}`}>—</span>
+                          ) : (
+                            <button
+                              onClick={() => canEditDocs(t) ? handleUploadDoc(t.id, "protocolo") : blockDocEdit()}
+                              disabled={uploadDocMutation.isPending}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-indigo-600 text-white border border-indigo-700 hover:bg-indigo-700"
+                              title="Anexar protocolo de assinatura antes da aprovação"
+                              data-testid={`button-protocolo-aguardando-${t.id}`}
+                            >
+                              <FileText size={10} /> Protocolo
+                            </button>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-black text-sm text-red-600">{formatCurrency(Number(t.amount))}</td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-1.5 flex-wrap">
+                        <div className="flex justify-end gap-1.5 flex-nowrap">
                           {isThiagoAprovador && (
                             isSeries && pendingInSeries > 1 ? (
                               <button
@@ -3338,6 +3505,7 @@ export default function FinanceiroPage() {
                             title="Editar este lançamento enquanto aguarda aprovação">
                             <Edit size={12} /> Editar
                           </button>
+                          {t.status === "AGUARDANDO_APROVACAO" && (
                           <button onClick={() => {
                               if (confirm(`Cancelar este lançamento?\n\n${t.description} — ${formatCurrency(Number(t.amount))}\n\nSó é possível enquanto aguarda aprovação. Depois de aprovado, fale com a diretoria.`)) {
                                 cancelarAguardandoMutation.mutate(t.id);
@@ -3348,6 +3516,7 @@ export default function FinanceiroPage() {
                             title="Cancelar este lançamento (só antes da aprovação)">
                             <X size={12} /> Cancelar
                           </button>
+                          )}
                           {isThiagoAprovador && (
                             <button onClick={() => handleRecusar(t.id)} disabled={recusarMutation.isPending}
                               className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-50" data-testid={`button-recusar-${t.id}`}>
@@ -3360,21 +3529,16 @@ export default function FinanceiroPage() {
                     );
                   })}
                 </tbody>
-                {aguardandoAprovacao.length > 0 && (
-                  <tfoot>
-                    <tr className="bg-neutral-100 border-t-2 border-neutral-300">
-                      <td colSpan={7} className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-neutral-700">
-                        Total a aprovar ({aguardandoAprovacao.length})
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono font-black text-base text-red-700" data-testid="text-total-aguardando">{formatCurrency(totalAguardando)}</td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
+            {aguardandoAprovacao.length > 0 && (
+              <div className="mt-1 px-4 py-3 rounded-2xl bg-white/80 border border-white shadow-[0_10px_24px_-18px_rgba(15,23,42,0.5),inset_0_1px_0_#fff] flex justify-between items-center text-xs font-bold text-neutral-500 uppercase">
+                <span>Total a aprovar ({aguardandoAprovacao.length})</span>
+                <span className="font-mono font-black text-red-700" data-testid="text-total-aguardando">{formatCurrency(totalAguardando)}</span>
+              </div>
+            )}
             {recusados.length > 0 && (
-              <div className="border-t border-neutral-200 p-4 bg-red-50/50">
+              <div className="mt-3 p-4 rounded-2xl bg-red-50/80 border border-red-100">
                 <h4 className="text-[10px] font-black text-red-700 uppercase mb-2">Recusados Recentes ({recusados.length})</h4>
                 <div className="space-y-1">
                   {recusados.slice(0, 10).map(t => (

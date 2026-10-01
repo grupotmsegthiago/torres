@@ -108,15 +108,15 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
 
   if (!position) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex flex-col" data-testid="mobile-layout">
-        <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+      <div className="min-h-dvh bg-neutral-50 flex flex-col" data-testid="mobile-layout">
+        <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-40 safe-area-top">
           <div className="flex items-center gap-2">
             <img src={logoSrc} alt="Torres" className="w-7 h-7 object-contain rounded" />
             <span className="text-sm font-black text-neutral-900 uppercase tracking-wider">Torres</span>
           </div>
         </header>
 
-        <main className="flex-1 flex items-center justify-center p-6">
+        <main className="flex-1 flex items-center justify-center p-6 safe-area-bottom">
           {loading || bootstrapping ? (
             <div className="text-center" data-testid="location-loading">
               <Loader2 className="w-10 h-10 text-neutral-400 animate-spin mx-auto mb-4" />
@@ -195,9 +195,9 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col select-none touch-manipulation [&_input]:select-text [&_textarea]:select-text [&_select]:select-text" style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" } as any} data-testid="mobile-layout">
+    <div className="min-h-dvh bg-neutral-50 flex flex-col select-none touch-manipulation [&_input]:select-text [&_textarea]:select-text [&_select]:select-text" style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" } as any} data-testid="mobile-layout">
       {user && <Watermark name={user.name || user.username || "—"} matricula={user.matricula || "---"} />}
-      <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+      <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between sticky top-0 z-40 safe-area-top">
         <div className="flex items-center gap-2">
           <img src={logoSrc} alt="Torres" className="w-7 h-7 object-contain rounded" />
           <span className="text-sm font-black text-neutral-900 uppercase tracking-wider">Torres</span>
@@ -212,13 +212,13 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-20">
+      <main className="flex-1 overflow-y-auto pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))]">
         {children}
       </main>
 
       <ChatWidget />
       <CriticalAlertGate />
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-50 safe-area-bottom" data-testid="mobile-bottom-nav">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-40 safe-area-bottom" data-testid="mobile-bottom-nav">
         <div className="flex items-center justify-around py-1">
           {navItems.map((item) => {
             const isActive = location === item.path || (item.path !== "/mobile" && location.startsWith(item.path));

@@ -207,6 +207,7 @@ export async function createAutoTransaction(params: {
   category_name?: string;
   entity_name?: string;
   created_by?: string;
+  status?: "PENDING" | "PAID";
 }) {
   try {
     if (params.origin_type && params.origin_id) {
@@ -223,16 +224,18 @@ export async function createAutoTransaction(params: {
           console.log(`[AutoTransaction] Pulando atualização — transação ${existing[0].id} já conciliada em ${existing[0].conciliado_em}`);
           return existing[0];
         }
+        const patch: Record<string, unknown> = {
+          description: params.description,
+          amount: params.amount,
+          type: params.type,
+          due_date: params.due_date,
+          category_name: params.category_name || null,
+          entity_name: params.entity_name || null,
+        };
+        if (params.status) patch.status = params.status;
         const { data: updated, error: upErr } = await supabaseAdmin
           .from("financial_transactions")
-          .update({
-            description: params.description,
-            amount: params.amount,
-            type: params.type,
-            due_date: params.due_date,
-            category_name: params.category_name || null,
-            entity_name: params.entity_name || null,
-          })
+          .update(patch)
           .eq("id", existing[0].id)
           .select()
           .single();
@@ -244,7 +247,7 @@ export async function createAutoTransaction(params: {
       description: params.description,
       amount: params.amount,
       type: params.type,
-      status: "PENDING",
+      status: params.status || "PENDING",
       due_date: params.due_date,
       origin_type: params.origin_type,
       origin_id: params.origin_id,

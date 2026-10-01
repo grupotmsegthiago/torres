@@ -2,6 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* App do vigilante: notch, barra do Android e home do iPhone. */
+.safe-area-top { padding-top: env(safe-area-inset-top, 0px); }
+.safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+.mobile-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  background: #fff;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  overflow: hidden;
+}
+.mobile-sheet-front { z-index: 90; }
+.mobile-action {
+  white-space: normal !important;
+  height: auto !important;
+  min-height: 3rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  text-align: center;
+  line-height: 1.25;
+}
+
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0,0,0, .10);

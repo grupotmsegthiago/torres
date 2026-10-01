@@ -11,6 +11,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Plus, X, Pencil, Trash2 } from "lucide-react";
 import type { VehicleMaintenance, Vehicle } from "@shared/schema";
+import type { CienciaEntrada } from "@shared/manutencao-ciencia";
+
+function cienciaDaManutencao(m: VehicleMaintenance): CienciaEntrada[] {
+  const raw = (m as VehicleMaintenance & { ciencia?: CienciaEntrada[] }).ciencia;
+  return Array.isArray(raw) ? raw : [];
+}
 
 function MaintenanceForm({ maintenance, vehicles, onClose }: {
   maintenance?: VehicleMaintenance; vehicles: Vehicle[]; onClose: () => void;
@@ -179,6 +185,7 @@ export default function MaintenancePage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Tipo</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Custo</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">KM</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ciência</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ações</th>
                 </tr>
@@ -191,6 +198,16 @@ export default function MaintenancePage() {
                     <td className="p-3 text-neutral-600">{m.type}</td>
                     <td className="p-3 text-neutral-600">{m.cost ? `R$ ${Number(m.cost).toFixed(2)}` : "-"}</td>
                     <td className="p-3 text-neutral-600">{m.km?.toLocaleString() || "-"}</td>
+                    <td className="p-3 text-neutral-600">
+                      {cienciaDaManutencao(m).length === 0 ? "-" : (
+                        <div className="space-y-0.5" data-testid={`text-ciencia-${m.id}`}>
+                          {m.status === "realizada" && <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Histórico</p>}
+                          {cienciaDaManutencao(m).map((c) => (
+                            <p key={`${c.userId}-${c.at}`} className="text-xs text-neutral-800">{c.name}</p>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="p-3">
                       <span className={`text-[11px] px-2.5 py-1 rounded-md font-semibold uppercase tracking-wide ${
                         m.status === "realizada" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :

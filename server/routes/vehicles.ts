@@ -4,7 +4,7 @@ import type { Express } from "express";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertVehicleSchema, vehicles } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
-  import { notifyVehicleMaintenance } from "../notifications";
+  import { notifyVehicleMaintenance, encerrarAvisosManutencao } from "../notifications";
   import {
     insuranceColumn,
     parseInsuranceKind,
@@ -52,6 +52,9 @@ function stripInsuranceDataUrls<T extends Record<string, any>>(body: T): T {
     if (previous && previous.status !== "manutenção" && data.status === "manutenção") {
       const reason = (req.body?.maintenanceReason as string) || "marcado manualmente como em manutenção";
       notifyVehicleMaintenance({ id: data.id, plate: data.plate, model: data.model, km: data.km }, reason).catch((e) => console.error("[notify-maint] async err:", e?.message));
+    }
+    if (previous && previous.status === "manutenção" && data.status !== "manutenção") {
+      encerrarAvisosManutencao(data.id).catch((e) => console.error("[notify-maint] encerrar:", e?.message));
     }
     res.json(data);
   });

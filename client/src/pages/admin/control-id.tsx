@@ -17,6 +17,7 @@ import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, Che
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from "recharts";
 import type { Employee } from "@shared/schema";
 import { getPayrollPeriod as getPayrollPeriodFolha } from "@shared/payroll-period";
+import { downloadDiariasExcel, downloadDiariasPdf, fetchDiariasGrade } from "@/lib/diarias-ponto-report";
 import { isBoundaryPunchTime } from "@shared/punch-time";
 
 const formatBRT = (ymd: string) => {
@@ -1635,6 +1636,20 @@ function FolhaTab() {
   const [viewingDay, setViewingDay] = useState<FolhaDay | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [addDayOpen, setAddDayOpen] = useState(false);
+  const [exportingDiarias, setExportingDiarias] = useState<"pdf" | "xlsx" | null>(null);
+
+  async function baixarControleDiarias(kind: "pdf" | "xlsx") {
+    setExportingDiarias(kind);
+    try {
+      const grade = await fetchDiariasGrade(month);
+      if (kind === "pdf") await downloadDiariasPdf(grade);
+      else await downloadDiariasExcel(grade);
+    } catch (err) {
+      toast({ title: "Não foi possível gerar o controle de diárias", description: err instanceof Error ? err.message : "", variant: "destructive" });
+    } finally {
+      setExportingDiarias(null);
+    }
+  }
 
   const employee = employees.find(e => String(e.id) === employeeId);
 
@@ -1646,6 +1661,36 @@ function FolhaTab() {
       return r.json();
     },
     enabled: !!employeeId,
+  });
+
+  const { data: diariasPonto = [] } = useQuery<{ id: number; date: string; amount: number }[]>({
+    queryKey: ["/api/daily-allowances", "ponto", employeeId, month],
+    queryFn: async () => {
+      const r = await authFetch(`/api/daily-allowances/ponto?employeeId=${employeeId}&month=${month}`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!employeeId,
+  });
+
+  const diariaPontoMut = useMutation({
+    mutationFn: async (vars: { date: string; on: boolean }) => {
+      const r = await apiRequest("POST", "/api/daily-allowances/ponto", {
+        employeeId: Number(employeeId),
+        date: vars.date,
+        month,
+        on: vars.on,
+      });
+      return r.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances", "ponto", employeeId, month] });
+      queryClient.invalidateQueries({ queryKey: ["/api/control-id/folha-stats", employeeId, month] });
+      toast({ title: vars.on ? "Diária de R$ 43 marcada" : "Diária retirada" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Não foi possível marcar a diária", description: err.message, variant: "destructive" });
+    },
   });
 
   const { data: stats } = useQuery<FolhaStats>({
@@ -1687,7 +1732,13 @@ function FolhaTab() {
             </Button>
           </>
         )}
-        <Button variant="outline" size="sm" onClick={() => setBatchOpen(true)} className="h-9 ml-auto" data-testid="button-print-batch">
+        <Button variant="outline" size="sm" onClick={() => baixarControleDiarias("pdf")} disabled={!!exportingDiarias} className="h-9 ml-auto border-emerald-300 text-emerald-800 hover:bg-emerald-50" data-testid="button-diarias-pdf">
+          {exportingDiarias === "pdf" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileText className="w-3.5 h-3.5 mr-1" />} PDF diárias
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => baixarControleDiarias("xlsx")} disabled={!!exportingDiarias} className="h-9 border-emerald-300 text-emerald-800 hover:bg-emerald-50" data-testid="button-diarias-excel">
+          {exportingDiarias === "xlsx" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />} Excel diárias
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setBatchOpen(true)} className="h-9" data-testid="button-print-batch">
           <FileText className="w-3.5 h-3.5 mr-1" /> Impressão em Lote
         </Button>
       </Card>
@@ -2023,7 +2074,7 @@ function FolhaTab() {
                   <th className="p-2 text-right font-medium text-neutral-600">Noturno</th>
                   <th className="p-2 text-right font-medium text-neutral-600">H. Extra</th>
                   <th className="p-2 text-center font-medium text-neutral-600">Batidas</th>
-                  <th className="p-2 text-left font-medium text-neutral-600 min-w-[12rem]">Observação</th>
+                  <th className="p-2 text-center font-medium text-neutral-600">Diária</th>
                   <th className="p-2 text-right font-medium text-neutral-600 no-print">Ações</th>
                 </tr>
               </thead>
@@ -2044,7 +2095,7 @@ function FolhaTab() {
                     data-testid={`row-folha-${d.date}`}
                     data-folha-alert={rowAlert ? "erro" : rowWarn ? "aviso" : undefined}
                   >
-                    <td className="p-2 font-medium">
+                    <td className="p-2 font-medium" title={d.observation || undefined}>
                       <span className="inline-flex items-center gap-1">
                         {(rowAlert || rowWarn) && <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${rowAlert ? "text-red-600" : "text-amber-600"}`} />}
                         {new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}
@@ -2065,8 +2116,26 @@ function FolhaTab() {
                       )}
                     </td>
                     <td className="p-2 text-center text-xs text-neutral-400">{d.totalPunches}</td>
-                    <td className={`p-2 text-[11px] leading-snug max-w-xs ${rowAlert ? "text-red-800 font-medium" : rowWarn ? "text-amber-900" : "text-neutral-400"}`} data-testid={`text-obs-${d.date}`}>
-                      {d.observation || "—"}
+                    <td className="p-2 text-center" data-testid={`cell-diaria-${d.date}`}>
+                      {(() => {
+                        const elegivel = (Number(d.workedMin) || 0) > 16 * 60;
+                        const marcada = diariasPonto.some((f) => String(f.date).slice(0, 10) === d.date);
+                        return (
+                          <Button
+                            size="sm"
+                            variant={marcada ? "default" : "outline"}
+                            disabled={!elegivel || diariaPontoMut.isPending}
+                            className={`h-7 px-2 text-xs ${marcada ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                            title={elegivel
+                              ? (marcada ? "Diária de R$ 43 marcada. Clique para retirar." : "Marcar diária de R$ 43 — dia com mais de 16 horas")
+                              : "Só marca diária quando o dia passa de 16 horas trabalhadas"}
+                            onClick={() => diariaPontoMut.mutate({ date: d.date, on: !marcada })}
+                            data-testid={`button-diaria-${d.date}`}
+                          >
+                            {marcada ? "R$ 43" : elegivel ? "Marcar" : "—"}
+                          </Button>
+                        );
+                      })()}
                     </td>
                     <td className="p-2 text-right no-print">
                       <div className="inline-flex gap-1">
@@ -2095,9 +2164,13 @@ function FolhaTab() {
                       <td className="p-2 text-right text-orange-600 tabular-nums" data-testid="text-total-extra-dia">
                         {totalExtraMin > 0 ? `+${hhmm(totalExtraMin)}` : "—"}
                       </td>
-                      <td className="p-2 text-center text-xs text-neutral-500" colSpan={3}>
+                      <td className="p-2 text-center text-xs text-neutral-500">
                         {stats.horaExtra > 0 && <span className="text-orange-600">mês: +{hhmm(Math.round(stats.horaExtra * 60))}</span>}
                       </td>
+                      <td className="p-2 text-center text-xs text-emerald-700 tabular-nums" data-testid="text-total-diarias-ponto">
+                        {diariasPonto.length > 0 ? `${diariasPonto.length} × R$ 43` : "—"}
+                      </td>
+                      <td className="p-2 no-print" />
                     </tr>
                   );
                 })()}

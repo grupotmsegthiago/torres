@@ -18,6 +18,9 @@ import {
   CircleDollarSign, Receipt, RefreshCw, Plus,
 } from "lucide-react";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
+import { whatsAppMotoristaUrl } from "@shared/driver-whatsapp";
+import { DriverContactCard } from "@/components/mobile/driver-contact";
+import { VEHICLE_CHECKLIST_ITEMS } from "@shared/mission-checklist";
 
 const MISSION_STEPS = [
   "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
@@ -28,12 +31,11 @@ const MISSION_STEPS = [
 
 type MissionStep = typeof MISSION_STEPS[number];
 
-const VEHICLE_CHECKLIST_ITEMS = [
-  { id: "estepe", label: "Estepe" },
-  { id: "chave_roda", label: "Chave de Roda" },
-  { id: "macaco", label: "Macaco" },
-  { id: "triangulo", label: "Triângulo" },
-];
+const ANTES_DE_INICIAR = new Set([
+  "aguardando", "checkout_armamento", "checkout_viatura", "checkout_km_saida",
+  "em_transito_origem", "checkin_chegada_km", "checkin_veiculo_escoltado",
+  "checkin_dados_motorista", "iniciar_missao",
+]);
 
 const stepConfig: Record<string, { title: string; subtitle: string; icon: any; photos?: string[]; needsKm?: boolean; needsForm?: boolean; needsChecklist?: boolean }> = {
   aguardando: { title: "Dados da Missão", subtitle: "Revise os dados e confirme ciência", icon: Lock },
@@ -922,6 +924,7 @@ function TransitStepView({ currentStep, mission, statusUpdate, setStatusUpdate, 
 
 export default function MobileMissaoPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { getPosition } = useGeoLocation();
   const [photos, setPhotos] = useState<Record<string, string>>({});
   const [aiResults, setAiResults] = useState<Record<string, AiPhotoResult>>({});
@@ -1285,7 +1288,7 @@ export default function MobileMissaoPage() {
       setBypassAiRejection(false);
     }
 
-    if (config.needsChecklist) {
+    if (config.needsChecklist && mission?.checklistViaturaObrigatorio !== false) {
       const allChecked = VEHICLE_CHECKLIST_ITEMS.every(item => checklist[item.id]);
       if (!allChecked) {
         toast({ title: "Checklist incompleto", description: "Confirme todos os itens obrigatórios da viatura.", variant: "destructive" });
@@ -1560,10 +1563,13 @@ export default function MobileMissaoPage() {
       toast({ title: "Informe a quilometragem", variant: "destructive" });
       return;
     }
-    const allBaseChecked = VEHICLE_CHECKLIST_ITEMS.every(item => baseChecklistOk[item.id]);
-    if (!allBaseChecked) {
-      toast({ title: "Checklist incompleto", description: "Confirme todos os itens do checklist da viatura.", variant: "destructive" });
-      return;
+    const exigeChecklist = mission?.checklistViaturaObrigatorio !== false;
+    if (exigeChecklist) {
+      const allBaseChecked = VEHICLE_CHECKLIST_ITEMS.every(item => baseChecklistOk[item.id]);
+      if (!allBaseChecked) {
+        toast({ title: "Checklist incompleto", description: "Confirme todos os itens do checklist da viatura.", variant: "destructive" });
+        return;
+      }
     }
     setSubmitting(true);
     try {
@@ -1572,7 +1578,7 @@ export default function MobileMissaoPage() {
         cleanStatus: baseCleanStatus,
         cleanNotes: baseCleanNotes,
         baseReturnKm,
-        checklistConfirmed: true,
+        checklistConfirmed: mission?.checklistViaturaObrigatorio !== false,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/mission/active"] });
     } catch (err: any) {
@@ -1889,6 +1895,28 @@ export default function MobileMissaoPage() {
 
         <RouteInfoCard origin={mission.origin} destination={mission.destination} route={mission.route} currentStep={currentStep} />
 
+        {ANTES_DE_INICIAR.has(currentStep) && (mission.escortedDriverName || mission.escortedDriverPhone) && (
+          <div className="space-y-2">
+            <DriverContactCard
+              name={mission.escortedDriverName}
+              phone={mission.escortedDriverPhone}
+              plate={mission.escortedVehiclePlate}
+              agentName={user?.name}
+              testId="card-contato-motorista"
+            />
+            {Array.isArray((mission as any).extraDrivers) && (mission as any).extraDrivers.map((d: any, idx: number) => (
+              <DriverContactCard
+                key={idx}
+                name={d?.name}
+                phone={d?.phone}
+                plate={d?.plate}
+                agentName={user?.name}
+                testId={`card-contato-motorista-extra-${idx}`}
+              />
+            ))}
+          </div>
+        )}
+
         {mission.escortedDriverName && ["em_transito_destino", "chegada_destino", "checkout_km_final", "checkout_viatura_retorno"].includes(currentStep) && (
           <div className="bg-white rounded-2xl border border-neutral-200 p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -1905,9 +1933,9 @@ export default function MobileMissaoPage() {
                   <p className="text-xs text-neutral-500">{displayPhoneBR(mission.escortedDriverPhone)}</p>
                 )}
               </div>
-              {mission.escortedDriverPhone && (
+              {mission.escortedDriverPhone && whatsAppMotoristaUrl(mission.escortedDriverPhone, user?.name) && (
                 <a
-                  href={`https://wa.me/55${mission.escortedDriverPhone.replace(/\D/g, "")}`}
+                  href={whatsAppMotoristaUrl(mission.escortedDriverPhone, user?.name)!}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1.5 px-3 py-2 bg-green-500 text-white rounded-xl text-xs font-bold active:scale-[0.98]"
@@ -2121,6 +2149,7 @@ export default function MobileMissaoPage() {
               })}
             </div>
 
+            {mission?.checklistViaturaObrigatorio !== false && (
             <div className="bg-white rounded-2xl border border-neutral-200 p-4">
               <div className="flex items-center gap-2 mb-3">
                 <ClipboardCheck className="w-4 h-4 text-neutral-700" />
@@ -2142,6 +2171,7 @@ export default function MobileMissaoPage() {
                 ))}
               </div>
             </div>
+            )}
 
             <button
               onClick={handlePhotoStep}
@@ -2456,30 +2486,8 @@ export default function MobileMissaoPage() {
               <h3 className="text-lg font-black text-neutral-900 uppercase tracking-wider mb-1">Pronto para iniciar?</h3>
               <p className="text-xs text-neutral-400">O sistema registrará o horário exato de início</p>
 
-              {(mission.escortedDriverName || mission.escortedVehiclePlate) && (
-                <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 mt-4 text-left space-y-2">
-                  {mission.escortedDriverName && (
-                    <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Motorista:</strong> {mission.escortedDriverName}</p>
-                  )}
-                  {mission.escortedDriverPhone && (
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Telefone:</strong> {displayPhoneBR(mission.escortedDriverPhone)}</p>
-                      <a
-                        href={`https://wa.me/55${mission.escortedDriverPhone.replace(/\D/g, "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-500 text-white rounded-full text-[10px] font-bold"
-                        data-testid="link-whatsapp-driver"
-                      >
-                        <Phone className="w-3 h-3" />
-                        WhatsApp
-                      </a>
-                    </div>
-                  )}
-                  {mission.escortedVehiclePlate && (
-                    <p className="text-xs text-neutral-500"><strong className="text-neutral-700">Placa:</strong> {mission.escortedVehiclePlate}</p>
-                  )}
-                </div>
+              {mission.escortedVehiclePlate && !mission.escortedDriverName && !mission.escortedDriverPhone && (
+                <p className="text-xs text-neutral-500 mt-4"><strong className="text-neutral-700">Placa:</strong> {mission.escortedVehiclePlate}</p>
               )}
             </div>
 
@@ -2532,7 +2540,7 @@ export default function MobileMissaoPage() {
                 setSubmitting(true);
                 try {
                   await advanceMission();
-                  toast({ title: "Chegada registrada!", description: "Prossiga com o checklist da base." });
+                  toast({ title: "Chegada registrada!", description: mission?.checklistViaturaObrigatorio === false ? "Prossiga com os dados da base." : "Prossiga com o checklist da base." });
                 } catch (err: any) {
                   toast({ title: "Erro", description: err.message, variant: "destructive" });
                 } finally {
@@ -2551,6 +2559,7 @@ export default function MobileMissaoPage() {
 
         {currentStep === "chegada_base" && (
           <div className="space-y-4">
+            {mission?.checklistViaturaObrigatorio !== false && (
             <div className="bg-white rounded-2xl border border-neutral-200 p-4" data-testid="card-base-checklist">
               <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-3">Checklist da Viatura (Base)</p>
               {VEHICLE_CHECKLIST_ITEMS.map(item => (
@@ -2566,6 +2575,7 @@ export default function MobileMissaoPage() {
                 </label>
               ))}
             </div>
+            )}
 
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
               <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Fotos da Viatura na Base</p>

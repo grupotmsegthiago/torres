@@ -239,6 +239,7 @@ export async function ensureDbSchema() {
       ALTER TABLE weapons ADD COLUMN IF NOT EXISTS photo_data TEXT
     `);
 
+    await execSql(`ALTER TABLE vehicle_maintenance ADD COLUMN IF NOT EXISTS ciencia JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS icon_type TEXT DEFAULT 'polo'`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_latitude TEXT`);
     await execSql(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS last_longitude TEXT`);

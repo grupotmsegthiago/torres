@@ -128,7 +128,7 @@ function DocCard({ d, onSign, onView }: { d: SignableDoc; onSign?: () => void; o
       )}
 
       {!isAssinado && onSign && (
-        <Button onClick={onSign} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-documento-${d.id}`}>
+        <Button onClick={onSign} className="mobile-action w-full bg-amber-500 hover:bg-amber-600 text-white font-bold" data-testid={`button-assinar-documento-${d.id}`}>
           <ShieldCheck className="w-4 h-4 mr-1" /> Assinar documento
         </Button>
       )}
@@ -154,12 +154,12 @@ function DocViewer({ doc, onClose }: { doc: SignableDoc; onClose: () => void }) 
     }
   }, [doc.id]);
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 bg-neutral-900 text-white">
+    <div className="mobile-sheet">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 bg-neutral-900 text-white shrink-0">
         <h3 className="font-black text-sm truncate pr-2">{doc.title}</h3>
         <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-doc-viewer"><X className="w-5 h-5" /></button>
       </div>
-      <iframe src={`/api/signable-documents/${doc.id}/pdf`} className="flex-1 w-full" title="Documento" />
+      <iframe src={`/api/signable-documents/${doc.id}/pdf`} className="min-h-0 flex-1 w-full" title="Documento" />
     </div>
   );
 }
@@ -227,7 +227,7 @@ Confirmo a autenticidade desta assinatura digital realizada por mim, mediante re
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col">
+    <div className="mobile-sheet">
       <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 bg-neutral-900 text-white">
         <div>
           <h3 className="font-black text-sm truncate pr-2">Assinatura — {doc.title}</h3>
@@ -236,7 +236,7 @@ Confirmo a autenticidade desta assinatura digital realizada por mim, mediante re
         <button onClick={onClose} className="p-2 -mr-2" data-testid="button-close-signature"><X className="w-5 h-5" /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         {step === 1 && <Step1Termo doc={doc} termoTexto={TERMO_TEXTO} aceito={termoAceito} setAceito={setTermoAceito} onNext={() => setStep(2)} />}
         {step === 2 && <Step2Facial foto={facialFoto} setFoto={setFacialFoto} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
         {step === 3 && <Step3Assinatura assinatura={assinaturaDesenho} setAssinatura={setAssinaturaDesenho} onBack={() => setStep(2)} onSubmit={(sig: string) => submitMutation.mutate(sig)} isPending={submitMutation.isPending} />}
@@ -274,7 +274,7 @@ function Step1Termo({ doc, termoTexto, aceito, setAceito, onNext }: any) {
 
       {!docChecked && <p className="text-[11px] text-neutral-500 text-center">Abra o documento acima antes de prosseguir.</p>}
 
-      <Button onClick={onNext} disabled={!aceito || !docChecked} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-step-next">
+      <Button onClick={onNext} disabled={!aceito || !docChecked} className="mobile-action w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold" data-testid="button-step-next">
         Continuar para reconhecimento facial
       </Button>
     </div>
@@ -369,7 +369,7 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
       {error && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700" data-testid="text-facial-error">{error}</div>}
       {uploadError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700" data-testid="text-facial-upload-error">{uploadError}</div>}
 
-      <div className="aspect-square bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
+      <div className="mx-auto aspect-square w-full max-w-[min(100%,46dvh)] bg-black rounded-xl overflow-hidden flex items-center justify-center relative">
         {foto ? (
           <img src={foto} alt="Selfie capturada" className="w-full h-full object-cover" data-testid="img-facial-preview" />
         ) : (
@@ -389,18 +389,18 @@ function Step2Facial({ foto, setFoto, onBack, onNext }: any) {
       />
 
       <div className="flex gap-2">
-        <Button onClick={onBack} variant="outline" className="flex-1 h-12" data-testid="button-step-back">Voltar</Button>
+        <Button onClick={onBack} variant="outline" className="mobile-action flex-1" data-testid="button-step-back">Voltar</Button>
         {foto ? (
           <>
-            <Button onClick={() => setFoto(null)} variant="outline" className="flex-1 h-12" data-testid="button-refazer-facial">Refazer</Button>
+            <Button onClick={() => setFoto(null)} variant="outline" className="mobile-action flex-1" data-testid="button-refazer-facial">Refazer</Button>
             <Button onClick={onNext} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-step-next">Avançar</Button>
           </>
         ) : error ? (
-          <Button onClick={() => fileInputRef.current?.click()} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-enviar-facial">
+          <Button onClick={() => fileInputRef.current?.click()} className="mobile-action flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold" data-testid="button-enviar-facial">
             <Camera className="w-4 h-4 mr-1" /> Tirar / Enviar Selfie
           </Button>
         ) : (
-          <Button onClick={capturar} className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold h-12" data-testid="button-capturar-facial">
+          <Button onClick={capturar} className="mobile-action flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold" data-testid="button-capturar-facial">
             <Camera className="w-4 h-4 mr-1" /> Capturar Foto
           </Button>
         )}
@@ -500,8 +500,8 @@ function Step3Assinatura({ assinatura, setAssinatura, onBack, onSubmit, isPendin
       </Button>
 
       <div className="flex gap-2">
-        <Button onClick={onBack} variant="outline" className="flex-1 h-12" disabled={isPending} data-testid="button-step-back">Voltar</Button>
-        <Button onClick={confirmar} disabled={!hasInk || isPending} className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12" data-testid="button-confirmar-assinatura">
+        <Button onClick={onBack} variant="outline" className="mobile-action flex-1" disabled={isPending} data-testid="button-step-back">Voltar</Button>
+        <Button onClick={confirmar} disabled={!hasInk || isPending} className="mobile-action flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold" data-testid="button-confirmar-assinatura">
           {isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Enviando...</> : <><CheckCircle2 className="w-4 h-4 mr-1" />Confirmar e Assinar</>}
         </Button>
       </div>

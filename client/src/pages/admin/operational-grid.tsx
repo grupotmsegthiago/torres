@@ -33,6 +33,7 @@ import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { PedagioFinishReview, type PedagioFinishReviewValue } from "@/components/admin/pedagio-finish-review";
 import { VEHICLE_ICON_OPTIONS, resolveVehicleIcon, vehicleIconSrc } from "@shared/vehicle-icons";
 import { loadGoogleMapsScript } from "@/components/places-autocomplete";
+import { VincularOsButton, type VinculoInicial } from "@/components/admin/vincular-os-dialog";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -178,6 +179,17 @@ declare global {
     google: any;
     initGridMap: () => void;
   }
+}
+
+function vinculoDaViatura(v: TrackedVehicle): VinculoInicial {
+  const os = v.activeOs;
+  const last = v.lastOs;
+  return {
+    vehicleId: v.id,
+    agent1: os?.employee1?.id ?? last?.employee1?.id ?? null,
+    agent2: os?.employee2?.id ?? last?.employee2?.id ?? null,
+    kitId: os?.kitId ?? null,
+  };
 }
 
 interface TrackedVehicle {
@@ -5445,6 +5457,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             <Video className="w-3.5 h-3.5" />
                           </button>
                         </VehicleCamerasHover>
+                        <VincularOsButton compact inicial={vinculoDaViatura(v)} testId={`button-vincular-os-${v.id}`} />
                       </div>
                     </td>
 
@@ -6265,6 +6278,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                   <Video className="w-3 h-3" />
                                 </button>
                               </VehicleCamerasHover>
+                              <VincularOsButton compact inicial={vinculoDaViatura(v)} testId={`button-vincular-os-card-${v.id}`} />
                             </div>
                             {v.activeOs && (v.activeOs.origin || v.activeOs.destination) && (
                               <p
@@ -8884,6 +8898,7 @@ export default function OperationalGridPage() {
                   <span>Última <span className="font-medium text-neutral-200">{lastRefreshStr}</span></span>
                 </div>
                 <AlertsTimeline />
+                <VincularOsButton />
                 <Button
                   size="sm"
                   onClick={handleRefresh}

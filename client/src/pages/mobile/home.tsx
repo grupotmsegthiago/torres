@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign, FileText } from "lucide-react";
+import { DriverContactCard } from "@/components/mobile/driver-contact";
 
 export default function MobileHomePage() {
   const { user } = useAuth();
@@ -34,6 +35,7 @@ export default function MobileHomePage() {
             <p className="text-sm text-neutral-400">Carregando missão...</p>
           </div>
         ) : mission ? (
+          <div className="space-y-3">
           <Link href="/mobile/missao">
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 active:bg-neutral-50 transition-colors" data-testid="card-mission-active">
               <div className="flex items-center justify-between mb-3">
@@ -83,6 +85,26 @@ export default function MobileHomePage() {
               </div>
             </div>
           </Link>
+          {(mission.escortedDriverName || mission.escortedDriverPhone) && (
+            <DriverContactCard
+              name={mission.escortedDriverName}
+              phone={mission.escortedDriverPhone}
+              plate={mission.escortedVehiclePlate}
+              agentName={user?.name}
+              testId="card-contato-motorista-home"
+            />
+          )}
+          {Array.isArray(mission.extraDrivers) && mission.extraDrivers.map((d: { name?: string; phone?: string | null; plate?: string | null }, idx: number) => (
+            <DriverContactCard
+              key={idx}
+              name={d?.name}
+              phone={d?.phone}
+              plate={d?.plate}
+              agentName={user?.name}
+              testId={`card-contato-motorista-home-extra-${idx}`}
+            />
+          ))}
+          </div>
         ) : (
           <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center" data-testid="card-no-mission">
             <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-3">

@@ -18,6 +18,12 @@ import { computeWorkedHours } from "../lib/hours-calc";
 
 export const DIARIA_LONG_SHIFT_VALOR = 43.0;
 export const DIARIA_LONG_SHIFT_LIMITE_HORAS = 16;
+/** Marca manual na folha de ponto. Prefixo diferente de [AUTO]/[AUTO-Q] para o cron da quinzena não apagar. */
+export const DIARIA_PONTO_DESCRICAO = "[PONTO] Diária jornada >16h";
+
+export function diaElegivelDiariaPonto(workedMin: number): boolean {
+  return Number(workedMin) > DIARIA_LONG_SHIFT_LIMITE_HORAS * 60;
+}
 // Prefixos que identificam linhas geradas automaticamente.
 // Inclui o prefixo antigo pra limpar as linhas legacy do modelo "1 por par".
 const DESC_PREFIX_NEW = "[AUTO-Q] Diárias jornada >16h";

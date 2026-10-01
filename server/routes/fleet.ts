@@ -5,7 +5,7 @@ import type { Express } from "express";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
 
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction, createSmtpTransporter, getSmtpFrom } from "./_helpers";
-  import { notifyVehicleMaintenance } from "../notifications";
+  import { notifyVehicleMaintenance, encerrarAvisosManutencao } from "../notifications";
   import { persistFuelingPhotoBlob, resolveFuelingPhotosForView, downloadFuelingPhotoDataUri } from "../lib/fueling-photo-storage";
 
   // Diferença máxima de KM PRA CIMA tolerada num novo abastecimento (proteção
@@ -257,6 +257,11 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
       }
     }
 
+    const statusCriada = String((parsed.data as any).status || "realizada").toLowerCase();
+    if (statusCriada === "realizada" && vehicle) {
+      encerrarAvisosManutencao(vehicle.id).catch((e) => console.error("[notify-maint] encerrar:", e?.message));
+    }
+
     if (data && Number(parsed.data.cost) > 0) {
       const plateStr = vehicle?.plate || "";
       await createAutoTransaction({
@@ -297,6 +302,10 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
           await storage.updateVehicle(vehicle.id, updates);
         }
       }
+    }
+
+    if (String((data as any).status || "").toLowerCase() === "realizada" && data.vehicleId) {
+      encerrarAvisosManutencao(data.vehicleId).catch((e) => console.error("[notify-maint] encerrar:", e?.message));
     }
 
     const newCost = Number(data.cost || 0);
