@@ -2,6 +2,7 @@ import { useState, memo, useCallback, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { canSeePath, parsePermissions, PROFILE_LABELS, usesAclMenu } from "@shared/perfis-acesso";
+import { isMoacirRestrito } from "@shared/moacir-escopo";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -367,7 +368,7 @@ const SystemStatusBadge = memo(function SystemStatusBadge({ compact = false }: {
   );
 });
 
-const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount, isAclRole, aclPermissions }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number; isAclRole: boolean; aclPermissions: string[] }) {
+const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, unreadCount, isAclRole, aclPermissions, isMoacir }: { location: string; isAdmin: boolean; isDiretoria: boolean; unreadCount: number; isAclRole: boolean; aclPermissions: string[]; isMoacir: boolean }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "Funcionários": true, "Grid Operacional": true, "Frota": true, "Financeiro": true });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "COMERCIAL": true, "PATRIMONIAL": true, "OPERAÇÕES": true, "GESTÃO DE PESSOAS": true, "DIRETORIA": true, "CONTROLADORIA": true, "SISTEMA": true });
 
@@ -380,6 +381,10 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
   }, []);
 
   const filterItem = useCallback((item: MenuItem): boolean => {
+    if (isMoacir) {
+      if (item.children?.length) return item.children.some(filterItem);
+      return item.path === "/admin/operational-grid";
+    }
     if (isAclRole) {
       if (item.children?.length) return item.children.some(filterItem);
       if (item.path) return canSeePath(aclPermissions, item.path);
@@ -388,7 +393,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
     if (item.diretoriaOnly) return isDiretoria;
     if (item.adminOnly) return isAdmin;
     return true;
-  }, [isAdmin, isDiretoria, isAclRole, aclPermissions]);
+  }, [isAdmin, isDiretoria, isAclRole, aclPermissions, isMoacir]);
 
   return (
     <nav className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
@@ -415,7 +420,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
       ))}
 
       {menuSections.filter(s => {
-        if (isAclRole) return s.items.some(filterItem);
+        if (isMoacir || isAclRole) return s.items.some(filterItem);
         return s.diretoriaOnly ? isDiretoria : (!s.adminOnly || isAdmin);
       }).map((section) => {
         const isSectionOpen = openSections[section.title] ?? true;
@@ -503,10 +508,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
   const [location] = useLocation();
+  const isMoacir = isMoacirRestrito(user);
 
   const { data: chatUnread } = useQuery<{ total: number }>({
     queryKey: ["/api/chat/unread-count"],
     refetchInterval: 120000,
+    enabled: !!user && !isMoacir,
   });
   const { data: perfilData } = useQuery<{ permissions?: string[] | string }>({
     queryKey: ["/api/auth/perfil"],
@@ -537,7 +544,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <p className="text-xs text-white/40 mt-1">Área Interna</p>
         </div>
 
-        <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} isAclRole={isAclRole} aclPermissions={aclPermissions} />
+        <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} isAclRole={isAclRole} aclPermissions={aclPermissions} isMoacir={isMoacir} />
 
         <div className="shrink-0 p-4 border-t border-white/10 space-y-3">
           {isDiretoria && <SystemStatusBadge />}
@@ -589,7 +596,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Menu className="w-5 h-5" />
           </Button>
           <span className="font-bold text-sm flex-1">TORRES - Área Interna</span>
-          {canSeePath(aclPermissions, "/admin/financeiro") ? <PendingComprovanteBell /> : null}
+          {!isMoacir && canSeePath(aclPermissions, "/admin/financeiro") ? <PendingComprovanteBell /> : null}
           {isDiretoria && <SystemStatusBadge compact />}
         </header>
 

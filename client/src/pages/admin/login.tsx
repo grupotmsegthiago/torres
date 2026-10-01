@@ -10,6 +10,7 @@ import { Eye, EyeOff, UserPlus, Lock, FileCheck, User, Briefcase } from "lucide-
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { isMoacirRestrito } from "@shared/moacir-escopo";
 
 function formatCpf(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -101,6 +102,8 @@ export default function LoginPage() {
             }
           })
           .catch(() => setLocation("/mobile"));
+      } else if (isMoacirRestrito(user)) {
+        setLocation("/admin/operational-grid");
       } else {
         setLocation("/admin/dashboard");
       }
@@ -195,6 +198,8 @@ export default function LoginPage() {
         } else {
           setLocation("/mobile/selfie");
         }
+      } else if (isMoacirRestrito(user)) {
+        setLocation("/admin/operational-grid");
       } else {
         setLocation("/admin/dashboard");
       }

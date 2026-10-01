@@ -27,6 +27,8 @@ import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryCli
 import { titleCase, formatDateBRT, parseUTCDate, formatTimeBRT, getNowBRT, formatNowBRT, diffMinutesBRT, isTodayBRT } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { isMoacirRestrito } from "@shared/moacir-escopo";
+import { moacirHidesSensitive, syncMoacirUi } from "@/lib/moacir-ui";
 import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
@@ -59,7 +61,7 @@ const OpNotifContext = createContext<OpNotifContextType>({
   updateNotification: () => {},
 });
 
-const fmtBRL = (n: number) => (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const fmtBRL = (n: number) => moacirHidesSensitive() ? "oculto" : (n ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 function useOpNotifications() {
   return useContext(OpNotifContext);
@@ -1116,7 +1118,7 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     destination: destination?.toUpperCase() || "—",
     driverPlate: driverPlate || "—",
     driverName: driverName?.toUpperCase() || "—",
-    driverPhone: driverPhone || "—",
+    driverPhone: moacirHidesSensitive() ? "oculto" : (driverPhone || "—"),
     vehiclePlate: vehiclePlate || "—",
     agent1: agent1?.toUpperCase() || "—",
     agent2: agent2?.toUpperCase() || "—",
@@ -3106,8 +3108,8 @@ function MirrorAllButton({ vehicles, gerenciadoras }: { vehicles: TrackedVehicle
                   <p className="text-xs font-semibold text-neutral-700 mb-2">Contato</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div><Label className="text-xs">Nome</Label><Input value={formData.contactName} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })} placeholder="Nome do contato" className="h-8" data-testid="input-gerenciadora-contact" /></div>
-                    <div><Label className="text-xs">Telefone</Label><Input value={displayPhoneBR(formData.contactPhone)} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value.replace(/\D/g, "").slice(0, 11) })} placeholder="(21) 99999-0000" className="h-8" data-testid="input-gerenciadora-phone" /></div>
-                    <div className="col-span-2"><Label className="text-xs">E-mail</Label><Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" className="h-8" data-testid="input-gerenciadora-email" /></div>
+                    {!moacirHidesSensitive() && <div><Label className="text-xs">Telefone</Label><Input value={displayPhoneBR(formData.contactPhone)} onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value.replace(/\D/g, "").slice(0, 11) })} placeholder="(21) 99999-0000" className="h-8" data-testid="input-gerenciadora-phone" /></div>}
+                    {!moacirHidesSensitive() && <div className="col-span-2"><Label className="text-xs">E-mail</Label><Input value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="contato@gerenciadora.com" className="h-8" data-testid="input-gerenciadora-email" /></div>}
                   </div>
                 </div>
               </>
@@ -3364,6 +3366,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors ${hasOs ? "border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-800" : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"}`}
             onClick={handlePreAlert}
             disabled={!hasOs || preAlertLoading}
+            hidden={moacirHidesSensitive()}
             data-testid={`btn-pre-alert-${v.id}`}
           >
             {preAlertLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
@@ -3377,6 +3380,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
             className={`inline-flex items-center justify-center w-7 h-7 rounded-md border transition-colors ${hasActiveOrFinished ? "border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-800" : "border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed"}`}
             onClick={handleRelatorioMissao}
             disabled={!hasActiveOrFinished || relatorioLoading}
+            hidden={moacirHidesSensitive()}
             data-testid={`btn-relatorio-missao-${v.id}`}
           >
             {relatorioLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
@@ -3389,6 +3393,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-800 transition-colors"
             onClick={() => navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`)}
+            hidden={moacirHidesSensitive()}
             data-testid={`btn-new-os-${v.id}`}
           >
             <Plus className="w-3.5 h-3.5" />
@@ -3401,6 +3406,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
           <button
             className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-500 hover:text-blue-700 transition-colors"
             onClick={() => navigate(`/admin/vehicles?id=${v.id}`)}
+            hidden={moacirHidesSensitive()}
             data-testid={`btn-docs-vtr-${v.id}`}
           >
             <FileText className="w-3 h-3" />
@@ -4327,11 +4333,13 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             </button>
           )}
 
+          {!moacirHidesSensitive() && (
           <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
             onClick={() => { navigate(`/admin/service-orders?vehicleId=${v.id}`); onClose(); }}
             data-testid={`ctx-schedules-${v.id}`}>
             <CalendarClock className="w-3.5 h-3.5 text-blue-500" /> Ver Agendamentos
           </button>
+          )}
 
           <div className="border-t border-neutral-100 my-1" />
           <p className="px-3 py-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">Rastreamento</p>
@@ -4387,11 +4395,13 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
             <Home className="w-3.5 h-3.5 text-blue-500" /> Retornar à Base
           </button>
 
+          {!moacirHidesSensitive() && (
           <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
             onClick={() => { navigate(`/admin/service-orders?newOs=1&vehicleId=${v.id}`); onClose(); }}
             data-testid={`ctx-new-os-${v.id}`}>
             <Plus className="w-3.5 h-3.5 text-emerald-500" /> Nova OS
           </button>
+          )}
 
           {hasOs && (
             <button className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center gap-2.5"
@@ -4867,7 +4877,7 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
       if (!res.ok) throw new Error("Erro ao carregar DRE");
       return res.json();
     },
-    enabled: open && !!osId,
+    enabled: open && !!osId && !moacirHidesSensitive(),
   });
 
   const lc = liveCost;
@@ -5654,7 +5664,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <span className="font-bold text-xs text-neutral-900 leading-tight">
                                   {titleCase(v.activeOs.employee1.name)}
                                 </span>
-                                {v.activeOs.employee1.phone && (
+                                {v.activeOs.employee1.phone && !moacirHidesSensitive() && (
                                   <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
                                     <SiWhatsapp className="w-3.5 h-3.5" />
                                   </a>
@@ -5679,7 +5689,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                 <span className="font-semibold text-xs text-neutral-500 leading-tight">
                                   {titleCase(v.activeOs.employee2.name)}
                                 </span>
-                                {v.activeOs.employee2.phone && (
+                                {v.activeOs.employee2.phone && !moacirHidesSensitive() && (
                                   <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
                                     <SiWhatsapp className="w-3.5 h-3.5" />
                                   </a>
@@ -5870,7 +5880,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                             const totCusto = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_total || 0), 0);
                             const totResult = vtrWithCost.reduce((s, g) => s + (g.liveCost?.resultado || 0), 0);
                             const META_VTR = 1800;
-                            const metaBatida = totFat >= META_VTR;
+                            const metaBatida = !moacirHidesSensitive() && totFat >= META_VTR;
                             const statusLabel = (g2: GridItem) => {
                               const s = g2.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                               const ms = g2.missionStatus;
@@ -5974,7 +5984,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       )}
                                     </TooltipContent>
                                   </Tooltip>
-                                  <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${totResult >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
+                                  <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${moacirHidesSensitive() ? "text-neutral-500 bg-neutral-100 border border-neutral-200" : totResult >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
                                     = {fmtBRL(totResult)}
                                   </span>
                                   <Tooltip>
@@ -5983,6 +5993,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); const gridLc = vtrWithCost.find((g: any) => g.id === v.activeOs!.id); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber, liveCost: gridLc?.liveCost || null }); }}
                                         className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
+                                        hidden={moacirHidesSensitive()}
                                         data-testid={`button-dre-${v.id}`}
                                       >
                                         <FileText className="w-3 h-3" /> DRE
@@ -5991,7 +6002,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     <TooltipContent>DRE Operacional desta OS</TooltipContent>
                                   </Tooltip>
                                 </div>
-                                <div className="mt-1 flex items-center gap-1.5">
+                                <div className="mt-1 flex items-center gap-1.5" hidden={moacirHidesSensitive()}>
                                   <div className="flex-1 h-1.5 bg-neutral-200 rounded-full overflow-hidden" data-testid={`meta-bar-${v.id}`}>
                                     <div
                                       className={`h-full rounded-full transition-all ${metaBatida ? "bg-emerald-500" : totFat >= META_VTR * 0.7 ? "bg-blue-500" : "bg-neutral-400"}`}
@@ -6195,7 +6206,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                 const totCusto = vtrItems.reduce((s, g) => s + (g.liveCost?.custo_total || 0), 0);
                 const totResult = vtrItems.reduce((s, g) => s + (g.liveCost?.resultado || 0), 0);
                 const META_VTR = 1800;
-                const metaBatida = totFat >= META_VTR;
+                const metaBatida = !moacirHidesSensitive() && totFat >= META_VTR;
                 const metaPct = Math.round((totFat / META_VTR) * 100);
 
                 const osUnreads = v.activeOs ? getUnreadForOs(v.activeOs.osNumber) : [];
@@ -6484,7 +6495,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       {titleCase(v.activeOs.employee1.name)}
                                     </span>
                                     <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/ag1:opacity-100 transition-opacity">
-                                      {v.activeOs.employee1.phone && (
+                                      {v.activeOs.employee1.phone && !moacirHidesSensitive() && (
                                         <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
                                           <SiWhatsapp className="w-3 h-3" />
                                         </a>
@@ -6508,7 +6519,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                       {titleCase(v.activeOs.employee2.name)}
                                     </span>
                                     <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/ag2:opacity-100 transition-opacity">
-                                      {v.activeOs.employee2.phone && (
+                                      {v.activeOs.employee2.phone && !moacirHidesSensitive() && (
                                         <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
                                           <SiWhatsapp className="w-3 h-3" />
                                         </a>
@@ -6608,7 +6619,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         {titleCase(v.lastOs.employee1.name)}
                                       </span>
                                       <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/lo1:opacity-100 transition-opacity">
-                                        {v.lastOs.employee1.phone && (
+                                        {v.lastOs.employee1.phone && !moacirHidesSensitive() && (
                                           <a href={`https://wa.me/${formatPhone(v.lastOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-lastos1-${v.id}`}>
                                             <SiWhatsapp className="w-3 h-3" />
                                           </a>
@@ -6626,7 +6637,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         {titleCase(v.lastOs.employee2.name)}
                                       </span>
                                       <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/lo2:opacity-100 transition-opacity">
-                                        {v.lastOs.employee2.phone && (
+                                        {v.lastOs.employee2.phone && !moacirHidesSensitive() && (
                                           <a href={`https://wa.me/${formatPhone(v.lastOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-lastos2-${v.id}`}>
                                             <SiWhatsapp className="w-3 h-3" />
                                           </a>
@@ -6714,7 +6725,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                     {totOutros > 0 && <p className="text-neutral-700">Outros: <span className="font-bold">{fmtBRL(totOutros)}</span></p>}
                                   </TooltipContent>
                                 </Tooltip>
-                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${totResult >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
+                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${moacirHidesSensitive() ? "text-neutral-500 bg-neutral-100 border border-neutral-200" : totResult >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
                                   = {fmtBRL(totResult)}
                                 </span>
                                 {v.activeOs && (
@@ -6724,6 +6735,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); const gridLc = vtrItems.find((g: any) => g.id === v.activeOs!.id); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber, liveCost: gridLc?.liveCost || null }); }}
                                         className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
+                                        hidden={moacirHidesSensitive()}
                                         data-testid={`button-dre-${v.id}`}
                                       >
                                         <FileText className="w-3 h-3" /> DRE
@@ -6733,7 +6745,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                                   </Tooltip>
                                 )}
                               </div>
-                              <div className="mt-1 flex items-center gap-1.5">
+                              <div className="mt-1 flex items-center gap-1.5" hidden={moacirHidesSensitive()}>
                                 <div className="flex-1 h-1.5 bg-neutral-200 rounded-full overflow-hidden" data-testid={`meta-bar-${v.id}`}>
                                   <div
                                     className={`h-full rounded-full transition-all ${metaBatida ? "bg-emerald-500" : totFat >= META_VTR * 0.7 ? "bg-blue-500" : "bg-neutral-400"}`}
@@ -6972,7 +6984,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         <div className="flex items-center gap-1.5 bg-neutral-50 rounded-lg px-2.5 py-1.5 border">
                           <Users className="w-3.5 h-3.5 text-neutral-400" />
                           <span className="text-[11px] font-bold text-neutral-800">{os.employee1Name}</span>
-                          {os.employee1Phone && (
+                          {os.employee1Phone && !moacirHidesSensitive() && (
                             <a href={`https://wa.me/55${os.employee1Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
                               <SiWhatsapp className="w-3.5 h-3.5" />
                             </a>
@@ -7103,7 +7115,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                         {os.employee1Name && (
                           <div className="flex items-center gap-2">
                             <p className="text-xs font-bold text-neutral-800">{os.employee1Name}</p>
-                            {os.employee1Phone && (
+                            {os.employee1Phone && !moacirHidesSensitive() && (
                               <a href={`https://wa.me/55${os.employee1Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
                                 <SiWhatsapp className="w-3.5 h-3.5" />
                               </a>
@@ -7130,7 +7142,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                       <div>
                         <p className="text-[10px] text-neutral-400 font-bold uppercase">Escoltado</p>
                         {os.escortedDriverName && <p className="text-xs font-bold text-neutral-800">{os.escortedDriverName}</p>}
-                        {os.escortedDriverPhone && (
+                        {os.escortedDriverPhone && !moacirHidesSensitive() && (
                           <a href={`tel:${os.escortedDriverPhone}`} className="text-xs text-blue-600 hover:underline">{displayPhoneBR(os.escortedDriverPhone)}</a>
                         )}
                         {os.escortedVehiclePlate && <p className="text-xs text-neutral-600 font-medium">Placa: {os.escortedVehiclePlate}</p>}
@@ -7207,7 +7219,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
               </div>
             </div>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2" hidden={moacirHidesSensitive()}>
               <div>
                 <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Email do Cliente</label>
                 <input type="email" value={rowForwardEmail} onChange={(e) => setRowForwardEmail(e.target.value)} placeholder="email@cliente.com.br" className="w-full text-sm border border-neutral-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:border-neutral-500" data-testid="input-row-forward-email" />
@@ -7234,6 +7246,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                   } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
                   setRowSendingEmail(false);
                 }}
+                hidden={moacirHidesSensitive()}
                 data-testid="btn-row-send-email"
               >
                 {rowSendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
@@ -7313,7 +7326,7 @@ function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSel
                     {rowForwardHistory.map((fwd: any) => (
                       <div key={fwd.id} className="flex items-center gap-2 text-xs bg-neutral-50 rounded-md px-3 py-2 border border-neutral-100">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                        <span className="font-semibold text-neutral-700">{fwd.recipientEmail}</span>
+                        <span className="font-semibold text-neutral-700">{moacirHidesSensitive() ? "oculto" : fwd.recipientEmail}</span>
                         <span className="text-neutral-400">·</span>
                         <span className="text-neutral-500">{fwd.message ? `"${fwd.message.slice(0, 40)}..."` : "—"}</span>
                         {fwd.photoIncluded && <span className="text-neutral-400">📷</span>}
@@ -8241,7 +8254,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                 )}
               </div>
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 space-y-2" hidden={moacirHidesSensitive()}>
                 <div>
                   <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Email do Cliente</label>
                   <input
@@ -8291,6 +8304,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                     }
                     setSendingEmail(false);
                   }}
+                  hidden={moacirHidesSensitive()}
                   data-testid="btn-send-email-forward"
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
@@ -8373,7 +8387,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
                         <div key={fwd.id} className="flex items-center gap-2 text-xs bg-neutral-50 rounded-md px-3 py-2 border border-neutral-100" data-testid={`forward-history-${fwd.id}`}>
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <span className="font-semibold text-neutral-700">{fwd.recipientEmail}</span>
+                            <span className="font-semibold text-neutral-700">{moacirHidesSensitive() ? "oculto" : fwd.recipientEmail}</span>
                             <span className="text-neutral-400 mx-1.5">·</span>
                             <span className="text-neutral-500">{fwd.message ? `"${fwd.message.slice(0, 40)}${fwd.message.length > 40 ? "..." : ""}"` : "—"}</span>
                             {fwd.photoIncluded && <span className="text-neutral-400 ml-1">📷</span>}
@@ -8734,6 +8748,9 @@ function CostDetailModal({ empId, onClose }: { empId: number; onClose: () => voi
 }
 
 export default function OperationalGridPage() {
+  const { user } = useAuth();
+  syncMoacirUi(user);
+  const restricted = isMoacirRestrito(user);
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
   const [selectedOsVehicleId, setSelectedOsVehicleId] = useState<number | null>(null);
@@ -8776,15 +8793,18 @@ export default function OperationalGridPage() {
 
   const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({
     queryKey: ["/api/gerenciadoras"],
+    enabled: !restricted,
   });
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
+    enabled: !restricted,
   });
 
   const { data: monthlyHours = {} } = useQuery<Record<string, { totalHours: number; missions: number }>>({
     queryKey: ["/api/employees/monthly-hours"],
     refetchInterval: 120000,
+    enabled: !restricted,
   });
 
   const [costDetailEmpId, setCostDetailEmpId] = useState<number | null>(null);
@@ -8980,7 +9000,7 @@ export default function OperationalGridPage() {
               />
             )}
             <OperationNotificationsBar />
-            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} clients={clients} monthlyHours={monthlyHours} onCostDetail={(empId) => setCostDetailEmpId(empId)} />
+            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} clients={clients} monthlyHours={monthlyHours} onCostDetail={restricted ? undefined : (empId) => setCostDetailEmpId(empId)} />
             <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
               Atualização automática a cada 2 minutos
             </div>
@@ -8993,7 +9013,7 @@ export default function OperationalGridPage() {
         onOpenChange={setMirrorDialogOpen}
         gerenciadoras={gerenciadoras}
       />
-      {costDetailEmpId && (
+      {costDetailEmpId && !restricted && (
         <CostDetailModal empId={costDetailEmpId} onClose={() => setCostDetailEmpId(null)} />
       )}
     </AdminLayout>

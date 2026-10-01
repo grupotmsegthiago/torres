@@ -11,6 +11,7 @@ import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
 import { ConfigError } from "@/components/config-error";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { canSeeAdminPath, parsePermissions, usesAclMenu } from "@shared/perfis-acesso";
+import { isMoacirRestrito, moacirCanSeeAdminPath } from "@shared/moacir-escopo";
 
 import Home from "@/pages/home";
 import LoginPage from "@/pages/admin/login";
@@ -136,6 +137,12 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     }
   }, [isLoading, user, setLocation]);
 
+  useEffect(() => {
+    if (user && isMoacirRestrito(user) && !moacirCanSeeAdminPath(location)) {
+      setLocation("/admin/operational-grid");
+    }
+  }, [user, location, setLocation]);
+
   if (isLoading) {
     return <LazyFallback />;
   }
@@ -146,6 +153,10 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (user.role === "funcionario") {
     return <AccessDeniedPage />;
+  }
+
+  if (isMoacirRestrito(user) && !moacirCanSeeAdminPath(location)) {
+    return <LazyFallback />;
   }
 
   if (usesAclMenu(user.role)) {
