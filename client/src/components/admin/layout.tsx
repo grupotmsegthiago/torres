@@ -535,12 +535,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="h-dvh max-h-dvh bg-neutral-100 flex overflow-hidden" data-testid="admin-layout">
       <CriticalAlertGate />
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] bg-neutral-900 text-white transform transition-transform duration-200 lg:translate-x-0 lg:static lg:max-w-none flex flex-col safe-area-bottom ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] bg-neutral-900 text-white transform transition-transform duration-200 lg:translate-x-0 lg:static lg:max-w-none flex flex-col ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         data-testid="admin-sidebar"
       >
-        <div className="p-4 border-b border-white/10 shrink-0 safe-area-top flex items-start justify-between gap-2">
+        <div className="px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top,0px))] border-b border-white/10 shrink-0 flex items-start justify-between gap-2">
           <div className="min-w-0">
             <Link href="/">
               <span className="text-lg font-bold tracking-tight cursor-pointer" data-testid="link-admin-home">
@@ -563,7 +563,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <SidebarNav location={location} isAdmin={isAdmin} isDiretoria={isDiretoria} unreadCount={unreadCount} isAclRole={isAclRole} aclPermissions={aclPermissions} isMoacir={isMoacir} />
 
-        <div className="shrink-0 p-4 border-t border-white/10 space-y-3">
+        <div className="shrink-0 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] border-t border-white/10 space-y-3">
           {isDiretoria && <SystemStatusBadge />}
           <Link href="/admin/perfil">
             <div className="flex items-center gap-3 cursor-pointer hover:bg-white/5 rounded-md p-1 -m-1 transition-colors" data-testid="link-profile">
@@ -603,7 +603,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}
 
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center gap-3 lg:hidden sticky top-0 z-30 shrink-0 safe-area-top">
+        <header className="bg-white border-b border-neutral-200 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] flex items-center gap-3 lg:hidden sticky top-0 z-30 shrink-0">
           <Button
             variant="ghost"
             size="icon"
