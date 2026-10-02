@@ -1647,7 +1647,7 @@ const REALTIME_TABLES = [
   "chat_conversations", "chat_messages", "chat_presence",
   "mission_positions", "agent_locations",
   "mission_costs", "financial_transactions", "vehicle_fueling",
-  "escort_billings", "billing_alerts", "invoices",
+  "escort_billings", "billing_alerts", "invoices", "boletim_approvals",
   "clients", "employees", "vehicles",
   "ponto_registros", "timesheets",
   "users", "system_settings",

@@ -374,6 +374,13 @@ export function invalidateAllQueries() {
   _channel?.postMessage({ type: "invalidate-all" });
 }
 
+// OS, boletim, fatura e lançamento: a gravação no banco reabre todas as
+// telas montadas (e as outras abas). GPS e chat continuam no escopo local
+// pra um ponto no mapa não recarregar o sistema inteiro.
+function _refreshEveryOpenPage() {
+  invalidateAllQueries();
+}
+
 const AUTO_REFRESH_MS = 120_000;
 let _autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -415,20 +422,23 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
   function _buildOperationalChannel(name: string) {
     return supabase.channel(name)
       .on("postgres_changes", { event: "*", schema: "public", table: "service_orders" }, () => {
-        _invalidateLocal("service-order");
+        _refreshEveryOpenPage();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "mission_updates" }, () => {
         _invalidateLocal("mission-update");
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "escort_billings" }, () => {
-        _invalidateLocal("billing");
+        _refreshEveryOpenPage();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "boletim_approvals" }, () => {
+        _refreshEveryOpenPage();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "billing_alerts" }, () => {
         _invalidateLocal("jornada-diretoria");
         _invalidateLocal("billing");
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => {
-        _invalidateLocal("invoice");
+        _refreshEveryOpenPage();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => {
         _invalidateLocal("client");
@@ -487,12 +497,10 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
   function _buildFinancialChannel(name: string) {
     return supabase.channel(name)
       .on("postgres_changes", { event: "*", schema: "public", table: "mission_costs" }, () => {
-        _invalidateLocal("mission-cost");
-        _invalidateLocal("financial");
+        _refreshEveryOpenPage();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "financial_transactions" }, () => {
-        _invalidateLocal("financial");
-        _invalidateLocal("mission-cost");
+        _refreshEveryOpenPage();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "vehicle_fueling" }, () => {
         _invalidateLocal("vehicle");

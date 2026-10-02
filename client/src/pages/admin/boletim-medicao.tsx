@@ -213,6 +213,23 @@ export default function BoletimMedicaoPage() {
     refetchInterval: 60000,
   });
 
+  // A OS aberta no modal acompanha o refetch da lista. Sem isso o detalhe
+  // fica com a cópia do clique e a grade muda sozinha.
+  useEffect(() => {
+    setSelectedOs((current: any) => {
+      if (!current) return current;
+      const fresh = osConcluidas.find((o: any) => o.id === current.id);
+      if (!fresh) return current;
+      const same =
+        Number(fresh.billing?.fat_total) === Number(current.billing?.fat_total) &&
+        fresh.missionStartedAt === current.missionStartedAt &&
+        fresh.completedDate === current.completedDate &&
+        fresh.hora_chegada_origem === current.hora_chegada_origem &&
+        fresh.status === current.status;
+      return same ? current : fresh;
+    });
+  }, [osConcluidas]);
+
   const sentBillingIds = new Set<number>();
   const approvedByClientBillingIds = new Set<number>();
   // "Foto única no envio": total CONGELADO por OS no momento do envio do boletim.
@@ -527,17 +544,33 @@ export default function BoletimMedicaoPage() {
     // Recusada = operacional não atendeu → R$ 0,00 sempre (§8.1).
     if (o.status === "recusada") return 0;
     const b = o.billing;
-    // Boletim já enviado/aprovado: usa o valor congelado no envio (fonte única),
-    // não recalcula ao vivo — garante que tela = e-mail = anexo Excel.
-    if (b && frozenBillingTotal.has(String(b.id))) return frozenBillingTotal.get(String(b.id))!;
-    // Cancelada = cliente cancelou mas equipe foi acionada → cobra acionamento + extras (§8.1/§8.4).
+    // Cancelada com janela real dentro da franquia: a coluna Valor segue
+    // a tabela (acionamento), não o total congelado que ainda carrega
+    // hora extra de relógio virado (TOR-0794: 23h46 → R$ 3.299,67).
     if (o.status === "cancelada") {
+      const horas = computeHorasReais(o);
+      const tabela = cobrancaDaTabela(horas, computeKm(o), o.contractValues);
+      const pass = b
+        ? Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.receitas_os || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.fat_adicional_noturno || 0)
+        : 0;
+      const temJanela = !!((o.hora_chegada_origem || o.missionStartedAt) && (o.hora_fim_missao || o.completedDate));
+      if (tabela.temTabela && temJanela && horas > 0 && tabela.horaExtra === 0) {
+        const live = Math.round((tabela.acionamento + tabela.kmExtraValor + pass) * 100) / 100;
+        const frozen = b && frozenBillingTotal.has(String(b.id))
+          ? frozenBillingTotal.get(String(b.id))!
+          : Number(b?.fat_total || 0);
+        if (!(frozen > 0) || live <= frozen + 0.009) return live;
+      }
       const acionFallback = Number(o.contractValues?.valor_acionamento || 0);
       if (!b) return acionFallback;
+      if (b && frozenBillingTotal.has(String(b.id))) return frozenBillingTotal.get(String(b.id))!;
       const fatTotal = Number(b.fat_total || 0);
       if (fatTotal > 0) return fatTotal;
       return sumBillingComponents(b, acionFallback);
     }
+    // Boletim já enviado/aprovado: usa o valor congelado no envio (fonte única),
+    // não recalcula ao vivo — garante que tela = e-mail = anexo Excel.
+    if (b && frozenBillingTotal.has(String(b.id))) return frozenBillingTotal.get(String(b.id))!;
     if (!b) return 0;
     const fatTotal = Number(b.fat_total || 0);
     if (fatTotal > 0) return fatTotal;
