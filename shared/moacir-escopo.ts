@@ -2,26 +2,32 @@
  * Escopo exclusivo do Moacir Juvencio (admin, id 32).
  * Não altera o perfil "admin" dos demais usuários.
  * Filho (funcionário) não entra nesta regra.
+ *
+ * Telas liberadas: Painel Operacional, Ordens de Serviço,
+ * Boletim de Medição, Relatório Faturamento e Perfil.
  */
 
 export const MOACIR_USER_ID = 32;
 export const MOACIR_EMAIL = "escoltas@torresseguranca.com.br";
 export const OCULTO = "oculto";
 
-export const MOACIR_ALLOWED_ADMIN_PATHS = ["/admin/operational-grid", "/admin/perfil"];
+export const MOACIR_ALLOWED_ADMIN_PATHS = [
+  "/admin/operational-grid",
+  "/admin/service-orders",
+  "/admin/boletim-medicao",
+  "/admin/relatorio-faturamento",
+  "/admin/perfil",
+];
 
 const BLOCKED_API_PREFIXES = [
-  "/api/clients",
   "/api/financial",
   "/api/invoices",
-  "/api/boletim",
   "/api/escort-billing",
   "/api/controle-faturamento",
   "/api/balanco",
   "/api/leads",
   "/api/whatsapp",
   "/api/users",
-  "/api/employees",
   "/api/holerites",
   "/api/patrimonial",
   "/api/fornecedores",
@@ -81,10 +87,9 @@ export function isBlockedApiForMoacir(pathname: string): boolean {
   if (!path.startsWith("/api/")) return false;
   if (path.startsWith("/api/auth/")) return false;
   if (BLOCKED_API_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) return true;
-  if (path.endsWith("/forward") || path.includes("send-report-email") || path.includes("/costs")) return true;
+  if (path.endsWith("/forward") || path.includes("send-report-email")) return true;
   const pathOnly = path.split("?")[0];
-  if (pathOnly === "/api/service-orders") return true;
-  if (/\/(pdf|relatorio-missao|enriched|invoice-map)$/.test(pathOnly)) return true;
+  if (/\/(enriched|invoice-map)$/.test(pathOnly)) return true;
   return false;
 }
 
@@ -98,9 +103,6 @@ const CONTACT_KEYS = new Set([
   "contactphone",
   "recipientemail",
   "apikey",
-  "cnpj",
-  "cpf",
-  "cgccpf",
 ]);
 
 function isContactKey(key: string): boolean {
@@ -110,15 +112,7 @@ function isContactKey(key: string): boolean {
   return compact.endsWith("phone") || compact.endsWith("email") || compact.endsWith("telefone");
 }
 
-function isMoneyKey(key: string): boolean {
-  const k = key.toLowerCase();
-  if (isContactKey(k)) return false;
-  if (k === "amount" || k === "faturamento" || k === "pagamento" || k === "resultado" || k === "margem_pct" || k === "price" || k === "valor") {
-    return true;
-  }
-  return k.startsWith("fat_") || k.startsWith("custo_") || k.startsWith("valor_") || k.includes("salario") || k.includes("faturamento");
-}
-
+/** Contato sensível continua oculto; valores de faturamento ficam visíveis nas telas liberadas. */
 export function redactMoacirPayload<T>(value: T): T {
   return redactValue(value) as T;
 }
@@ -128,7 +122,7 @@ function redactValue(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (isContactKey(key) || isMoneyKey(key)) {
+    if (isContactKey(key)) {
       out[key] = null;
       continue;
     }

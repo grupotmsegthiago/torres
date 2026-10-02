@@ -2,7 +2,7 @@ import { useState, memo, useCallback, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { canSeePath, parsePermissions, PROFILE_LABELS, usesAclMenu } from "@shared/perfis-acesso";
-import { isMoacirRestrito } from "@shared/moacir-escopo";
+import { isMoacirRestrito, moacirCanSeeAdminPath } from "@shared/moacir-escopo";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import {
@@ -383,7 +383,7 @@ const SidebarNav = memo(function SidebarNav({ location, isAdmin, isDiretoria, un
   const filterItem = useCallback((item: MenuItem): boolean => {
     if (isMoacir) {
       if (item.children?.length) return item.children.some(filterItem);
-      return item.path === "/admin/operational-grid";
+      return !!item.path && moacirCanSeeAdminPath(item.path);
     }
     if (isAclRole) {
       if (item.children?.length) return item.children.some(filterItem);
