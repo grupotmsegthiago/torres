@@ -1254,6 +1254,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   }, [form.origin, form.destination, form.originLat, form.originLng, form.destinationLat, form.destinationLng, originReady, destinationReady]);
 
   const googleMapsUrl = form.route ? `https://www.google.com/maps/dir/${encodeURIComponent(form.route.replace(" → ", "/"))}` : null;
+  const pedagioPreenchido = String(form.pedagioEstimado ?? "").trim() !== "";
+  const pedagioCriacaoOk = !isNewOs || (pedagioPreenchido && pedagioValorConfirmado);
 
   const buildPayload = (data: any, forceReassign = false) => ({
     ...data,
@@ -1824,7 +1826,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                 )}
               </div>
               <div>
-                <FieldLabel>Pedágio estimado — ida (R$)</FieldLabel>
+                <FieldLabel>Pedágio estimado — ida (R$) {isNewOs ? <span className="text-red-500">*</span> : null}</FieldLabel>
                 <div className="relative">
                   <Input
                     type="text"
@@ -1837,6 +1839,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     }}
                     placeholder="0,00"
                     className="text-sm font-mono"
+                    required={isNewOs}
                     data-testid="input-os-pedagio"
                   />
                   {form.pedagioIdaVolta && (
@@ -1939,20 +1942,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                         </p>
                         <p className="text-[10px] text-emerald-800 leading-snug">
                           {routeEstimate.pedagioReal
-                            ? "Fonte Google Routes. Confirme (Sem Parar pode variar por TAG/desconto)."
-                            : "Estimativa pelas praças no caminho da rota (Directions). Compare com Sem Parar e ajuste se precisar."}
+                            ? "Fonte Google Routes. Confirme abaixo (Sem Parar pode variar por TAG/desconto)."
+                            : "Estimativa pelas praças no caminho da rota (Directions). Compare com Sem Parar, ajuste se precisar e confirme abaixo."}
                         </p>
-                        <label className="flex items-start gap-2 cursor-pointer select-none" data-testid="check-pedagio-valor-ok">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5"
-                            checked={pedagioValorConfirmado}
-                            onChange={(e) => setPedagioValorConfirmado(e.target.checked)}
-                          />
-                          <span className="text-[11px] font-semibold text-neutral-800 leading-snug">
-                            Confirmei que o valor do pedágio estimado está de acordo
-                          </span>
-                        </label>
                       </>
                     ) : (
                       <>
@@ -1968,6 +1960,20 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       </>
                     )}
                   </div>
+                )}
+                {isNewOs && (
+                  <label className={`mt-2 flex items-start gap-2 cursor-pointer select-none rounded-md border px-2.5 py-2 ${pedagioCriacaoOk ? "border-emerald-200 bg-emerald-50" : "border-amber-300 bg-amber-50"}`} data-testid="check-pedagio-valor-ok">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={pedagioValorConfirmado}
+                      onChange={(e) => setPedagioValorConfirmado(e.target.checked)}
+                    />
+                    <span className="text-[11px] font-semibold text-neutral-800 leading-snug">
+                      Confirmei o pedágio da ida <span className="text-red-600">*</span>
+                      <span className="block font-normal text-neutral-600">Obrigatório para criar a OS. Use 0,00 se a rota não tiver praça.</span>
+                    </span>
+                  </label>
                 )}
               </div>
               <div>
@@ -2167,6 +2173,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                         </a>
                       )}
                       <button type="button" onClick={() => {
+                        setPedagioValorConfirmado(false);
+                        setPedagioUserEdited(false);
                         setForm(prev => ({
                           ...prev,
                           route: "",
@@ -2419,6 +2427,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     toast({ title: "Tabela de Preços obrigatória", description: "Selecione a tabela sugerida (ou outra) após informar origem e destino.", variant: "destructive" });
                     return;
                   }
+                  if (step === 1 && isNewOs && !pedagioCriacaoOk) {
+                    toast({ title: "Pedágio obrigatório", description: "Informe o pedágio estimado da ida e marque a confirmação. Use 0,00 se a rota não tiver praça.", variant: "destructive" });
+                    return;
+                  }
                   if (step === 1 && !form.scheduledDate) {
                     toast({ title: "Data do Agendamento obrigatória", description: "Informe a data e hora do agendamento para continuar.", variant: "destructive" });
                     return;
@@ -2483,6 +2495,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       : "Selecione uma Tabela de Preços para criar a OS.",
                     variant: "destructive",
                   });
+                  return;
+                }
+                if (isNewOs && !pedagioCriacaoOk) {
+                  toast({ title: "Pedágio obrigatório", description: "Informe o pedágio estimado da ida e marque a confirmação. Use 0,00 se a rota não tiver praça.", variant: "destructive" });
                   return;
                 }
                 console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step }));

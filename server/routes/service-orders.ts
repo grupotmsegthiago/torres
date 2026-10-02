@@ -985,6 +985,11 @@ import type { Express } from "express";
     if (!parsed.data.escortContractId) {
       return res.status(400).json({ message: "Selecione uma Tabela de Preços para criar a OS. Se o cliente ainda não tem tabela, cadastre uma em Contratos/Tabelas antes de criar a OS." });
     }
+    const pedagioAbertura = (parsed.data as any).pedagioEstimado;
+    const pedagioAberturaNum = pedagioAbertura == null || pedagioAbertura === "" ? NaN : Number(pedagioAbertura);
+    if (!Number.isFinite(pedagioAberturaNum) || pedagioAberturaNum < 0) {
+      return res.status(400).json({ message: "Pedágio estimado obrigatório na abertura da OS. Informe o valor da ida (use 0 se a rota não tiver praça)." });
+    }
 
     const employeeIds = [parsed.data.assignedEmployeeId, parsed.data.assignedEmployee2Id].filter((id): id is number => id != null && id > 0);
     const missingDocs: string[] = [];
