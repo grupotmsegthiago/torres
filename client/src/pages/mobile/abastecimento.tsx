@@ -13,6 +13,10 @@ type PhotoKey = "pumpPhoto" | "receiptPhoto" | "odometerPhoto";
 type Step = "SELECT" | "FORM" | "PLATE";
 type CaptureMode = "plate" | PhotoKey;
 
+function fmt3(n: number) {
+  return maskBRL(n.toFixed(3), 3);
+}
+
 const FUEL_STEPS: { key: PhotoKey; label: string; icon: typeof Camera }[] = [
   { key: "pumpPhoto", label: "Foto da Bomba", icon: Fuel },
   { key: "receiptPhoto", label: "Foto da NF", icon: Receipt },
@@ -33,6 +37,8 @@ export default function MobileAbastecimentoPage() {
   const [fuelType, setFuelType] = useState<"gasolina" | "etanol">("gasolina");
   const [liters, setLiters] = useState("");
   const [costPerLiter, setCostPerLiter] = useState("");
+  const [teveAcrescimo, setTeveAcrescimo] = useState(false);
+  const [acrescimo, setAcrescimo] = useState("");
   const [etanolPrice, setEtanolPrice] = useState("");
   const [gasolinaPrice, setGasolinaPrice] = useState("");
   const [station, setStation] = useState("");
@@ -65,13 +71,14 @@ export default function MobileAbastecimentoPage() {
     queryKey: ["/api/mobile/abastecimento/vehicles"],
   });
 
-  const filteredVehicles = vehicles.filter((v: any) => {
-    if (!searchPlate) return true;
-    const q = searchPlate.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const plate = (v.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const model = (v.model || "").toUpperCase();
-    return plate.includes(q) || model.includes(q);
-  });
+  const plateSuffix = searchPlate.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+  const suffixMatches = plateSuffix.length === 4
+    ? vehicles.filter((v: any) => {
+        const plate = String(v.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        return plate.endsWith(plateSuffix);
+      })
+    : [];
+  const exactVehicle = suffixMatches.length === 1 ? suffixMatches[0] : null;
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     try {
@@ -161,7 +168,9 @@ export default function MobileAbastecimentoPage() {
   const submitMutation = useMutation({
     mutationFn: async () => {
       const coords = await requestFreshGeo();
-      const parsedCostPerLiter = parseBRL(costPerLiter) || 0;
+      const parsedBase = parseBRL(costPerLiter) || 0;
+      const parsedExtra = teveAcrescimo ? (parseBRL(acrescimo) || 0) : 0;
+      const parsedCostPerLiter = parsedBase + parsedExtra;
       const parsedLiters = parseBRL(liters) || 0;
       const totalCost = parsedLiters > 0 && parsedCostPerLiter > 0 ? (parsedLiters * parsedCostPerLiter).toFixed(2) : undefined;
       const gPrice = parseBRL(gasolinaPrice);
@@ -278,6 +287,12 @@ export default function MobileAbastecimentoPage() {
     else if (step === "PLATE") setStep("FORM");
   };
 
+  const litrosNum = parseBRL(liters);
+  const precoBase = parseBRL(costPerLiter);
+  const acrescimoNum = teveAcrescimo ? parseBRL(acrescimo) : 0;
+  const precoFinal = precoBase + acrescimoNum;
+  const totalNum = litrosNum * precoFinal;
+
   return (
     <MobileLayout>
       <div className="p-4 space-y-4" data-testid="mobile-abastecimento-page">
@@ -316,10 +331,12 @@ export default function MobileAbastecimentoPage() {
 
         {step === "SELECT" && (
           <>
-            <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Selecione a Viatura</p>
-            <input type="text" value={searchPlate} onChange={e => setSearchPlate(e.target.value)}
-              placeholder="Buscar por placa ou modelo..."
-              className="w-full p-3 border border-neutral-200 rounded-xl text-sm bg-white" data-testid="input-search-vehicle" />
+            <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Final da placa</p>
+            <input type="text" value={plateSuffix} inputMode="text" autoCapitalize="characters" autoComplete="off"
+              onChange={e => setSearchPlate(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))}
+              placeholder="4 últimos da placa"
+              maxLength={4}
+              className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold tracking-[0.3em] uppercase bg-white" data-testid="input-search-vehicle" />
             {loadingVehicles ? (
               <div className="text-center py-8"><Loader2 className="animate-spin mx-auto text-neutral-300" /></div>
             ) : vehicles.length === 0 ? (
@@ -328,28 +345,30 @@ export default function MobileAbastecimentoPage() {
                 <p className="text-sm font-bold text-amber-800">Nenhuma viatura cadastrada</p>
                 <p className="text-xs text-amber-600 mt-1">Entre em contato com o administrador.</p>
               </div>
-            ) : filteredVehicles.length === 0 ? (
-              <div className="bg-neutral-50 rounded-2xl p-6 text-center">
-                <p className="text-sm text-neutral-500">Nenhuma viatura encontrada para "<span className="font-bold">{searchPlate}</span>"</p>
+            ) : plateSuffix.length < 4 ? (
+              <p className="text-xs text-neutral-500 px-1" data-testid="text-plate-hint">Digite os 4 últimos da placa para a viatura aparecer.</p>
+            ) : suffixMatches.length > 1 ? (
+              <div className="bg-neutral-50 rounded-2xl p-6 text-center" data-testid="text-plate-ambiguous">
+                <p className="text-sm text-neutral-500">Esse final não identifica uma única viatura.</p>
+              </div>
+            ) : !exactVehicle ? (
+              <div className="bg-neutral-50 rounded-2xl p-6 text-center" data-testid="text-plate-miss">
+                <p className="text-sm text-neutral-500">Nenhuma viatura com o final <span className="font-bold font-mono">{plateSuffix}</span>.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {filteredVehicles.map((v: any) => (
-                  <button key={v.id} onClick={() => { setSelectedVehicle(v); setStep("FORM"); }}
-                    className="w-full bg-white border border-neutral-200 rounded-2xl p-4 flex items-center gap-3 text-left active:bg-neutral-50"
-                    data-testid={`vehicle-card-${v.id}`}>
-                    <div className="w-11 h-11 rounded-xl bg-neutral-900 flex items-center justify-center shrink-0">
-                      <Car size={20} className="text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-base font-black text-neutral-900 tracking-wider">{v.plate}</p>
-                      <p className="text-xs text-neutral-500 truncate">{v.model}{v.frota ? ` · Frota ${v.frota}` : ""}</p>
-                      <p className="text-[10px] text-neutral-400 font-mono">KM atual: {(v.km || 0).toLocaleString("pt-BR")}</p>
-                    </div>
-                    <ChevronRight size={18} className="text-neutral-300 shrink-0" />
-                  </button>
-                ))}
-              </div>
+              <button onClick={() => { setSelectedVehicle(exactVehicle); setStep("FORM"); }}
+                className="w-full bg-white border border-neutral-200 rounded-2xl p-4 flex items-center gap-3 text-left active:bg-neutral-50"
+                data-testid={`vehicle-card-${exactVehicle.id}`}>
+                <div className="w-11 h-11 rounded-xl bg-neutral-900 flex items-center justify-center shrink-0">
+                  <Car size={20} className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-black text-neutral-900 tracking-wider">{exactVehicle.plate}</p>
+                  <p className="text-xs text-neutral-500 truncate">{exactVehicle.model}{exactVehicle.frota ? ` · Frota ${exactVehicle.frota}` : ""}</p>
+                  <p className="text-[10px] text-neutral-400 font-mono">KM atual: {(exactVehicle.km || 0).toLocaleString("pt-BR")}</p>
+                </div>
+                <ChevronRight size={18} className="text-neutral-300 shrink-0" />
+              </button>
             )}
           </>
         )}
@@ -466,21 +485,48 @@ export default function MobileAbastecimentoPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Litros *</label>
-                    <input type="text" inputMode="numeric" value={liters || "0,00"} onChange={e => setLiters(maskBRL(e.target.value))}
+                    <input type="text" inputMode="numeric" value={liters || "0,000"} onChange={e => setLiters(maskBRL(e.target.value, 3))}
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-liters" />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">R$/Litro *</label>
-                    <input type="text" inputMode="numeric" value={costPerLiter || "0,00"} onChange={e => setCostPerLiter(maskBRL(e.target.value))}
+                    <input type="text" inputMode="numeric" value={costPerLiter || "0,000"} onChange={e => setCostPerLiter(maskBRL(e.target.value, 3))}
                       className="w-full p-3 border border-neutral-200 rounded-xl text-sm font-mono font-bold" data-testid="input-cost-per-liter" />
                   </div>
                 </div>
-                {parseBRL(liters) > 0 && parseBRL(costPerLiter) > 0 && (
-                  <div className="bg-neutral-900 rounded-xl p-3 flex items-center justify-between">
-                    <span className="text-xs text-neutral-400 font-bold uppercase">Total</span>
-                    <span className="text-lg font-black text-white font-mono" data-testid="text-total-cost">
-                      R$ {maskBRL((parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2))}
-                    </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTeveAcrescimo((on) => {
+                      if (on) setAcrescimo("");
+                      return !on;
+                    });
+                  }}
+                  data-testid="button-teve-acrescimo"
+                  className={`w-full py-3 rounded-xl text-sm font-black uppercase tracking-wider border-2 ${teveAcrescimo ? "border-amber-500 bg-amber-50 text-amber-800" : "border-neutral-200 bg-white text-neutral-600"}`}
+                >
+                  Teve acréscimo?
+                </button>
+                {teveAcrescimo && (
+                  <div>
+                    <label className="text-[10px] font-black text-neutral-400 uppercase mb-1 block">Acréscimo R$/L *</label>
+                    <input type="text" inputMode="numeric" value={acrescimo || "0,000"} onChange={e => setAcrescimo(maskBRL(e.target.value, 3))}
+                      className="w-full p-3 border border-amber-200 rounded-xl text-sm font-mono font-bold" data-testid="input-acrescimo" />
+                  </div>
+                )}
+                {litrosNum > 0 && precoFinal > 0 && (
+                  <div className="bg-neutral-900 rounded-xl p-3 space-y-1">
+                    {teveAcrescimo && (
+                      <p className="text-[11px] text-neutral-300 font-mono" data-testid="text-preco-final">
+                        R$/L {fmt3(precoBase)} + acréscimo {fmt3(acrescimoNum)} = {fmt3(precoFinal)}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-neutral-400 font-bold uppercase">Total</span>
+                      <span className="text-lg font-black text-white font-mono" data-testid="text-total-cost">
+                        R$ {maskBRL(totalNum.toFixed(2))}
+                      </span>
+                    </div>
                   </div>
                 )}
                 <div>
@@ -527,14 +573,12 @@ export default function MobileAbastecimentoPage() {
             </div>
 
             {(() => {
-              const litersNum = parseBRL(liters);
-              const cplNum = parseBRL(costPerLiter);
-              const totalNum = litersNum * cplNum;
               const reasons: string[] = [];
               if (!km) reasons.push("Informe o KM");
-              if (litersNum <= 0) reasons.push("Litros deve ser maior que zero");
-              if (cplNum <= 0) reasons.push("R$/Litro deve ser maior que zero");
-              if (litersNum > 0 && cplNum > 0 && totalNum <= 0) reasons.push("Valor total deve ser maior que zero");
+              if (litrosNum <= 0) reasons.push("Litros deve ser maior que zero");
+              if (precoBase <= 0) reasons.push("R$/Litro deve ser maior que zero");
+              if (teveAcrescimo && acrescimoNum <= 0) reasons.push("Informe o acréscimo");
+              if (litrosNum > 0 && precoFinal > 0 && totalNum <= 0) reasons.push("Valor total deve ser maior que zero");
               if (!photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto) reasons.push("Tire as 3 fotos obrigatórias");
               return reasons.length > 0 ? (
                 <p className="text-[11px] text-amber-700 font-bold flex items-start gap-1 px-1" data-testid="text-proceed-disabled-reason">
@@ -543,7 +587,7 @@ export default function MobileAbastecimentoPage() {
               ) : null;
             })()}
             <button onClick={() => setStep("PLATE")}
-              disabled={!km || parseBRL(liters) <= 0 || parseBRL(costPerLiter) <= 0 || (parseBRL(liters) * parseBRL(costPerLiter)) <= 0 || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto}
+              disabled={!km || litrosNum <= 0 || precoBase <= 0 || (teveAcrescimo && acrescimoNum <= 0) || totalNum <= 0 || !photos.pumpPhoto || !photos.receiptPhoto || !photos.odometerPhoto}
               className="w-full py-3 bg-neutral-900 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               data-testid="button-proceed-plate">
               <ShieldCheck size={16} /> Prosseguir — Verificar Placa
@@ -563,7 +607,7 @@ export default function MobileAbastecimentoPage() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-neutral-500 uppercase font-bold">Total</p>
-                <p className="text-sm font-black text-emerald-400 font-mono">R$ {liters && costPerLiter ? maskBRL((parseBRL(liters) * parseBRL(costPerLiter)).toFixed(2)) : "0,00"}</p>
+                <p className="text-sm font-black text-emerald-400 font-mono">R$ {totalNum > 0 ? maskBRL(totalNum.toFixed(2)) : "0,00"}</p>
               </div>
             </div>
 
