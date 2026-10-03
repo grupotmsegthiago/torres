@@ -1,5 +1,10 @@
 # Changelog — Governança Torres
 
+## 2026-10-03 — Header da área interna no iPhone (safe-area)
+
+- Causa: o ajuste anterior (`cursor/fix-admin-iphone-safe-area-6527`) **não entrou na main**. O header mobile ficava sob o relógio/Dynamic Island (`viewport-fit=cover` + status bar translúcida), então o botão do menu não respondia ao toque.
+- Reaplicado o recuo com `pt-[calc(...+env(safe-area-inset-top))]` (não usar `py-3` + `.safe-area-top`, que se anulam). Drawer fecha ao navegar.
+
 ## 2026-10-03 — Ricardo Tadeu: admin operacional sem financeiro
 
 - Usuário ativo do Ricardo Tadeu (id 46) passa a ser administrador do painel, sem ver Controladoria (Balanço, Contas, Relatório de NFs, faturas, Asaas/NFS-e).
