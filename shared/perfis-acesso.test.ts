@@ -84,4 +84,6 @@ test("gestão por CPF só admin e diretoria; funcionário não entra", () => {
   assert.match(login, /looksLikeCpf/);
   assert.match(login, /E-mail ou CPF/);
   assert.match(routes, /canEnterGestaoByCpf/);
+  assert.match(routes, /from \"\.\/auth\"/);
+  assert.match(routes, /requireAuth, requireAdminRole, requireDiretoria/);
 });

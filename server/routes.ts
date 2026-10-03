@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage, toCamelObj, toCamelArray, toSnakeObj } from "./storage";
+import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
 import { canEnterGestaoByCpf } from "@shared/perfis-acesso";
 import { supabaseAdmin, getSupabaseStats, isServerSupabaseConfigured } from "./supabase";
 import { getSlowRoutes } from "./slow-routes";
