@@ -7,6 +7,7 @@ import { createServer, type Server } from "http";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { moacirEscopoGuard } from "./lib/moacir-escopo-guard";
+import { ricardoEscopoGuard } from "./lib/ricardo-escopo-guard";
 import { ensureDbSchema, ensureCalcMissionRPC } from "./db-init";
 import { registerAsaasRoutes } from "./asaas";
 import { registerFocusNfeRoutes } from "./lib/focus-nfe";
@@ -153,6 +154,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<{ app: 
 
   setupAuth(app);
   app.use(moacirEscopoGuard);
+  app.use(ricardoEscopoGuard);
   registerPushRoutes(app);
   installRequestLogger(app);
 

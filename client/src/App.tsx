@@ -12,6 +12,7 @@ import { ConfigError } from "@/components/config-error";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { canSeeAdminPath, parsePermissions, usesAclMenu } from "@shared/perfis-acesso";
 import { isMoacirRestrito, moacirCanSeeAdminPath } from "@shared/moacir-escopo";
+import { isRicardoSemFinanceiro, ricardoCanSeeAdminPath } from "@shared/ricardo-escopo";
 
 import Home from "@/pages/home";
 import LoginPage from "@/pages/admin/login";
@@ -141,6 +142,9 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     if (user && isMoacirRestrito(user) && !moacirCanSeeAdminPath(location)) {
       setLocation("/admin/operational-grid");
     }
+    if (user && isRicardoSemFinanceiro(user) && !ricardoCanSeeAdminPath(location)) {
+      setLocation("/admin/dashboard");
+    }
   }, [user, location, setLocation]);
 
   if (isLoading) {
@@ -157,6 +161,10 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (isMoacirRestrito(user) && !moacirCanSeeAdminPath(location)) {
     return <LazyFallback />;
+  }
+
+  if (isRicardoSemFinanceiro(user) && !ricardoCanSeeAdminPath(location)) {
+    return <AccessDeniedPage variant="screen" />;
   }
 
   if (usesAclMenu(user.role)) {

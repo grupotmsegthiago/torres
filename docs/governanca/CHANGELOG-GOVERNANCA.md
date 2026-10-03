@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-10-03 — Ricardo Tadeu: admin operacional sem financeiro
+
+- Usuário ativo do Ricardo Tadeu (id 46) passa a ser administrador do painel, sem ver Controladoria (Balanço, Contas, Relatório de NFs, faturas, Asaas/NFS-e).
+- Recorte por pessoa, no mesmo padrão do Moacir: o papel `admin` dos demais não muda.
+- Publicação e troca do `role` no banco só após o pedido explícito / merge.
+
 ## 2026-09-23 — Datas de input em DD/MM/YYYY (DateInputBR)
 
 - Inputs nativos `type="date"` trocados por `DateInputBR`: exibição sempre `dd/mm/aaaa`, valor interno `YYYY-MM-DD`.
