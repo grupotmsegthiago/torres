@@ -11,6 +11,7 @@ import {
   canSeeAdminPath,
   usesAclMenu,
   DEFAULT_PROFILE_PERMISSIONS,
+  canEnterGestaoByCpf,
 } from "./perfis-acesso.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -68,4 +69,19 @@ test("cadastro comercial reutiliza perfis_acesso (sem segundo ACL)", () => {
   assert.match(app, /usesAclMenu/);
   assert.match(leads, /requireComercial/);
   assert.doesNotMatch(leads, /requireAdminRole/);
+});
+
+test("gestão por CPF só admin e diretoria; funcionário não entra", () => {
+  assert.equal(canEnterGestaoByCpf("admin"), true);
+  assert.equal(canEnterGestaoByCpf("diretoria"), true);
+  assert.equal(canEnterGestaoByCpf("funcionario"), false);
+  assert.equal(canEnterGestaoByCpf("comercial"), false);
+  assert.equal(canEnterGestaoByCpf("financeiro"), false);
+  assert.equal(canEnterGestaoByCpf(null), false);
+  const login = readFileSync(path.join(root, "client/src/pages/admin/login.tsx"), "utf8");
+  const routes = readFileSync(path.join(root, "server/routes.ts"), "utf8");
+  assert.match(login, /gestao:\s*loginMode === "interno"/);
+  assert.match(login, /looksLikeCpf/);
+  assert.match(login, /E-mail ou CPF/);
+  assert.match(routes, /canEnterGestaoByCpf/);
 });
