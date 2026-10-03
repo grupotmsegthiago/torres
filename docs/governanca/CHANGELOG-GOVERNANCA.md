@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-10-03 — Gestão: e-mail ou CPF só para admin/diretoria
+
+- Aba Gestão aceita e-mail **ou** CPF.
+- CPF na gestão só resolve se o usuário for `admin` ou `diretoria` (fail-closed no servidor). Funcionário continua na aba Funcionário (app de campo).
+- Não altera o motor de faturamento.
+
 ## 2026-10-03 — Ricardo Tadeu: admin operacional sem financeiro
 
 - Usuário ativo do Ricardo Tadeu (id 46) passa a ser administrador do painel, sem ver Controladoria (Balanço, Contas, Relatório de NFs, faturas, Asaas/NFS-e).

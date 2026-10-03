@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage, toCamelObj, toCamelArray, toSnakeObj } from "./storage";
-import { requireAuth, requireAdminRole, requireDiretoria } from "./auth";
+import { canEnterGestaoByCpf } from "@shared/perfis-acesso";
 import { supabaseAdmin, getSupabaseStats, isServerSupabaseConfigured } from "./supabase";
 import { getSlowRoutes } from "./slow-routes";
 import {
@@ -1261,13 +1261,18 @@ async function ensureSystemSettingsTable() {
 
     const { data: user, error: userErr } = await supabaseAdmin
       .from("users")
-      .select("email")
+      .select("email, role")
       .eq("employee_id", emp.id)
       .not("email", "is", null)
       .limit(1)
       .maybeSingle();
     if (userErr) return res.status(500).json({ message: "Erro ao consultar usuário" });
     if (!user || !user.email) return res.status(404).json({ message: "Nenhum usuário vinculado a este CPF. Contate o administrador." });
+
+    const wantsGestao = req.body?.gestao === true;
+    if (wantsGestao && !canEnterGestaoByCpf(user.role)) {
+      return res.status(403).json({ message: "A gestão por CPF é só para administrador ou diretoria. Funcionário entra na aba Funcionário." });
+    }
 
     res.json({ email: user.email, name: emp.name });
   });
