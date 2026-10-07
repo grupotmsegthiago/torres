@@ -1,6 +1,13 @@
 import { supabaseAdmin } from "./supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./routes/_helpers";
 import { appendCiencia, manutencaoAberta } from "./lib/manutencao-ciencia";
+import {
+  CRITICAL_ALERT_CHANNEL,
+  formatBrl,
+  formatLiters,
+  fuelingLimitReason,
+  type FuelingLimitViolation,
+} from "@shared/fueling-limits";
 
 const ESCOLTA_EMAIL = "escolta@torresseguranca.com.br";
 const ADM_EMAIL = "adm@torresseguranca.com.br";
@@ -33,6 +40,65 @@ export async function createSystemNotification(input: {
     return null;
   }
   return data;
+}
+
+/** Avisa na hora quem está logado. O texto fica na notificação; o broadcast só pede o refetch. */
+function broadcastCriticalPing() {
+  const channel = supabaseAdmin.channel(CRITICAL_ALERT_CHANNEL);
+  const subscribed = new Promise<void>((resolve) => {
+    const timer = setTimeout(() => resolve(), 2000);
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  });
+  void subscribed
+    .then(() => channel.send({ type: "broadcast", event: "critical", payload: { t: Date.now() } }))
+    .catch((err: any) => console.warn("[critical-broadcast]", err?.message || err))
+    .finally(() => {
+      supabaseAdmin.removeChannel(channel);
+    });
+}
+
+/** Recusa de abastecimento acima do teto. Não grava o lançamento; avisa todo mundo logado. */
+export async function alertFuelingLimitRejected(input: {
+  who: string;
+  plate?: string | null;
+  vehicleId?: number | null;
+  violation: FuelingLimitViolation;
+}) {
+  const vehicleId = input.vehicleId ?? null;
+  if (vehicleId) {
+    const since = new Date(Date.now() - 20_000).toISOString();
+    const { data: recent } = await supabaseAdmin
+      .from("system_notifications")
+      .select("id")
+      .eq("type", "fueling_limit")
+      .eq("related_id", vehicleId)
+      .gte("created_at", since)
+      .limit(1);
+    if (recent && recent.length > 0) {
+      broadcastCriticalPing();
+      return;
+    }
+  }
+
+  const plate = (input.plate || "").trim() || "sem placa";
+  const reason = fuelingLimitReason(input.violation);
+  await createSystemNotification({
+    type: "fueling_limit",
+    severity: "critical",
+    title: "Abastecimento acima do limite",
+    message: `${input.who} tentou lançar abastecimento da viatura ${plate}: R$ ${formatBrl(input.violation.total)} e ${formatLiters(input.violation.liters)} litros. ${reason}. Nada foi gravado no sistema. Corrija o lançamento agora.`,
+    targetRole: "all",
+    requireAck: true,
+    relatedType: vehicleId ? "vehicle" : null,
+    relatedId: vehicleId,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  });
+  broadcastCriticalPing();
 }
 
 /** Encerra o aviso na tela. A lista de quem clicou em ciente fica na manutenção. */

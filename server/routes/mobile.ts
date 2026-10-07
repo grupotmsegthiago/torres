@@ -6,6 +6,8 @@ import type { Express } from "express";
   import { haversineDist, createAutoTransaction } from "./_helpers";
   import { uploadMissionPhoto } from "../lib/mission-photos";
   import { persistFuelingPhotoBlob } from "../lib/fueling-photo-storage";
+  import { alertFuelingLimitRejected } from "../notifications";
+  import { fuelingLimitUserMessage, fuelingLimitViolation } from "@shared/fueling-limits";
 
   const HQ_FALLBACK_LAT = -23.4890;
   const HQ_FALLBACK_LNG = -46.7234;
@@ -280,6 +282,19 @@ import type { Express } from "express";
         if (kmDiff > 1500) {
           return res.status(400).json({ message: `KM informado (${km}) é ${kmDiff} km a mais que o atual (${currentKm}). Diferença muito grande — verifique o hodômetro.` });
         }
+      }
+
+      const derivedPreview = Number(totalCost) > 0 ? Number(totalCost) : (Number(liters || 0) * Number(costPerLiter || 0));
+      const limit = fuelingLimitViolation(derivedPreview, liters);
+      if (limit) {
+        const { data: driverEmp } = await supabaseAdmin.from("employees").select("name").eq("id", employeeId).limit(1).maybeSingle();
+        await alertFuelingLimitRejected({
+          who: driverEmp?.name || req.user?.name || "Vigilante",
+          plate: vehicle[0]?.plate,
+          vehicleId: Number(vehicleId) || null,
+          violation: limit,
+        });
+        return res.status(400).json({ message: fuelingLimitUserMessage(limit) });
       }
 
       const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });

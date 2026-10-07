@@ -5,7 +5,8 @@ import type { Express } from "express";
   import { insertTripSchema, insertVehicleMaintenanceSchema, insertVehicleFuelingSchema, insertTimesheetSchema, vehicleFueling } from "@shared/schema";
 
   import { logFinancialAudit, createAutoTransaction, removeAutoTransaction, createSmtpTransporter, getSmtpFrom } from "./_helpers";
-  import { notifyVehicleMaintenance, encerrarAvisosManutencao } from "../notifications";
+  import { notifyVehicleMaintenance, encerrarAvisosManutencao, alertFuelingLimitRejected } from "../notifications";
+  import { fuelingLimitUserMessage, fuelingLimitViolation } from "@shared/fueling-limits";
   import { persistFuelingPhotoBlob, resolveFuelingPhotosForView, downloadFuelingPhotoDataUri } from "../lib/fueling-photo-storage";
 
   // Diferença máxima de KM PRA CIMA tolerada num novo abastecimento (proteção
@@ -427,6 +428,17 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
   app.post("/api/fueling", requireAuth, async (req, res) => {
     const parsed = insertVehicleFuelingSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
+    const limit = fuelingLimitViolation(parsed.data.totalCost, parsed.data.liters);
+    if (limit) {
+      const vehicle = parsed.data.vehicleId ? await storage.getVehicle(parsed.data.vehicleId) : null;
+      await alertFuelingLimitRejected({
+        who: req.user?.name || "Usuário",
+        plate: vehicle?.plate,
+        vehicleId: parsed.data.vehicleId ?? null,
+        violation: limit,
+      });
+      return res.status(400).json({ message: fuelingLimitUserMessage(limit) });
+    }
     // Lançamento retroativo: usuário interno pode AUTORIZAR um abastecimento com
     // KM menor que o atual do veículo (ex.: lançar abastecida antiga esquecida).
     // O flag vem do form (não é coluna; insertVehicleFuelingSchema descarta).
@@ -513,6 +525,24 @@ Se a imagem estiver ilegível ou não for uma NF, retorne validado=false com obs
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     const oldFueling = await storage.getVehicleFueling(Number(req.params.id));
     const fuelingId = Number(req.params.id);
+    const touchesAmount = parsed.data.liters !== undefined || parsed.data.totalCost !== undefined;
+    if (touchesAmount && oldFueling) {
+      const limit = fuelingLimitViolation(
+        parsed.data.totalCost !== undefined ? parsed.data.totalCost : oldFueling.totalCost,
+        parsed.data.liters !== undefined ? parsed.data.liters : oldFueling.liters,
+      );
+      if (limit) {
+        const vehicleId = parsed.data.vehicleId ?? oldFueling.vehicleId ?? null;
+        const vehicle = vehicleId ? await storage.getVehicle(vehicleId) : null;
+        await alertFuelingLimitRejected({
+          who: req.user?.name || "Usuário",
+          plate: vehicle?.plate,
+          vehicleId,
+          violation: limit,
+        });
+        return res.status(400).json({ message: fuelingLimitUserMessage(limit) });
+      }
+    }
     if (parsed.data.receiptPhoto) parsed.data.receiptPhoto = (await persistFuelingPhotoBlob(fuelingId, "receipt", parsed.data.receiptPhoto)) || parsed.data.receiptPhoto;
     if (parsed.data.pumpPhoto) parsed.data.pumpPhoto = (await persistFuelingPhotoBlob(fuelingId, "pump", parsed.data.pumpPhoto)) || parsed.data.pumpPhoto;
     if (parsed.data.odometerPhoto) parsed.data.odometerPhoto = (await persistFuelingPhotoBlob(fuelingId, "odometer", parsed.data.odometerPhoto)) || parsed.data.odometerPhoto;

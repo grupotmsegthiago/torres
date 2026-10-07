@@ -1,10 +1,12 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/lib/supabase";
 import { ocultarAvisoManutencao } from "@shared/manutencao-ciencia";
+import { CRITICAL_ALERT_CHANNEL } from "@shared/fueling-limits";
 
 type CriticalNotification = {
   id: number;
@@ -21,9 +23,21 @@ export function CriticalAlertGate() {
   const { user } = useAuth();
   const { data = [] } = useQuery<CriticalNotification[]>({
     queryKey: ["/api/notifications/critical"],
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
     enabled: !!user,
   });
+
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase.channel(CRITICAL_ALERT_CHANNEL);
+    channel.on("broadcast", { event: "critical" }, () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/critical"] });
+    });
+    channel.subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   const [acking, setAcking] = useState(false);
   const ackMutation = useMutation({

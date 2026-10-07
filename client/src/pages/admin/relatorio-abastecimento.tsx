@@ -22,6 +22,36 @@ const fuelLabel: Record<string, string> = {
   gasolina: "Gasolina", diesel: "Diesel", diesel_s10: "Diesel S10", etanol: "Etanol", gnv: "GNV",
 };
 
+/** Decimal brasileiro. Ponto digitado vira vírgula; fica só um separador. */
+function commaDecimalInput(raw: string): string {
+  const s = raw.replace(/\./g, ",").replace(/[^\d,]/g, "");
+  const parts = s.split(",");
+  if (parts.length <= 1) return parts[0] ?? "";
+  const dec = parts.pop() ?? "";
+  const intPart = parts.join("");
+  return `${intPart},${dec}`;
+}
+
+function commaDecimalFromStored(v: string | number | null | undefined): string {
+  if (v == null || v === "") return "";
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return "";
+    return String(v).replace(".", ",");
+  }
+  return commaDecimalInput(String(v));
+}
+
+function parseCommaDecimal(s: string): number | null {
+  const t = commaDecimalInput(s);
+  if (!t || t === ",") return null;
+  const n = Number(t.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmtComma(n: number, digits: number): string {
+  return n.toFixed(digits).replace(".", ",");
+}
+
 function getFuelStatus(kmL: number, fuelType: string): {
   label: string;
   textColor: string;
@@ -62,7 +92,7 @@ function TicketLogBadge({ fueling }: { fueling: VehicleFueling }) {
   } else if (status === "divergencia_pequena" || status === "divergencia_grande") {
     badge = (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700" title={msg}>
-        <AlertTriangle className="w-3 h-3" /> Diverg. {diff != null ? `R$ ${Math.abs(Number(diff)).toFixed(2)}` : ""}
+        <AlertTriangle className="w-3 h-3" /> Diverg. {diff != null ? `R$ ${fmtComma(Math.abs(Number(diff)), 2)}` : ""}
       </span>
     );
   } else if (status === "nao_encontrado") {
@@ -360,7 +390,7 @@ export default function RelatorioAbastecimentoPage() {
                 </AlertTriangle>
               )}
             </p>
-            <p className="text-2xl font-bold text-emerald-900" data-testid="text-total-liters">{stats.litrosTotal.toFixed(1)}L</p>
+            <p className="text-2xl font-bold text-emerald-900" data-testid="text-total-liters">{fmtComma(stats.litrosTotal, 1)}L</p>
           </Card>
           <Card className="p-3 bg-amber-50 border-amber-200">
             <p className="text-xs text-amber-600 font-medium">Gasolina</p>
@@ -373,7 +403,7 @@ export default function RelatorioAbastecimentoPage() {
           <Card className="p-3 bg-teal-50 border-teal-200" data-testid="card-eficiencia-geral">
             <p className="text-xs text-teal-600 font-medium">Eficiência Geral</p>
             <p className="text-2xl font-bold text-teal-900" data-testid="text-eficiencia-geral">
-              {eficienciaGeral.mediaKmL > 0 ? `${eficienciaGeral.mediaKmL.toFixed(1)} km/L` : "--"}
+              {eficienciaGeral.mediaKmL > 0 ? `${fmtComma(eficienciaGeral.mediaKmL, 1)} km/L` : "--"}
             </p>
             <p className="text-[10px] text-teal-700 mt-0.5" data-testid="text-eficiencia-geral-base">
               {eficienciaGeral.kmPeriodo.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} km / {eficienciaGeral.litrosPeriodo.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} L
@@ -574,11 +604,11 @@ export default function RelatorioAbastecimentoPage() {
                         {noLiters ? (
                           <div className="text-[10px] italic text-red-600 font-medium mt-0.5" data-testid={`text-sem-litros-${f.id}`}>— sem litros</div>
                         ) : (
-                          <div className="text-[10px] text-neutral-500 mt-0.5">{Number(f.liters).toFixed(2)}L</div>
+                          <div className="text-[10px] text-neutral-500 mt-0.5">{fmtComma(Number(f.liters), 2)}L</div>
                         )}
                       </td>
-                      <td className="p-2 text-right text-xs text-neutral-600">{gasP > 0 ? `R$ ${gasP.toFixed(3)}` : "-"}</td>
-                      <td className="p-2 text-right text-xs text-neutral-600">{ethP > 0 ? `R$ ${ethP.toFixed(3)}` : "-"}</td>
+                      <td className="p-2 text-right text-xs text-neutral-600">{gasP > 0 ? `R$ ${fmtComma(gasP, 3)}` : "-"}</td>
+                      <td className="p-2 text-right text-xs text-neutral-600">{ethP > 0 ? `R$ ${fmtComma(ethP, 3)}` : "-"}</td>
                       <td className="p-2 text-center">
                         {ratio !== null ? (
                           <span className={`text-xs font-bold ${ratio <= 70 ? "text-green-600" : "text-red-600"}`}>
@@ -609,14 +639,14 @@ export default function RelatorioAbastecimentoPage() {
                           kmLIncoerente ? (
                             <div
                               className="flex flex-col items-end leading-tight"
-                              title={`Trecho de ${kmInfo!.totalDist} km com ${kmInfo!.totalLiters.toFixed(2)}L → ${(kmInfo!.kmLCombined ?? kmInfo!.kmL).toFixed(1)} km/L (impossível). Provável abastecimento não registrado ou hodômetro digitado errado.`}
+                              title={`Trecho de ${kmInfo!.totalDist} km com ${fmtComma(kmInfo!.totalLiters, 2)}L → ${fmtComma(kmInfo!.kmLCombined ?? kmInfo!.kmL, 1)} km/L (impossível). Provável abastecimento não registrado ou hodômetro digitado errado.`}
                               data-testid={`text-kml-incoerente-${f.id}`}
                             >
                               <span className="font-bold text-sm flex items-center gap-1 text-red-600">
                                 <AlertTriangle className="w-3 h-3" />
                                 ⚠ incoerente
                               </span>
-                              <span className="text-[10px] text-neutral-400 line-through">{kmL.toFixed(1)} indiv.</span>
+                              <span className="text-[10px] text-neutral-400 line-through">{fmtComma(kmL, 1)} indiv.</span>
                               <span className="text-[10px] text-red-500">faltou registrar?</span>
                             </div>
                           ) : kmLSuspect && kmLCombined !== null && kmInfo && kmInfo.segments > 1 ? (
@@ -625,15 +655,15 @@ export default function RelatorioAbastecimentoPage() {
                               return (
                                 <div
                                   className="flex flex-col items-end leading-tight"
-                                  title={`Trecho curto / tanque parcial: ${kmInfo.totalDist} km com ${kmInfo.totalLiters.toFixed(2)}L em ${kmInfo.segments} abastecimentos consecutivos. Média individual ${kmL.toFixed(1)} km/L é enganosa — a real combinada é ${kmLCombined.toFixed(1)} km/L.`}
+                                  title={`Trecho curto / tanque parcial: ${kmInfo.totalDist} km com ${fmtComma(kmInfo.totalLiters, 2)}L em ${kmInfo.segments} abastecimentos consecutivos. Média individual ${fmtComma(kmL, 1)} km/L é enganosa — a real combinada é ${fmtComma(kmLCombined, 1)} km/L.`}
                                   data-testid={`text-kml-${f.id}`}
                                 >
                                   <span className={`font-bold text-sm flex items-center gap-1 ${st.textColor}`}>
                                     <AlertTriangle className="w-3 h-3 text-amber-500" />
-                                    {kmLCombined.toFixed(1)} km/L
+                                    {fmtComma(kmLCombined, 1)} km/L
                                   </span>
                                   <span className={`text-[10px] font-semibold px-1 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>
-                                  <span className="text-[10px] text-neutral-400 line-through">{kmL.toFixed(1)} indiv.</span>
+                                  <span className="text-[10px] text-neutral-400 line-through">{fmtComma(kmL, 1)} indiv.</span>
                                   <span className="text-[10px] text-amber-600">combinado de {kmInfo.segments} abast.</span>
                                 </div>
                               );
@@ -645,10 +675,10 @@ export default function RelatorioAbastecimentoPage() {
                                 <div className="flex flex-col items-end leading-tight" data-testid={`text-kml-${f.id}`}>
                                   <span
                                     className={`font-bold text-sm inline-flex items-center gap-1 ${st.textColor}`}
-                                    title={kmLSuspect ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
+                                    title={kmLSuspect ? `Atenção: ${fmtComma(kmL, 1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
                                   >
                                     {kmLSuspect && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-                                    {kmL.toFixed(1)} km/L
+                                    {fmtComma(kmL, 1)} km/L
                                   </span>
                                   <span className={`text-[10px] font-semibold px-1 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>
                                 </div>
@@ -833,15 +863,15 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, o
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-blue-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-blue-600">Litros</p>
-                <p className="font-bold text-blue-900 text-lg">{Number(fueling.liters).toFixed(2)}L</p>
+                <p className="font-bold text-blue-900 text-lg">{fmtComma(Number(fueling.liters), 2)}L</p>
               </div>
               <div className="bg-green-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-green-600">Valor/Litro</p>
-                <p className="font-bold text-green-900 text-lg">{fueling.costPerLiter ? `R$ ${Number(fueling.costPerLiter).toFixed(3)}` : "-"}</p>
+                <p className="font-bold text-green-900 text-lg">{fueling.costPerLiter ? `R$ ${fmtComma(Number(fueling.costPerLiter), 3)}` : "-"}</p>
               </div>
               <div className="bg-red-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-red-600">Valor Total</p>
-                <p className="font-bold text-red-900 text-lg">{fueling.totalCost ? `R$ ${Number(fueling.totalCost).toFixed(2)}` : "-"}</p>
+                <p className="font-bold text-red-900 text-lg">{fueling.totalCost ? `R$ ${fmtComma(Number(fueling.totalCost), 2)}` : "-"}</p>
               </div>
               <div className="bg-emerald-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-emerald-600">Média KM/L</p>
@@ -852,14 +882,14 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, o
                       <>
                         <p
                           className={`font-bold text-lg flex items-center justify-center gap-1 ${st.textColor}`}
-                          title={`Combinada de ${kmInfo.segments} abastecimentos: ${kmInfo.totalDist} km / ${kmInfo.totalLiters.toFixed(2)}L. Média individual ${kmL!.toFixed(1)} indica tanque parcial.`}
+                          title={`Combinada de ${kmInfo.segments} abastecimentos: ${kmInfo.totalDist} km / ${fmtComma(kmInfo.totalLiters, 2)}L. Média individual ${fmtComma(kmL!, 1)} indica tanque parcial.`}
                         >
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                          {kmLCombined.toFixed(1)} km/L
+                          {fmtComma(kmLCombined, 1)} km/L
                         </p>
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>
                         <p className="text-[10px] text-amber-700 mt-0.5">combinado de {kmInfo.segments} abast.</p>
-                        <p className="text-[10px] text-neutral-400 line-through">{kmL!.toFixed(1)} individual</p>
+                        <p className="text-[10px] text-neutral-400 line-through">{fmtComma(kmL!, 1)} individual</p>
                       </>
                     );
                   })()
@@ -870,10 +900,10 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, o
                       <>
                         <p
                           className={`font-bold text-lg inline-flex items-center justify-center gap-1 ${st ? st.textColor : "text-neutral-400"}`}
-                          title={kmLSuspect && kmL ? `Atenção: ${kmL.toFixed(1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
+                          title={kmLSuspect && kmL ? `Atenção: ${fmtComma(kmL, 1)} km/L está fora da faixa esperada (6 a 20). Provável tanque parcial.` : undefined}
                         >
                           {kmLSuspect && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
-                          {kmL ? `${kmL.toFixed(1)} km/L` : "-"}
+                          {kmL ? `${fmtComma(kmL, 1)} km/L` : "-"}
                         </p>
                         {st && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${st.badgeBg} ${st.badgeText}`}>{st.label}</span>}
                       </>
@@ -889,11 +919,11 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, o
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   <div>
                     <span className="text-amber-600 text-xs">Gasolina</span>
-                    <p className="font-bold text-amber-900">R$ {Number(fueling.gasolinePrice || 0).toFixed(3)}</p>
+                    <p className="font-bold text-amber-900">R$ {fmtComma(Number(fueling.gasolinePrice || 0), 3)}</p>
                   </div>
                   <div>
                     <span className="text-green-600 text-xs">Etanol</span>
-                    <p className="font-bold text-green-900">R$ {Number(fueling.ethanolPrice || 0).toFixed(3)}</p>
+                    <p className="font-bold text-green-900">R$ {fmtComma(Number(fueling.ethanolPrice || 0), 3)}</p>
                   </div>
                   <div>
                     <span className="text-neutral-600 text-xs">Razão</span>
@@ -1000,9 +1030,9 @@ export function DetailModal({ fueling, vehicle, driverName, fuelings, onClose, o
 
                   {aiResult.valor_nf !== undefined && aiResult.valor_nf !== null && (
                     <div className="grid grid-cols-2 gap-2 text-xs mt-2">
-                      <div><span className="text-neutral-500">Valor NF:</span> <span className="font-bold">R$ {Number(aiResult.valor_nf).toFixed(2)}</span></div>
-                      <div><span className="text-neutral-500">Valor Informado:</span> <span className="font-bold">R$ {Number(fueling.totalCost).toFixed(2)}</span></div>
-                      {aiResult.litros_nf && <div><span className="text-neutral-500">Litros NF:</span> <span className="font-bold">{Number(aiResult.litros_nf).toFixed(2)}L</span></div>}
+                      <div><span className="text-neutral-500">Valor NF:</span> <span className="font-bold">R$ {fmtComma(Number(aiResult.valor_nf), 2)}</span></div>
+                      <div><span className="text-neutral-500">Valor Informado:</span> <span className="font-bold">R$ {fmtComma(Number(fueling.totalCost), 2)}</span></div>
+                      {aiResult.litros_nf && <div><span className="text-neutral-500">Litros NF:</span> <span className="font-bold">{fmtComma(Number(aiResult.litros_nf), 2)}L</span></div>}
                       {aiResult.combustivel_nf && <div><span className="text-neutral-500">Combustível NF:</span> <span className="font-bold">{aiResult.combustivel_nf}</span></div>}
                       {aiResult.posto_nf && <div className="col-span-2"><span className="text-neutral-500">Posto NF:</span> <span className="font-bold">{aiResult.posto_nf}</span></div>}
                     </div>
@@ -1065,14 +1095,9 @@ function AddFuelingModal({
   const [allowKmOverride, setAllowKmOverride] = useState(false);
   const [notes, setNotes] = useState("");
 
-  const parseNum = (s: string): number | null => {
-    const n = Number(String(s).replace(",", ".").trim());
-    return Number.isFinite(n) ? n : null;
-  };
-
-  const totalCostNum = parseNum(totalCost) ?? 0;
-  const litersNum = parseNum(liters) ?? 0;
-  const kmNum = parseNum(km);
+  const totalCostNum = parseCommaDecimal(totalCost) ?? 0;
+  const litersNum = parseCommaDecimal(liters) ?? 0;
+  const kmNum = parseCommaDecimal(km);
   const cplCalc = litersNum > 0 ? totalCostNum / litersNum : 0;
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
   const kmBelowCurrent =
@@ -1246,7 +1271,7 @@ function AddFuelingModal({
               <label className="text-xs font-medium text-neutral-600 mb-1 block">Valor total (R$) *</label>
               <Input
                 value={totalCost}
-                onChange={(e) => setTotalCost(e.target.value)}
+                onChange={(e) => setTotalCost(commaDecimalInput(e.target.value))}
                 placeholder="0,00"
                 inputMode="decimal"
                 data-testid="input-add-totalCost"
@@ -1256,7 +1281,7 @@ function AddFuelingModal({
               <label className="text-xs font-medium text-neutral-600 mb-1 block">Litros *</label>
               <Input
                 value={liters}
-                onChange={(e) => setLiters(e.target.value)}
+                onChange={(e) => setLiters(commaDecimalInput(e.target.value))}
                 placeholder="0,00"
                 inputMode="decimal"
                 data-testid="input-add-liters"
@@ -1267,7 +1292,7 @@ function AddFuelingModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-neutral-600 mb-1 block">Preço/L (calculado)</label>
-              <Input value={cplCalc > 0 ? `R$ ${cplCalc.toFixed(3)}` : "—"} disabled className="bg-neutral-50" />
+              <Input value={cplCalc > 0 ? `R$ ${fmtComma(cplCalc, 3)}` : "—"} disabled className="bg-neutral-50" />
             </div>
             <div className="flex items-end pb-2">
               <label className="flex items-center gap-2 cursor-pointer text-sm text-neutral-700">
@@ -1333,22 +1358,16 @@ function EditFuelingModal({
   onClose: () => void;
 }) {
   const { toast } = useToast();
-  // Mantém os campos como string pra permitir digitação livre (vírgula/ponto, vazio temporário)
   const [vehicleId, setVehicleId] = useState<number>(fueling.vehicleId);
-  const [totalCost, setTotalCost] = useState(String(fueling.totalCost ?? ""));
-  const [liters, setLiters] = useState(String(fueling.liters ?? ""));
+  const [totalCost, setTotalCost] = useState(commaDecimalFromStored(fueling.totalCost));
+  const [liters, setLiters] = useState(commaDecimalFromStored(fueling.liters));
   const [km, setKm] = useState(String(fueling.km ?? ""));
   const [station, setStation] = useState(fueling.station ?? "");
   const [fuelType, setFuelType] = useState(fueling.fuelType ?? "gasolina");
 
-  const parseNum = (s: string): number | null => {
-    const n = Number(String(s).replace(",", ".").trim());
-    return Number.isFinite(n) ? n : null;
-  };
-
-  const totalCostNum = parseNum(totalCost) ?? 0;
-  const litersNum = parseNum(liters) ?? 0;
-  const kmNum = parseNum(km);
+  const totalCostNum = parseCommaDecimal(totalCost) ?? 0;
+  const litersNum = parseCommaDecimal(liters) ?? 0;
+  const kmNum = parseCommaDecimal(km);
   const cplCalc = litersNum > 0 ? totalCostNum / litersNum : 0;
   const selectedVehicle = vehicles.find((v) => v.id === vehicleId) || vehicle;
   const vehiclesSorted = useMemo(
@@ -1457,7 +1476,7 @@ function EditFuelingModal({
               <label className="text-xs font-medium text-neutral-600 mb-1 block">Valor total (R$)</label>
               <Input
                 value={totalCost}
-                onChange={e => setTotalCost(e.target.value)}
+                onChange={e => setTotalCost(commaDecimalInput(e.target.value))}
                 placeholder="0,00"
                 inputMode="decimal"
                 data-testid="input-edit-totalCost"
@@ -1467,7 +1486,7 @@ function EditFuelingModal({
               <label className="text-xs font-medium text-neutral-600 mb-1 block">Litros</label>
               <Input
                 value={liters}
-                onChange={e => setLiters(e.target.value)}
+                onChange={e => setLiters(commaDecimalInput(e.target.value))}
                 placeholder="0,00"
                 inputMode="decimal"
                 data-testid="input-edit-liters"
@@ -1478,7 +1497,7 @@ function EditFuelingModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-neutral-600 mb-1 block">Preço por litro (calculado)</label>
-              <Input value={cplCalc > 0 ? `R$ ${cplCalc.toFixed(3)}` : "—"} disabled className="bg-neutral-50" />
+              <Input value={cplCalc > 0 ? `R$ ${fmtComma(cplCalc, 3)}` : "—"} disabled className="bg-neutral-50" />
             </div>
             <div>
               <label className="text-xs font-medium text-neutral-600 mb-1 block">KM do veículo</label>
@@ -1505,7 +1524,7 @@ function EditFuelingModal({
           <div className="bg-neutral-50 rounded-lg p-2.5 text-xs text-neutral-600 flex items-center justify-between gap-2">
             <span className="flex-shrink-0">Antes:</span>
             <span className="font-mono text-right">
-              {vehicle?.plate || "—"} · R$ {Number(fueling.totalCost || 0).toFixed(2)} · {Number(fueling.liters || 0).toFixed(2)}L · KM {fueling.km ?? "—"}
+              {vehicle?.plate || "—"} · R$ {fmtComma(Number(fueling.totalCost || 0), 2)} · {fmtComma(Number(fueling.liters || 0), 2)}L · KM {fueling.km ?? "—"}
             </span>
           </div>
         </div>
