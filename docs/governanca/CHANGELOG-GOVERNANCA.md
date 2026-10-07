@@ -1,5 +1,22 @@
 # Changelog — Governança Torres
 
+## 2026-10-03 — Gestão: e-mail ou CPF só para admin/diretoria
+
+- Aba Gestão aceita e-mail **ou** CPF.
+- CPF na gestão só resolve se o usuário for `admin` ou `diretoria` (fail-closed no servidor). Funcionário continua na aba Funcionário (app de campo).
+- Não altera o motor de faturamento.
+
+## 2026-10-03 — Header da área interna no iPhone (safe-area)
+
+- Causa: o ajuste anterior (`cursor/fix-admin-iphone-safe-area-6527`) **não entrou na main**. O header mobile ficava sob o relógio/Dynamic Island (`viewport-fit=cover` + status bar translúcida), então o botão do menu não respondia ao toque.
+- Reaplicado o recuo com `pt-[calc(...+env(safe-area-inset-top))]` (não usar `py-3` + `.safe-area-top`, que se anulam). Drawer fecha ao navegar.
+
+## 2026-10-03 — Ricardo Tadeu: admin operacional sem financeiro
+
+- Usuário ativo do Ricardo Tadeu (id 46) passa a ser administrador do painel, sem ver Controladoria (Balanço, Contas, Relatório de NFs, faturas, Asaas/NFS-e).
+- Recorte por pessoa, no mesmo padrão do Moacir: o papel `admin` dos demais não muda.
+- Publicação e troca do `role` no banco só após o pedido explícito / merge.
+
 ## 2026-09-23 — Datas de input em DD/MM/YYYY (DateInputBR)
 
 - Inputs nativos `type="date"` trocados por `DateInputBR`: exibição sempre `dd/mm/aaaa`, valor interno `YYYY-MM-DD`.

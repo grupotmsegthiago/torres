@@ -120,6 +120,11 @@ export function isPrivilegedRole(role?: string | null): boolean {
   return role === "diretoria" || role === "admin";
 }
 
+/** Aba Gestão + CPF: só admin/diretoria. Funcionário entra pelo CPF na aba Funcionário (app de campo). */
+export function canEnterGestaoByCpf(role?: string | null): boolean {
+  return isPrivilegedRole(role);
+}
+
 /** Perfis cujo menu e rotas seguem o JSON de `perfis_acesso` (fail-closed). */
 export function usesAclMenu(role?: string | null): boolean {
   return !!role && !isPrivilegedRole(role) && role !== "funcionario";

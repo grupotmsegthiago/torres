@@ -4,6 +4,7 @@ import { isSupabaseHealthy } from "./pg-fallback";
 import { storage } from "./storage";
 import type { User } from "@shared/schema";
 import { toSafeUser } from "./lib/safe-user";
+import { isRicardoSemFinanceiro } from "@shared/ricardo-escopo";
 
 /** Remove senhas/tokens antes de colocar em req.user / cache. */
 function toAuthUser(user: User): User {
@@ -172,7 +173,8 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   next();
 };
 
-export function canActAsFinanceiro(user?: { role?: string | null } | null): boolean {
+export function canActAsFinanceiro(user?: { id?: number | string | null; email?: string | null; name?: string | null; role?: string | null } | null): boolean {
+  if (isRicardoSemFinanceiro(user)) return false;
   const role = String(user?.role || "");
   return role === "diretoria" || role === "admin" || role === "financeiro";
 }

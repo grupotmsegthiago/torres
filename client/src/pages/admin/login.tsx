@@ -20,8 +20,11 @@ function formatCpf(value: string) {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
-function isCpfInput(value: string) {
-  return /^\d/.test(value.trim()) || value.includes(".");
+function looksLikeCpf(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes("@") || /[A-Za-z]/.test(trimmed)) return false;
+  const digits = trimmed.replace(/\D/g, "");
+  return /^\d/.test(trimmed) && digits.length >= 1 && digits.length <= 11;
 }
 
 const TERMS_TEXT = `TERMO DE USO E CONFIDENCIALIDADE DO SISTEMA OPERACIONAL
@@ -75,7 +78,7 @@ export default function LoginPage() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [termsScrolled, setTermsScrolled] = useState(false);
-  const { login, user } = useAuth();
+  const { login, logout, user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -119,7 +122,8 @@ export default function LoginPage() {
     try {
       let emailToUse = credential.trim();
 
-      if (loginMode === "funcionario") {
+      const useCpf = loginMode === "funcionario" || looksLikeCpf(credential);
+      if (useCpf) {
         const cleanCpf = credential.replace(/\D/g, "");
         if (cleanCpf.length !== 11) {
           toast({ title: "CPF inválido", description: "Digite os 11 dígitos do CPF.", variant: "destructive" });
@@ -129,7 +133,7 @@ export default function LoginPage() {
         const lookupRes = await fetch("/api/auth/cpf-lookup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cpf: cleanCpf }),
+          body: JSON.stringify({ cpf: cleanCpf, gestao: loginMode === "interno" }),
         });
         if (!lookupRes.ok) {
           const err = await lookupRes.json().catch(() => ({}));
@@ -140,6 +144,10 @@ export default function LoginPage() {
       }
 
       const loggedUser = await login(emailToUse, password);
+      if (loginMode === "interno" && loggedUser.role === "funcionario") {
+        await logout();
+        throw new Error("A gestão é só para administrador ou diretoria. Funcionário entra na aba Funcionário.");
+      }
       if (loggedUser.mustChangePassword) {
         setChangingPassword(true);
       }
@@ -505,7 +513,7 @@ export default function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="text-xs text-white/40 mb-1.5 block">
-                  {loginMode === "funcionario" ? "CPF" : "E-mail"}
+                  {loginMode === "funcionario" ? "CPF" : "E-mail ou CPF"}
                 </label>
                 {loginMode === "funcionario" ? (
                   <Input
@@ -520,11 +528,13 @@ export default function LoginPage() {
                   />
                 ) : (
                   <Input
-                    type="email"
-                    value={credential}
+                    type="text"
+                    autoComplete="username"
+                    inputMode={looksLikeCpf(credential) ? "numeric" : "email"}
+                    value={looksLikeCpf(credential) ? formatCpf(credential) : credential}
                     onChange={(e) => setCredential(e.target.value)}
                     className="bg-white/5 border-white/10 text-white placeholder:text-white/20"
-                    placeholder="seu@email.com"
+                    placeholder="seu@email.com ou CPF"
                     required
                     data-testid="input-email"
                   />
