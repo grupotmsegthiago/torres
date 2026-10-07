@@ -3,7 +3,7 @@ import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom } from "./_helpers";
 import { clientOutboundMail, withTorresAlwaysCc, parseEmailList } from "../../shared/client-emails";
 import { emitInvoiceAuto } from "../asaas";
-import { round2, osCanonicalTotal, billingTotalForBoletim } from "../lib/boletim-totals";
+import { round2, osCanonicalTotal, billingTotalForBoletim, boletimOsNumber } from "../lib/boletim-totals";
 import { bustBalancoCaches } from "../lib/balanco-cache";
 import {
   createBoletimApprovalAtomic,
@@ -103,7 +103,7 @@ function getPeriodLabel(periodStart: string, periodEnd: string): string {
   return `GERAL — ${month}/${year} — ${sd} A ${ed}`;
 }
 
-async function generateBoletimExcel(
+export async function generateBoletimExcel(
   clientName: string,
   periodStart: string,
   periodEnd: string,
@@ -257,14 +257,14 @@ async function generateBoletimExcel(
   const currCols = isOmegaClient
     ? new Set([3, 6, 7, 21, 22, 24, 25, 26, 27])
     : new Set([2, 5, 6, 20, 21, 23, 24, 25, 26]);
-  const ordersMap = new Map(orders.map(o => [o.id, o]));
+  const ordersMap = new Map(orders.map(o => [Number(o.id), o]));
   const contractsMap = new Map(contracts.map(c => [c.id, c]));
 
   let grandTotal = 0;
 
   billings.forEach((b: any, idx: number) => {
     const ct = contractsMap.get(b.contract_id) || {} as any;
-    const so = ordersMap.get(b.service_order_id) || {} as any;
+    const so = ordersMap.get(Number(b.service_order_id)) || {} as any;
     const n = (v: any) => Number(v) || 0;
 
     const franquiaHoras = n(ct.franquia_horas) || n(b.franquia_horas);
@@ -290,22 +290,23 @@ async function generateBoletimExcel(
     const fatTotal = billingTotalForBoletim(b, so.status);
     grandTotal += fatTotal;
 
-    const osNum = b.os_number || so.os_number || `OS-${b.service_order_id}`;
+    const osNum = boletimOsNumber(b, so);
     const origem = b.origem || so.origin || "";
     const destino = b.destino || so.destination || "";
     const routeStr = (origem && destino) ? `${extractCity(origem)} × ${extractCity(destino)}` : (origem || destino || "—");
     const viatura = b.placa_viatura || so.vehicle_plate || "—";
     const escoltado = b.placa_escoltado || so.escorted_vehicle_plate || "—";
-    const dataMissao = so.scheduled_date || b.data_missao || b.created_at;
+    const dataInicio = so.scheduled_date || b.data_missao || b.created_at;
+    const dataFim = so.completed_date || b.completed_date || b.finished_at || dataInicio;
 
     const baseRowData = [
       osNum, routeStr, Number(valorAcionamento.toFixed(2)), fmtHHMM(franquiaHoras), franquiaKm > 0 ? franquiaKm : 0,
       Number(valorHoraExtra.toFixed(2)), Number(valorKmExtra.toFixed(2)),
-      fmtDateBR(dataMissao), b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTimeBR(dataMissao),
-      viatura, escoltado, fmtDateBR(dataMissao),
+      fmtDateBR(dataInicio), b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTimeBR(dataInicio),
+      viatura, escoltado, fmtDateBR(dataFim),
       b.horario_fim ? b.horario_fim.substring(0, 5) : "—",
       n(b.km_inicial) > 0 ? n(b.km_inicial) : 0, n(b.km_final) > 0 ? n(b.km_final) : 0, kmTotal > 0 ? kmTotal : 0,
-      b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTimeBR(dataMissao),
+      b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTimeBR(dataInicio),
       b.horario_fim ? b.horario_fim.substring(0, 5) : "—",
       fmtHHMM(horasMissao),
       kmExcedente > 0 ? kmExcedente : 0, kmExcedente > 0 ? Number(valorKmExtra.toFixed(2)) : 0, Number(fatKmExtra.toFixed(2)),
@@ -737,11 +738,29 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const soIds = billingsData.map((b: any) => b.service_order_id).filter(Boolean);
       let ordersData: any[] = [];
       if (soIds.length > 0) {
-        const { data: sos } = await supabaseAdmin
+        // vehicle_plate NÃO existe em service_orders (a placa fica em vehicles.plate
+        // via vehicle_id). Pedir essa coluna faz o PostgREST rejeitar a query
+        // inteira; o erro era ignorado e o Excel do cliente saía sem a OS,
+        // caindo em OS-{id} (ex. OS-1325) em vez de TOR-0931.
+        const { data: sos, error: soErr } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, origin, destination, scheduled_date, vehicle_plate, escorted_vehicle_plate, completed_date, processo_omega, status, escort_contract_id, client_id")
+          .select("id, os_number, origin, destination, scheduled_date, vehicle_id, escorted_vehicle_plate, completed_date, processo_omega, status, escort_contract_id, client_id")
           .in("id", soIds);
+        if (soErr) {
+          console.error("[boletim-approval] falha ao carregar OS:", soErr.message);
+          return res.status(500).json({
+            message: "Não foi possível carregar as OS do boletim. O envio foi bloqueado para o cliente não receber número ou rota errados.",
+          });
+        }
         ordersData = sos || [];
+        const vehicleIds = Array.from(new Set(ordersData.map((o: any) => o.vehicle_id).filter(Boolean)));
+        if (vehicleIds.length > 0) {
+          const { data: vs } = await supabaseAdmin.from("vehicles").select("id, plate").in("id", vehicleIds);
+          const plateById = new Map((vs || []).map((v: any) => [Number(v.id), v.plate]));
+          for (const o of ordersData) {
+            o.vehicle_plate = plateById.get(Number(o.vehicle_id)) || null;
+          }
+        }
       }
       const ordersById = new Map((ordersData || []).map((o: any) => [Number(o.id), o]));
 
@@ -830,7 +849,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
           billing_id: String(b.id),
           billing_version: Number(b.lock_version) || 0,
           service_order_id: b.service_order_id,
-          os_number: b.os_number || (so as any).os_number || `OS-${b.service_order_id}`,
+          os_number: boletimOsNumber(b, so),
           fat_acionamento: comp(b.fat_acionamento),
           fat_hora_extra: comp(b.fat_hora_extra),
           fat_km: comp(b.fat_km),
@@ -971,7 +990,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
           : [],
       );
       const enriched = billings.map((b: any) => {
-        const so = orders.find((o: any) => o.id === b.service_order_id);
+        const so = orders.find((o: any) => Number(o.id) === Number(b.service_order_id));
         // Fallback de data: service_order > escort_billing.data_missao
         const scheduled = so?.scheduled_date || b.data_missao || null;
         const completed = so?.completed_date || null;
@@ -993,7 +1012,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         return {
           ...b,
           ...frozen,
-          osNumber: so?.os_number || `OS-${b.service_order_id}`,
+          osNumber: boletimOsNumber(snap?.os_number ? { ...b, os_number: snap.os_number } : b, so),
           origin: so?.origin || b.origem || "",
           destination: so?.destination || b.destino || "",
           scheduledDate: scheduled,

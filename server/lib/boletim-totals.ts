@@ -28,3 +28,15 @@ export const billingTotalForBoletim = (b: any, osStatus?: string) => {
   const ft = round2(Number(b.fat_total || 0));
   return ft > 0 ? ft : osCanonicalTotal(b);
 };
+
+// Número que o cliente vê. Oficial = service_orders.os_number (TOR-XXXX).
+// escort_billings.os_number costuma vir vazio. `OS-{id}` é o id interno da OS
+// e só entra se não houver número comercial — nunca no lugar de TOR-.
+export const boletimOsNumber = (billing: any, serviceOrder?: any) => {
+  const official = String(serviceOrder?.os_number || serviceOrder?.osNumber || "").trim();
+  if (official) return official;
+  const copied = String(billing?.os_number || "").trim();
+  if (copied && !/^OS-\d+$/i.test(copied)) return copied;
+  const id = billing?.service_order_id ?? serviceOrder?.id;
+  return id != null && id !== "" ? `OS-${id}` : "—";
+};

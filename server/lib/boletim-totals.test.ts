@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { round2, osCanonicalTotal, billingTotalForBoletim } from "./boletim-totals";
+import { round2, osCanonicalTotal, billingTotalForBoletim, boletimOsNumber } from "./boletim-totals";
 
 const billing = (over: Record<string, any> = {}) => ({
   fat_acionamento: 1000,
@@ -41,4 +41,19 @@ test("billingTotalForBoletim: status indefinido trata como faturável (não-recu
 test("round2 arredonda para 2 casas", () => {
   assert.equal(round2(10.005), 10.01);
   assert.equal(round2(0), 0);
+});
+
+test("boletimOsNumber: TOR da OS vence o fallback OS-{id} do billing", () => {
+  assert.equal(
+    boletimOsNumber({ service_order_id: 1325, os_number: null }, { id: 1325, os_number: "TOR-0931" }),
+    "TOR-0931",
+  );
+  assert.equal(
+    boletimOsNumber({ service_order_id: 1325, os_number: "OS-1325" }, { id: 1325, os_number: "TOR-0931" }),
+    "TOR-0931",
+  );
+});
+
+test("boletimOsNumber: sem número comercial, cai no id interno", () => {
+  assert.equal(boletimOsNumber({ service_order_id: 1325, os_number: null }, {}), "OS-1325");
 });
