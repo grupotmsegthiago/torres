@@ -9,6 +9,7 @@ import type { Express } from "express";
   import { clientOutboundMail } from "../../shared/client-emails";
   import { calcularEscolta, computeBillingPayloadForOs, splitMissionCostsForBilling } from "../billing-calc";
   import { osCobraMarkupPedagio, pedagioCobrancaCliente } from "../../shared/pedagio-markup";
+  import { syncOsPedagioParaCobranca } from "../lib/os-pedagio-sync";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
   import { billingHasCommercialSnapshot, isBillingProtected } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
@@ -108,7 +109,7 @@ import type { Express } from "express";
     const allowed = await allowedClientIdsFromRequest(req);
     if (allowed && allowed.length === 0) return res.json([]);
 
-    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,gtm_number,valor_estimado,pedagio_estimado,pedagio_ida_volta,operacao_dhl,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints,km_total_calculado,km_gps_calculado";
+    const SO_LIST_COLS = "id,os_number,type,status,mission_status,priority,client_id,vehicle_id,assigned_employee_id,assigned_employee_2_id,kit_id,origin,destination,scheduled_date,completed_date,mission_started_at,created_at,step_logs,notes,escorted_vehicle_plate,escorted_driver_name,escorted_driver_phone,extra_drivers,escort_contract_id,fuel_allocated,created_by_user_id,requester_name,description,cancellation_reason,processo_omega,gtm_number,multilog_os,multilog_sm,valor_estimado,pedagio_estimado,pedagio_ida_volta,operacao_dhl,origin_lat,origin_lng,destination_lat,destination_lng,route,waypoints,km_total_calculado,km_gps_calculado";
 
     let data: any[];
     try {
@@ -412,22 +413,70 @@ import type { Express } from "express";
           };
         }
 
-        const billing = await writeEscortBillingAtomic({
-          action: so.status === "recusada" ? "WRITE_REFUSED" : "WRITE_CANCELLED",
-          billingId: existingBilling?.id || null,
-          serviceOrderId,
-          expectedVersion: existingBilling
-            ? Number(existingBilling.lock_version) || 0
-            : null,
-          payload: { ...commonPayload, ...statusPayload },
-          actor: {
-            userId: user.id,
-            userName: user.name,
-            userRole: user.role,
-            reason: (so as any).cancellationReason || so.status,
-            ipAddress: req.ip,
-          },
-        });
+        // A RPC atômica exige contract_id do payload == escort_contract_id da OS.
+        // Cancelada pode trocar da tabela original para a oficial 100 km / 3 h;
+        // alinhe a OS primeiro e restaure em caso de falha da RPC.
+        const previousContractId = so.escortContractId || null;
+        const cancelledContractId = so.status === "cancelada"
+          ? String(statusPayload.contract_id || "")
+          : "";
+        const needsContractAlignment = !!cancelledContractId
+          && String(previousContractId || "") !== cancelledContractId;
+        if (needsContractAlignment) {
+          let alignQuery = supabaseAdmin
+            .from("service_orders")
+            .update({ escort_contract_id: cancelledContractId })
+            .eq("id", serviceOrderId);
+          alignQuery = previousContractId
+            ? alignQuery.eq("escort_contract_id", previousContractId)
+            : alignQuery.is("escort_contract_id", null);
+          const { data: aligned, error: alignError } = await alignQuery.select("id");
+          if (alignError) throw alignError;
+          if (!aligned?.length) {
+            return res.status(409).json({
+              message: "A tabela da OS mudou durante o cálculo. Atualize a tela e tente novamente.",
+            });
+          }
+        }
+
+        let billing: any;
+        try {
+          billing = await writeEscortBillingAtomic({
+            action: so.status === "recusada" ? "WRITE_REFUSED" : "WRITE_CANCELLED",
+            billingId: existingBilling?.id || null,
+            serviceOrderId,
+            expectedVersion: existingBilling
+              ? Number(existingBilling.lock_version) || 0
+              : null,
+            payload: { ...commonPayload, ...statusPayload },
+            actor: {
+              userId: user.id,
+              userName: user.name,
+              userRole: user.role,
+              reason: (so as any).cancellationReason || so.status,
+              ipAddress: req.ip,
+            },
+          });
+        } catch (writeError) {
+          if (needsContractAlignment) {
+            await supabaseAdmin
+              .from("service_orders")
+              .update({ escort_contract_id: previousContractId })
+              .eq("id", serviceOrderId)
+              .eq("escort_contract_id", cancelledContractId);
+          }
+          throw writeError;
+        }
+        if (so.status === "cancelada") {
+          await supabaseAdmin
+            .from("service_orders")
+            .update({
+              escort_contract_id: cancelledContractId || previousContractId,
+              valor_estimado: Number(billing?.fat_total || 0),
+              fat_calculado: Number(billing?.fat_total || 0),
+            })
+            .eq("id", serviceOrderId);
+        }
         bustBalancoCaches();
         return res.json(billing);
       }
@@ -1588,7 +1637,8 @@ import type { Express } from "express";
                   },
                 });
                 bustBalancoCaches();
-                // Espelha o total na OS p/ o card/listagem refletir a tabela 100km.
+                // Espelha a tabela de 100 km e o total na OS.
+                (parsed.data as any).escortContractId = cb.contrato.id;
                 (parsed.data as any).valorEstimado = Number(cb.fatFields.fat_total) || 0;
                 (parsed.data as any).fat_calculado = Number(cb.fatFields.fat_total) || 0;
               } else {
@@ -1655,6 +1705,85 @@ import type { Express } from "express";
       } catch (_e) {}
     }
 
+    // OS já cancelada ainda na tabela errada (ou com valor zerado): troca para a
+    // tabela de 100 km / 3 h e grava o billing, sem reabrir boletim congelado.
+    if (existing && existing.status === "cancelada" && parsed.data.status === "cancelada") {
+      const incomingContract = String((parsed.data as any).escortContractId || "");
+      const currentContract = String(existing.escortContractId || "");
+      const valorAtual = Number((existing as any).valorEstimado) || 0;
+      if (incomingContract !== currentContract || valorAtual <= 0) {
+        try {
+          const soId = Number(req.params.id);
+          const { data: existingBill, error: existingBillError } = await supabaseAdmin.from("escort_billings")
+            .select("id, status, lock_version").eq("service_order_id", soId).limit(1);
+          if (existingBillError) throw existingBillError;
+          const existingBilling = existingBill?.[0];
+          if (existingBilling && await isBillingProtected(supabaseAdmin, existingBilling)) {
+            (parsed.data as any).escortContractId = existing.escortContractId;
+            (parsed.data as any).valorEstimado = (existing as any).valorEstimado;
+          } else {
+            const cb = await computeCanceladaBilling({
+              serviceOrderId: soId,
+              clientId: existing.clientId,
+              escortContractId: incomingContract || currentContract,
+              scheduledDate: existing.scheduledDate as any,
+              missionStartedAt: existing.missionStartedAt as any,
+              completedDate: (existing.completedDate as any) || new Date().toISOString(),
+              stepLogs: existing.stepLogs as any,
+            });
+            if (!cb) {
+              return res.status(422).json({
+                message: "Cancelada sem tabela ativa de 100 km / 3 h. O valor não foi zerado e a OS não foi alterada.",
+              });
+            }
+            const client = existing.clientId ? await storage.getClient(existing.clientId) : null;
+            const emp = existing.assignedEmployeeId ? await storage.getEmployee(existing.assignedEmployeeId) : null;
+            const vehicle = existing.vehicleId ? await storage.getVehicle(existing.vehicleId) : null;
+            const adminNameStay = req.user?.name || req.user?.email || "Sistema";
+            const reasonStay = String((parsed.data as any).cancellationReason || (existing as any).cancellationReason || "").trim();
+            await writeEscortBillingAtomic({
+              action: "WRITE_CANCELLED",
+              billingId: existingBilling?.id || null,
+              serviceOrderId: soId,
+              expectedVersion: existingBilling ? Number(existingBilling.lock_version) || 0 : null,
+              payload: {
+                service_order_id: soId,
+                client_id: existing.clientId,
+                client_name: client?.name || "--",
+                contract_id: cb.contrato.id,
+                ...cb.fatFields,
+                horario_agendado: cb.horarios.horario_agendado,
+                horario_inicio: cb.horarios.horario_inicio,
+                horario_fim: cb.horarios.horario_fim,
+                vigilante_id: existing.assignedEmployeeId,
+                vigilante_name: emp?.name || "--",
+                origem: existing.origin || null,
+                destino: existing.destination || null,
+                placa_viatura: vehicle?.plate || null,
+                data_missao: existing.scheduledDate || (existing as any).scheduled_date || existing.missionStartedAt || new Date().toISOString(),
+                created_by: adminNameStay,
+                observacoes: `OS CANCELADA — tabela 100 km${reasonStay ? " | Motivo: " + reasonStay : ""}`,
+              },
+              actor: {
+                userId: req.user!.id, userName: adminNameStay,
+                userRole: req.user!.role, reason: reasonStay || "Cancelada na tabela de 100 km", ipAddress: req.ip,
+              },
+            });
+            bustBalancoCaches();
+            (parsed.data as any).escortContractId = cb.contrato.id;
+            (parsed.data as any).valorEstimado = Number(cb.fatFields.fat_total) || 0;
+            (parsed.data as any).fat_calculado = Number(cb.fatFields.fat_total) || 0;
+          }
+        } catch (cancErr: any) {
+          console.error(`[OS-Cancel-Billing PATCH] OS ${req.params.id} já cancelada:`, cancErr.message);
+          return res.status(500).json({
+            message: "OS não foi atualizada: falha ao aplicar a tabela de 100 km da cancelada.",
+            detail: cancErr.message,
+          });
+        }
+      }
+    }
+
     if (req.body.escortedDriverName !== undefined) (parsed.data as any).escortedDriverName = req.body.escortedDriverName;
     if (req.body.escortedDriverPhone !== undefined) (parsed.data as any).escortedDriverPhone = req.body.escortedDriverPhone;
     if (req.body.escortedVehiclePlate !== undefined) (parsed.data as any).escortedVehiclePlate = req.body.escortedVehiclePlate;
@@ -1678,6 +1807,18 @@ import type { Express } from "express";
       const { error: dpErr } = await supabaseAdmin.from("service_orders").update(driverPatch).eq("id", Number(req.params.id));
       if (dpErr) console.error(`[DEBUG-OS] PATCH driver fallback error:`, dpErr.message);
       else console.log(`[DEBUG-OS] PATCH driver fallback OK for OS #${req.params.id}:`, JSON.stringify(driverPatch));
+    }
+
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, "pedagioEstimado")) {
+      const idaBruta = (parsed.data as any).pedagioEstimado;
+      const ida = idaBruta == null || idaBruta === "" ? 0 : Number(idaBruta);
+      const idaVolta = !!(parsed.data as any).pedagioIdaVolta;
+      const cobranca = pedagioCobrancaCliente(Number.isFinite(ida) ? ida : 0, idaVolta, osCobraMarkupPedagio(data));
+      try {
+        await syncOsPedagioParaCobranca(Number(req.params.id), cobranca, Number.isFinite(ida) ? ida : 0);
+      } catch (syncErr: any) {
+        console.error(`[OS-Pedagio] OS ${req.params.id} não atualizou o faturamento:`, syncErr?.message || syncErr);
+      }
     }
 
     const newAssignedIds: number[] = [];

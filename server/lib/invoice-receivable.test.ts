@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideInvoiceReceivable } from "./invoice-receivable";
+import { decideInvoiceReceivable, invoiceIdsNeedingReceivableSettle } from "./invoice-receivable";
 
 const base = {
   id: 44,
@@ -53,6 +53,14 @@ test("ainda não emitida, cancelada ou de outro CNPJ não entra", () => {
 test("NF cancelada com cobrança ainda aberta continua a receber", () => {
   const d = decideInvoiceReceivable({ ...base, nfse_status: "CANCELLED", status: "PENDING" }, { emite_nf: false });
   assert.equal(d.action, "upsert");
+});
+
+test("baixa só nas faturas pagas que ainda não estão recebidas", () => {
+  const ids = invoiceIdsNeedingReceivableSettle(
+    [10, 11, 11, 12],
+    [{ origin_id: "10", status: "PAID" }, { origin_id: "12", status: "PENDING" }],
+  );
+  assert.deepEqual(ids, [11, 12]);
 });
 
 test("vencimento inválido usa a data de criação", () => {

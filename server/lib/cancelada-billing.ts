@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "../supabase";
 import { calcularEscolta } from "../billing-calc";
+import { pickCanceladaPriceTable } from "../../shared/cancelada-price-table";
 
 // =============================================================================
 // FATURAMENTO DE OS CANCELADA — Tabela de 100 km (funcionamento mínimo)
@@ -12,8 +13,9 @@ import { calcularEscolta } from "../billing-calc";
 //   ≤3 h), cobra-se SOMENTE o valor da tabela de 100 km. Isso vale para toda OS
 //   cancelada, inclusive quando a equipe nem foi acionada (mínimo = acionamento).
 //
-// A OS deve estar vinculada à tabela 100 km/3 h aplicável. Não há fallback por
-// cliente, ordem, nome, vigência implícita ou default inline.
+// A cobrança usa a tabela ativa do cliente com franquia 100 km e 3 h.
+// Se houver mais de uma, entra a de nome "100 km" com o menor acionamento.
+// A tabela maior vinculada na OS (200 km, 500 km etc.) não vale para cancelada.
 //
 // NUNCA usar pagamento aqui: cancelamento é faturamento (receita); pag_* = 0,
 // resultado = fat_total. Consistente com o billing de cancelamento histórico.
@@ -65,20 +67,23 @@ export function isCanceladaContract100km3(contrato: any): boolean {
     contrato?.status === "Ativo";
 }
 
-// Resolve somente o contrato persistido na OS, extrai km/tempo reais e calcula
-// o faturamento de cancelamento via calcularEscolta.
-export async function computeCanceladaBilling(input: CanceladaInput): Promise<CanceladaResult | null> {
-  if (!input.escortContractId) return null;
-  const { data: cc, error: contractError } = await supabaseAdmin
+export async function getTabela100km(clientId: number | null | undefined) {
+  if (!clientId) return null;
+  const { data, error } = await supabaseAdmin
     .from("escort_contracts")
     .select("*")
-    .eq("id", input.escortContractId)
-    .single();
-  if (contractError) throw contractError;
-  const contrato = cc;
-  if (!contrato) return null;
-  const usouTabela100 = isCanceladaContract100km3(contrato);
-  if (!usouTabela100) return null;
+    .eq("client_id", clientId)
+    .eq("status", "Ativo");
+  if (error) throw error;
+  return pickCanceladaPriceTable(data || []);
+}
+
+// Resolve a tabela de 100 km / 3 h do cliente, extrai km/tempo reais e calcula
+// o faturamento de cancelamento via calcularEscolta.
+export async function computeCanceladaBilling(input: CanceladaInput): Promise<CanceladaResult | null> {
+  const contrato = await getTabela100km(input.clientId);
+  if (!contrato || !isCanceladaContract100km3(contrato)) return null;
+  const usouTabela100 = true;
 
   // KM real da OS — mesma convenção do recálculo de boletim: a franquia conta a
   // partir da chegada na origem (km_chegada); km_saida é fallback.

@@ -10,7 +10,7 @@ import type { Express } from "express";
   import { withTorresAlwaysCc } from "../../shared/client-emails";
   import { computeBillingPayloadForOs, extractKmFromText } from "../billing-calc";
   import { computeCanceladaBilling } from "../lib/cancelada-billing";
-  import { isBillingProtected } from "../lib/billing-frozen";
+  import { isBillingProtected, prepareConcluidaOfficialWrite } from "../lib/billing-frozen";
   import { buildRecusadaZeroPayload } from "../lib/recusada-guard";
   import { writeEscortBillingAtomic } from "../lib/atomic-billing";
   import { logSystemAudit } from "../audit";
@@ -2090,7 +2090,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
             // Espelha o total na OS p/ o card/listagem refletir a tabela 100km (mesmo comportamento do PATCH).
             const cancelTotal = Number(cb.fatFields.fat_total) || 0;
-            await storage.updateServiceOrder(serviceOrderId, { valorEstimado: cancelTotal, fat_calculado: cancelTotal } as any);
+            await storage.updateServiceOrder(serviceOrderId, {
+              escortContractId: cb.contrato.id,
+              valorEstimado: cancelTotal,
+              fat_calculado: cancelTotal,
+            } as any);
 
             // Espelho financeiro (INTOCÁVEL §8.7): toda receita de billing precisa de
             // financial_transaction correspondente, senão some do Balanço Gerencial.
@@ -2377,27 +2381,43 @@ Responda APENAS com JSON: {"km_lido": number}`;
           });
           const { data: currentBillings } = await supabaseAdmin
             .from("escort_billings")
-            .select("id, status, lock_version")
+            .select("id, status, observacoes, lock_version, service_order_id")
             .eq("service_order_id", serviceOrderId)
             .limit(1);
           const currentBilling = currentBillings?.[0];
-          if (currentBilling && await isBillingProtected(supabaseAdmin, currentBilling)) {
-            console.log(`[finish] OS ${so.osNumber}: billing protegido (${currentBilling.status}) — pedágio conferido sem reescrever snapshot`);
+          const actor = {
+            userId: user.id,
+            userName: user.name,
+            userRole: user.role,
+            reason: "Finalização com conferência de pedágio",
+            ipAddress: req.ip,
+          };
+          const gate = await prepareConcluidaOfficialWrite(
+            supabaseAdmin,
+            currentBilling,
+            "concluida",
+            serviceOrderId,
+            actor,
+          );
+          if (!gate.write) {
+            console.log(`[finish] OS ${so.osNumber}: billing protegido (${currentBilling?.status}) — pedágio conferido sem reescrever snapshot`);
           } else {
             await writeEscortBillingAtomic({
               action: "WRITE_OFFICIAL",
               billingId: currentBilling?.id || null,
               serviceOrderId,
-              expectedVersion: currentBilling ? Number(currentBilling.lock_version) || 0 : null,
+              expectedVersion: gate.expectedVersion,
               payload: billingPayload,
-              actor: {
-                userId: user.id,
-                userName: user.name,
-                userRole: user.role,
-                reason: "Finalização com conferência de pedágio",
-                ipAddress: req.ip,
-              },
+              actor,
             });
+            if (gate.replacedRefusal) {
+              await storage.updateServiceOrder(serviceOrderId, {
+                custosCongeladosEm: null,
+                custosCongeladosPor: null,
+                cancellationReason: null,
+                revenueValue: billingPayload.fat_total,
+              } as any);
+            }
           }
         } catch (billingErr: any) {
           console.error(`[finish] billing após conferência pedágio falhou OS ${so.osNumber}:`, billingErr.message);
@@ -2722,29 +2742,44 @@ Responda APENAS com JSON: {"km_lido": number}`;
           });
           const { data: currentBillings, error: currentBillingsError } = await supabaseAdmin
             .from("escort_billings")
-            .select("id, status, lock_version")
+            .select("id, status, observacoes, lock_version, service_order_id")
             .eq("service_order_id", serviceOrderId)
             .limit(1);
           if (currentBillingsError) throw currentBillingsError;
           const currentBilling = currentBillings?.[0];
-          if (currentBilling && await isBillingProtected(supabaseAdmin, currentBilling)) {
-            console.log(`[auto-billing] OS ${so.osNumber}: billing protegido (${currentBilling.status}) preservado`);
+          const actor = {
+            userId: user.id,
+            userName: user.name,
+            userRole: user.role,
+            reason: "Missão concluída: recalcula o faturamento oficial",
+            ipAddress: req.ip,
+          };
+          const gate = await prepareConcluidaOfficialWrite(
+            supabaseAdmin,
+            currentBilling,
+            updates.status || so.status,
+            serviceOrderId,
+            actor,
+          );
+          if (!gate.write) {
+            console.log(`[auto-billing] OS ${so.osNumber}: billing protegido (${currentBilling?.status}) preservado`);
           } else {
             await writeEscortBillingAtomic({
               action: "WRITE_OFFICIAL",
               billingId: currentBilling?.id || null,
               serviceOrderId,
-              expectedVersion: currentBilling
-                ? Number(currentBilling.lock_version) || 0
-                : null,
+              expectedVersion: gate.expectedVersion,
               payload: billingPayload,
-              actor: {
-                userId: user.id,
-                userName: user.name,
-                userRole: user.role,
-                ipAddress: req.ip,
-              },
+              actor,
             });
+            if (gate.replacedRefusal) {
+              await storage.updateServiceOrder(serviceOrderId, {
+                custosCongeladosEm: null,
+                custosCongeladosPor: null,
+                cancellationReason: null,
+                revenueValue: billingPayload.fat_total,
+              } as any);
+            }
             console.log(`[auto-billing] OS ${so.osNumber}: UPSERTED billing km_ini=${billingPayload.km_inicial} km_fin=${billingPayload.km_final} fat_total=${billingPayload.fat_total}`);
           }
         }

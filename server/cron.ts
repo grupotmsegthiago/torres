@@ -829,7 +829,7 @@ async function sendOverdueReminders() {
         from,
         to: mail.to,
         cc: mail.cc,
-        bcc: ["thiago@grupotmseg.com.br"],
+        bcc: mail.bcc,
         subject: `⚠️ ${urgencyLabel}: Fatura vencida há ${diasAtraso} dias — ${valueFmt} — Torres Segurança`,
         html,
       });

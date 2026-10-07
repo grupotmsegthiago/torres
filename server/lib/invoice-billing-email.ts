@@ -4,17 +4,13 @@
  */
 import { supabaseAdmin } from "../supabase";
 import { createSmtpTransporter, getSmtpFrom, nowBRTString } from "../routes/_helpers";
-import { CLIENT_EMAIL_COLUMNS, parseEmailList, financeiroCadastroEmails } from "../../shared/client-emails";
+import { CLIENT_EMAIL_COLUMNS, parseEmailList, financeiroCadastroEmails, withTorresAlwaysCc, TORRES_ALWAYS_CC, TORRES_ALWAYS_BCC } from "../../shared/client-emails";
 import { buildNfClientEmail } from "./asaas-helpers";
 import { isNfFullyIssued } from "../../shared/nfse-status";
 import { buildBoletimMedicaoPdfForInvoice } from "./boletim-medicao-pdf";
 
-export const INVOICE_CLIENT_EMAIL_CC = [
-  "financeiro@torresseguranca.com.br",
-  "adm@torresseguranca.com.br",
-] as const;
-
-export const INVOICE_CLIENT_EMAIL_BCC = ["thiago@grupotmseg.com.br"] as const;
+export const INVOICE_CLIENT_EMAIL_CC = TORRES_ALWAYS_CC;
+export const INVOICE_CLIENT_EMAIL_BCC = TORRES_ALWAYS_BCC;
 
 type MailAttachment = { filename: string; content: Buffer; contentType: string };
 
@@ -116,23 +112,21 @@ export async function sendBillingEmail(invoice: {
   inss_aliquota?: number | string | null;
 }, clientEmail: string): Promise<boolean> {
   const transporter = createSmtpTransporter();
-  const to = parseEmailList(clientEmail);
-  if (!transporter || to.length === 0) {
+  const envelope = withTorresAlwaysCc(parseEmailList(clientEmail));
+  if (!transporter || envelope.to.length === 0) {
     console.log(`[billing-email] Skipped: ${!transporter ? "SMTP not configured" : "No client email"}`);
     return false;
   }
 
-  const toSet = new Set(to);
-  const cc = INVOICE_CLIENT_EMAIL_CC.filter((e) => !toSet.has(e));
   const { subject, html } = buildNfClientEmail(invoice);
   const attachments = await collectInvoiceEmailAttachments(invoice);
 
   try {
     await transporter.sendMail({
       from: getSmtpFrom(),
-      to,
-      cc,
-      bcc: [...INVOICE_CLIENT_EMAIL_BCC],
+      to: envelope.to,
+      cc: envelope.cc,
+      bcc: envelope.bcc,
       subject,
       html,
       attachments,
@@ -141,10 +135,10 @@ export async function sendBillingEmail(invoice: {
     await supabaseAdmin.from("invoices").update({
       email_sent: true,
       email_sent_at: nowBRTString(),
-      email_sent_to: to.join(", "),
+      email_sent_to: envelope.to.join(", "),
     }).eq("id", invoice.id);
 
-    console.log(`[billing-email] ✓ Fatura #${invoice.id} enviada para ${to.join(", ")} cc=${cc.join(", ")} anexos=${attachments.length}`);
+    console.log(`[billing-email] ✓ Fatura #${invoice.id} enviada para ${envelope.to.join(", ")} cc=${envelope.cc.join(", ")} anexos=${attachments.length}`);
     return true;
   } catch (err: any) {
     console.error(`[billing-email] ✗ Erro ao enviar fatura #${invoice.id}: ${err.message}`);

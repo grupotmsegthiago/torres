@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildRecusadaZeroPayload, osIsRecusada } from "./recusada-guard";
+import { buildRecusadaZeroPayload, isStaleRefusalBilling, osIsRecusada } from "./recusada-guard";
 
 test("§8.1: zera TODOS os campos fat_* e marca CANCELADO", () => {
   const p = buildRecusadaZeroPayload();
@@ -18,6 +18,36 @@ test("§8.1: zera TODOS os campos fat_* e marca CANCELADO", () => {
   for (const f of zeroFields) {
     assert.equal((p as any)[f], 0, `campo ${f} deve ser 0`);
   }
+});
+
+test("OS concluída com billing de recusa pode voltar ao cálculo oficial", () => {
+  assert.equal(
+    isStaleRefusalBilling("concluida", { status: "CANCELADO", observacoes: "OS RECUSADA" }),
+    true,
+  );
+  assert.equal(
+    isStaleRefusalBilling("concluída", { status: "CANCELADO", observacoes: "OS RECUSADA — sem viatura" }),
+    true,
+  );
+});
+
+test("recusa ainda recusada e cancelada de cliente não reabrem", () => {
+  assert.equal(
+    isStaleRefusalBilling("recusada", { status: "CANCELADO", observacoes: "OS RECUSADA" }),
+    false,
+  );
+  assert.equal(
+    isStaleRefusalBilling("cancelada", { status: "CANCELADO", observacoes: "OS CANCELADA" }),
+    false,
+  );
+  assert.equal(
+    isStaleRefusalBilling("concluida", { status: "CANCELADO", observacoes: "OS CANCELADA — cliente desistiu" }),
+    false,
+  );
+  assert.equal(
+    isStaleRefusalBilling("concluida", { status: "APROVADA", observacoes: "OS RECUSADA" }),
+    false,
+  );
 });
 
 test("§8.1: observação default é 'OS RECUSADA'", () => {

@@ -2215,6 +2215,7 @@ Regras:
         from: getSmtpFrom(),
         to: envelope.to,
         cc: envelope.cc,
+        bcc: envelope.bcc,
         subject: `Documentação para Homologação — Torres Vigilância Patrimonial LTDA`,
         html: htmlBody,
         attachments,

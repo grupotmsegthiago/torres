@@ -70,6 +70,28 @@ export async function osIsRecusada(
  *   observação "OS RECUSADA ...", ela é preservada.
  * @param observacaoAtual observação já existente no billing (preserva se válida).
  */
+function osStatusConcluida(osStatus: string | null | undefined): boolean {
+  const os = String(osStatus || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return os === "concluida";
+}
+
+/**
+ * Recusa antiga grudada numa OS que já foi concluída de verdade.
+ * Cancelada de cliente (sem "OS RECUSADA") não entra aqui.
+ */
+export function isStaleRefusalBilling(
+  osStatus: string | null | undefined,
+  billing: { status?: unknown; observacoes?: string | null } | null | undefined,
+): boolean {
+  if (!billing || !osStatusConcluida(osStatus)) return false;
+  const st = String(billing.status || "").trim().toUpperCase();
+  if (st !== "CANCELADO" && st !== "CANCELADA") return false;
+  return String(billing.observacoes || "").startsWith("OS RECUSADA");
+}
+
 export function buildRecusadaZeroPayload(
   motivo?: string | null,
   observacaoAtual?: string | null,

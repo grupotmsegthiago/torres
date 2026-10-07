@@ -9,6 +9,7 @@ import {
   isNfFullyIssued,
   classifyIssuedOrProcessing,
 } from "../../shared/nfse-status";
+import { multilogLinesFromDescription } from "../../shared/multilog-refs";
 
 export {
   isNfOkStatus,
@@ -202,6 +203,7 @@ export function buildNfClientEmail(invoice: {
 
   const pixCode = String(invoice.pix_copia_e_cola || "").trim();
   const { competencia, dataExecucao } = parseInvoicePeriodInfo(invoice.description, invoice.due_date);
+  const multilogRefs = multilogLinesFromDescription(invoice.description);
   const nfNumber = formatNfNumber(invoice.nfse_number);
   const subject = nfNumber
     ? `Prestação de Serviço de Escolta Armada Torres – NF nº ${nfNumber}`
@@ -237,6 +239,7 @@ export function buildNfClientEmail(invoice: {
         ${infoRow("Data de Execução:", dataExecucao || "—")}
         ${infoRow("Nº da Nota Fiscal:", nfNumber || "—")}
         ${infoRow("Serviço Prestado:", "Escolta Armada")}
+        ${multilogRefs.map((line) => infoRow(line.startsWith("SM.") ? "SM:" : "OS:", line.replace(/^(OS|SM)\.\s*/, ""))).join("")}
         ${infoRow("Valor Total da Prestação de Serviço:", valueFormatted)}
         ${temInss ? infoRow(`(-) Retenção INSS${inssAliq ? ` (${inssAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${inssFormatted}`) : ""}
         ${temIss ? infoRow(`(-) Retenção ISS${issAliq ? ` (${issAliq.toFixed(2).replace(".", ",")}%)` : ""}:`, `- ${issFormatted}`) : ""}
@@ -347,8 +350,18 @@ export function buildServicoDiscriminacao(opts?: {
     return sanitizeFocusDiscriminacao(raw);
   }
   const header = servicoHeaderFromDescription(opts?.description, opts?.observationsHint);
+  const extras = raw
+    .split(/\n/)
+    .map((s) => s.trim())
+    .filter((s) =>
+      s &&
+      s !== header &&
+      !/ANEXO IV/i.test(s) &&
+      !/Simples Nacional/i.test(s) &&
+      !/^Referente aos serviços de Escolta Armada/i.test(s),
+    );
   return sanitizeFocusDiscriminacao(
-    [header, NF_INSS_ANEXO_IV_TEXTO, NF_SIMPLES_NACIONAL_TEXTO].join("\n"),
+    [header, ...extras, NF_INSS_ANEXO_IV_TEXTO, NF_SIMPLES_NACIONAL_TEXTO].join("\n"),
   );
 }
 

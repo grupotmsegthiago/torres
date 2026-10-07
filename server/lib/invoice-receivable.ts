@@ -99,6 +99,34 @@ export async function syncInvoiceReceivable(invoice: any, client?: InvoiceReceiv
   });
 }
 
+/** Lançamentos de fatura que ainda não estão recebidos. Quem já está PAID fica como está. */
+export function invoiceIdsNeedingReceivableSettle(
+  invoiceIds: number[],
+  existing: { origin_id?: string | null; status?: string | null }[],
+): number[] {
+  const paid = new Set(
+    existing
+      .filter((row) => String(row.status || "").toUpperCase() === "PAID")
+      .map((row) => String(row.origin_id || "")),
+  );
+  return Array.from(new Set(invoiceIds.filter((id) => Number.isFinite(id) && id > 0 && !paid.has(String(id)))));
+}
+
+export async function settlePaidInvoiceReceivables(invoiceIds: number[]): Promise<number> {
+  const ids = Array.from(new Set(invoiceIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (ids.length === 0) return 0;
+  const { supabaseAdmin } = await import("../supabase");
+  const { data, error } = await supabaseAdmin
+    .from("financial_transactions")
+    .select("origin_id, status")
+    .eq("origin_type", INVOICE_RECEIVABLE_ORIGIN)
+    .in("origin_id", ids.map(String));
+  if (error) throw error;
+  const pending = invoiceIdsNeedingReceivableSettle(ids, data || []);
+  for (const id of pending) await syncInvoiceReceivableById(id);
+  return pending.length;
+}
+
 export async function syncInvoiceReceivableById(invoiceId: number) {
   const { removeAutoTransaction } = await import("../routes/_helpers");
   const { supabaseAdmin } = await import("../supabase");

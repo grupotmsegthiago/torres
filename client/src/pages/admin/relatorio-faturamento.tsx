@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { DateInputBR } from "@/components/date-input-br";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -22,7 +22,9 @@ import torresLogoPath from "@assets/WhatsApp_Image_2026-03-19_at_18.10.37_177395
 import { getRelatorioStatus, getRelatorioBadges } from "@shared/constants/mission-status";
 import { appearsInFaturamentoReport, missionDateYmd, ymdInInclusiveRange } from "@shared/billing-cycle";
 import { clientEmailsJoined } from "@shared/client-emails";
-import { OsDetailModal, NumInput } from "./boletim-medicao";
+import { isMultilogClient, multilogRefsForOrder } from "@shared/multilog-refs";
+import { OsDetailModal, NumInput, cobrancaAlinhada } from "./boletim-medicao";
+import { billingTotalForBoletim, boletimOsNumber, chargeIsStored } from "@shared/boletim-totals";
 
 const fmt = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtNum = (v: number | null | undefined, d = 0) => (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -94,6 +96,10 @@ export default function RelatorioFaturamentoPage() {
   });
   const [sendDialog, setSendDialog] = useState(false);
   const [sendEmail, setSendEmail] = useState("");
+  const [sendDueDate, setSendDueDate] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() + 1); d.setDate(15);
+    return d.toISOString().split("T")[0];
+  });
   const [sendLoading, setSendLoading] = useState(false);
   const [osModalLoading, setOsModalLoading] = useState(false);
   const [mismatchData, setMismatchData] = useState<null | {
@@ -285,6 +291,10 @@ export default function RelatorioFaturamentoPage() {
       toast({ title: "E-mail inválido", description: "Informe um e-mail válido do cliente.", variant: "destructive" });
       return;
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sendDueDate)) {
+      toast({ title: "Data do pagamento", description: "Informe a data de vencimento do boleto.", variant: "destructive" });
+      return;
+    }
     // Só OS faturáveis: exclui recusada/rejeitada e já faturada/paga (§8.1 + invoice).
     const sendBillings = sendableBillings;
     if (sendBillings.length === 0) {
@@ -312,6 +322,7 @@ export default function RelatorioFaturamentoPage() {
           billingIds,
           totalValue: sendTotal,
           osCount: billingIds.length,
+          dueDate: sendDueDate,
           force,
         }),
       });
@@ -366,19 +377,29 @@ export default function RelatorioFaturamentoPage() {
     else { const last = new Date(y, m + 1, 0).getDate(); setStartDate(`${y}-${mm}-16`); setEndDate(`${y}-${mm}-${last}`); }
   };
 
-  const handleGenerate = async () => {
-    if (!selectedClient) { alert("Selecione um cliente."); return; }
-    setIsLoading(true);
-    setReportGenerated(false);
+  const handleGenerate = async (silent?: boolean) => {
+    const quiet = silent === true;
+    if (!selectedClient) { if (!quiet) alert("Selecione um cliente."); return; }
+    if (!quiet) {
+      setIsLoading(true);
+      setReportGenerated(false);
+    }
     try {
       const params = new URLSearchParams({ client_id: selectedClient, from: `${startDate}T00:00:00`, to: `${endDate}T23:59:59` });
-      const [billingsRes, ordersRes, vehiclesRes] = await Promise.all([
+      const ordersPages: any[] = [];
+      for (let page = 1; page <= 20; page++) {
+        const pageRes = await authFetch(`/api/service-orders?limit=1000&page=${page}`);
+        const batch = pageRes.ok ? await pageRes.json() : [];
+        const rows = Array.isArray(batch) ? batch : [];
+        ordersPages.push(...rows);
+        if (rows.length < 1000) break;
+      }
+      const [billingsRes, vehiclesRes] = await Promise.all([
         authFetch(`/api/escort/billings?${params}`),
-        authFetch(`/api/service-orders`),
         authFetch(`/api/vehicles`),
       ]);
       const billingsData = await billingsRes.json();
-      const ordersData = await ordersRes.json();
+      const ordersData = ordersPages;
       const vehiclesData = await vehiclesRes.json();
 
       const oMap = new Map<number, any>();
@@ -426,11 +447,26 @@ export default function RelatorioFaturamentoPage() {
       setReportGenerated(true);
     } catch (err) {
       console.error(err);
-      alert("Erro ao gerar relatório.");
+      if (!quiet) alert("Erro ao gerar relatório.");
     } finally {
-      setIsLoading(false);
+      if (!quiet) setIsLoading(false);
     }
   };
+
+  const generateRef = useRef(handleGenerate);
+  generateRef.current = handleGenerate;
+  // Mesma chave que a invalidação de OS/faturamento já dispara. Com o relatório
+  // aberto, uma OS salva refaz a leitura sem F5 e sem segundo cálculo.
+  useQuery({
+    queryKey: ["/api/escort/billings", "relatorio-vivo", selectedClient, startDate, endDate],
+    enabled: reportGenerated && !!selectedClient,
+    queryFn: async () => {
+      await generateRef.current(true);
+      return true;
+    },
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
 
   const clientData = clients.find((c: any) => c.id.toString() === selectedClient);
   const displayClientName = clientData?.name || "";
@@ -720,29 +756,57 @@ export default function RelatorioFaturamentoPage() {
 
       // RECUSADA = operacional não atendeu → R$ 0 em tudo
       // CANCELADA = cliente cancelou mas equipe foi acionada → cobra acionamento + extras (hora extra, KM extra, pedágio)
+      const osSt = String(b._so_status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const staleRefusal = osSt === "concluida"
+        && (b.status === "CANCELADO" || b.status === "CANCELADA")
+        && String(b.observacoes || "").startsWith("OS RECUSADA");
       const isRecusada = b.status === "RECUSADA" || b.status === "REJEITADA" || b._so_status === "recusada";
-      const isCancelada = !isRecusada && (b.status === "CANCELADA" || b.status === "CANCELADO" || b._so_status === "cancelada");
+      const isCancelada = !isRecusada && !staleRefusal && osSt !== "concluida" && (b.status === "CANCELADA" || b.status === "CANCELADO" || b._so_status === "cancelada");
       const zeroOut = isRecusada;
+      const soTabela = ordersMap.get(b.service_order_id);
+      const cobrancaOficial = chargeIsStored(b.status);
+      const alinhada = cobrancaAlinhada({
+        status: zeroOut ? "recusada" : (isCancelada ? "cancelada" : (osSt || "concluida")),
+        hora_chegada_origem: soTabela?.hora_chegada_origem,
+        missionStartedAt: soTabela?.missionStartedAt || soTabela?.mission_started_at,
+        scheduledDate: soTabela?.scheduledDate || soTabela?.scheduled_date || b._so_scheduled_date,
+        hora_fim_missao: soTabela?.hora_fim_missao,
+        completedDate: soTabela?.completedDate || soTabela?.completed_date || b.completed_date,
+        km_chegada_origem: soTabela?.km_chegada_origem ?? b.km_inicial,
+        km_inicial: b.km_inicial,
+        km_final: b.km_final || soTabela?.km_final,
+        contractValues: ct || {},
+        billing: b,
+      });
+      const usaTabela = alinhada.aplicada && !zeroOut && !isCancelada && !cobrancaOficial;
+      const kmExcedenteFinal = usaTabela ? alinhada.kmExc : kmExcedente;
+      const hrExcedenteFinal = usaTabela ? alinhada.horasExtra : hrExcedente;
+      const valorHoraExtraFinal = usaTabela && alinhada.valorHora > 0 ? alinhada.valorHora : valorHoraExtra;
+      const valorKmExtraFinal = usaTabela && alinhada.valorKm > 0 ? alinhada.valorKm : valorKmExtra;
       const horaExtraFracionada = ct?.hora_extra_fracionada !== false;
       const fatHoraExtraFallback = horaExtraFracionada
         ? Math.round(hrExcedente * 60) * (Math.floor(valorHoraExtra / 60 * 100) / 100)
         : Math.ceil(hrExcedente) * valorHoraExtra;
-      const fatHoraExtra = zeroOut ? 0 : (n(b.fat_hora_extra) || fatHoraExtraFallback);
-      const fatKmExtra = zeroOut ? 0 : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100);
+      const fatHoraExtra = zeroOut ? 0 : (usaTabela ? alinhada.horaExtra : (n(b.fat_hora_extra) || fatHoraExtraFallback));
+      const fatKmExtra = zeroOut ? 0 : (usaTabela ? alinhada.kmExtraValor : (n(b.fat_km) || Math.round(kmExcedente * valorKmExtra * 100) / 100));
       const fatPedagio = zeroOut ? 0 : n(b.despesas_pedagio);
       const fatAdNoturno = zeroOut ? 0 : n(b.fat_adicional_noturno);
-      const valorAcionamentoFinal = zeroOut ? 0 : valorAcionamento;
+      const valorAcionamentoFinal = zeroOut ? 0 : (usaTabela ? alinhada.acionamento : valorAcionamento);
       const fatEstadia = zeroOut ? 0 : n(b.fat_estadia);
       const fatPernoite = zeroOut ? 0 : n(b.fat_pernoite);
       const fatOutras = zeroOut ? 0 : n(b.despesas_outras);
       const fatReembolso = zeroOut ? 0 : n(b.receitas_os);
+      const componentes = valorAcionamentoFinal + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso;
       const fatTotal = zeroOut ? 0 : (isCancelada
-        ? (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso)
-        : (n(b.fat_total) || (valorAcionamento + fatKmExtra + fatHoraExtra + fatPedagio + fatAdNoturno + fatEstadia + fatPernoite + fatOutras + fatReembolso)));
+        ? componentes
+        : cobrancaOficial
+          ? billingTotalForBoletim(b, osSt === "recusada" ? "recusada" : osSt)
+          : (usaTabela ? alinhada.total : (osSt === "concluida" ? n(b.fat_total) : (n(b.fat_total) || componentes))));
 
-      const osNum = b.os_number || (b.service_order_id ? `OS-${b.service_order_id}` : "—");
-      const origem = b.origem || b.origin || "";
-      const destino = b.destino || b.destination || "";
+      const so = ordersMap.get(b.service_order_id);
+      const osNum = boletimOsNumber(b, so);
+      const origem = so?.origin || so?.origem || b.origem || b.origin || "";
+      const destino = so?.destination || so?.destino || b.destino || b.destination || "";
       const routeStr = (origem && destino) ? `${extractCity(origem)} × ${extractCity(destino)}` : (origem || destino || "—");
       const viatura = b.placa_viatura || b.vehicle_plate || "—";
       const escoltado = b.placa_escoltado || b.escorted_vehicle_plate || "—";
@@ -750,7 +814,6 @@ export default function RelatorioFaturamentoPage() {
       // DATA/HORA INÍCIO = sempre o AGENDAMENTO (o que o cliente solicitou),
       // nunca o "início real" (missionStartedAt) nem o "fim".
       // Prioridade: scheduled_date (do snapshot da OS) → data_missao → created_at.
-      const so = ordersMap.get(b.service_order_id);
       const sched = b.snapshot_data?.scheduled_date || so?.scheduledDate || so?.scheduled_date || b._so_scheduled_date || b.scheduled_date || b.scheduledDate;
       const dataMissao = sched || b.data_missao || b.created_at;
       const dataFimMissao = b.completed_date || b.finished_at || dataMissao;
@@ -766,8 +829,8 @@ export default function RelatorioFaturamentoPage() {
         activationFee: valorAcionamentoFinal,
         franchiseHours: franquiaHoras,
         franchiseKm: franquiaKm,
-        unitHr: valorHoraExtra,
-        unitKm: valorKmExtra,
+        unitHr: valorHoraExtraFinal,
+        unitKm: valorKmExtraFinal,
         startDate: fmtDate(dataMissao),
         startTime: horarioAgendadoStr || (b.horario_inicio ? b.horario_inicio.substring(0, 5) : fmtTime(dataMissao)),
         viatura,
@@ -778,11 +841,11 @@ export default function RelatorioFaturamentoPage() {
         kmEnd: n(b.km_final),
         kmTotal,
         timeTotal: fmtHHMM(horasMissao),
-        kmExtraQtd: kmExcedente,
-        kmExtraUnit: valorKmExtra,
+        kmExtraQtd: kmExcedenteFinal,
+        kmExtraUnit: valorKmExtraFinal,
         kmExtraTotal: fatKmExtra,
-        hrExtraQtd: hrExcedente,
-        hrExtraUnit: valorHoraExtra,
+        hrExtraQtd: hrExcedenteFinal,
+        hrExtraUnit: valorHoraExtraFinal,
         hrExtraTotal: fatHoraExtra,
         tollVal: fatPedagio,
         totalGeral: fatTotal,
@@ -794,6 +857,8 @@ export default function RelatorioFaturamentoPage() {
         osCancellationReason: b._so_cancellation_reason || "",
         motivoRejeicao: b.motivo_rejeicao || "",
         observacoesBilling: b.observacoes || "",
+        multilogOs: multilogRefsForOrder(so || {}).os,
+        multilogSm: multilogRefsForOrder(so || {}).sm,
         revisadoPor: b.revisado_por || "",
         clientName: b.client_name,
         horasMissaoNum: horasMissao,
@@ -988,6 +1053,7 @@ export default function RelatorioFaturamentoPage() {
     if (rowsData.length === 0) return;
     const clientLabel = displayClientName || "CLIENTE";
     const isOmega = clientLabel.toUpperCase().includes("OMEGA SOLUTIONS");
+    const isMultilog = isMultilogClient(clientLabel);
     const isLuft = clientLabel.toUpperCase().includes("INTEC") || clientLabel.toUpperCase().includes("LUFT");
     console.log("[Excel] clientLabel:", clientLabel, "isLuft:", isLuft, "isOmega:", isOmega, "rows:", rowsData.length);
 
@@ -1135,6 +1201,26 @@ export default function RelatorioFaturamentoPage() {
       ];
       currencyColumns = [3, 6, 7, 21, 22, 24, 25, 26, 27];
       totalsCols = 28;
+    } else if (isMultilog) {
+      const visible = rowsData.filter(r => appearsInFaturamentoReport(r.osStatus, r.status));
+      headers = ["Nº", "ROTA", "OS", "SM", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
+      dataRows = baseDataRows.map((row, i) => {
+        const next = [...row];
+        next.splice(2, 0, visible[i]?.multilogOs || "", visible[i]?.multilogSm || "");
+        return next;
+      });
+      colWidths = [10, 30, 12, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14];
+      groupHeaders = [
+        { label: "TABELA ACORDADA", span: 9 },
+        { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
+        { label: "KILOMETRAGEM", span: 3 },
+        { label: "HORÁRIOS", span: 3 },
+        { label: "KM EXCEDENTE", span: 3 },
+        { label: "HORA EXCEDENTE", span: 3 },
+        { label: "VALORES", span: 2 },
+      ];
+      currencyColumns = [4, 7, 8, 22, 23, 25, 26, 27, 28];
+      totalsCols = 29;
     } else {
       headers = baseHeaders;
       dataRows = baseDataRows;
@@ -1587,6 +1673,12 @@ export default function RelatorioFaturamentoPage() {
                         <div><span className="text-gray-400 font-bold">KM Final:</span> <span className="font-black">{fmtNum(r.kmEnd)}</span></div>
                         <div><span className="text-gray-400 font-bold">Pedágio:</span> <span className="font-black">{fmt(r.tollVal)}</span></div>
                         <div><span className="text-gray-400 font-bold">Viatura:</span> <span className="font-black">{r.viatura}</span></div>
+                        {(r.multilogOs || r.multilogSm) && (
+                          <>
+                            <div><span className="text-gray-400 font-bold">OS:</span> <span className="font-black">{r.multilogOs || "—"}</span></div>
+                            <div><span className="text-gray-400 font-bold">SM:</span> <span className="font-black">{r.multilogSm || "—"}</span></div>
+                          </>
+                        )}
                       </div>
                       <div className="mt-2 flex justify-end">
                         <button onClick={(e) => { e.stopPropagation(); openOsModal(r.billingId); }} className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-bold transition-colors" data-testid={`button-edit-billing-${i}`}>
@@ -1619,7 +1711,7 @@ export default function RelatorioFaturamentoPage() {
               <thead>
                 <tr className="group-hdr">
                   <th rowSpan={2} style={{ ...groupHeaderStyle, backgroundColor: "#111", width: "32px" }}>#</th>
-                  <th colSpan={7} style={groupHeaderStyle}>TABELA ACORDADA</th>
+                  <th colSpan={isMultilogClient(displayClientName) ? 9 : 7} style={groupHeaderStyle}>TABELA ACORDADA</th>
                   <th colSpan={6} style={{ ...groupHeaderStyle, backgroundColor: "#1f2937" }}>INFORMAÇÕES DA VIAGEM</th>
                   <th colSpan={3} style={grpKm}>KILOMETRAGEM</th>
                   <th colSpan={3} style={grpHr}>HORÁRIOS</th>
@@ -1630,6 +1722,8 @@ export default function RelatorioFaturamentoPage() {
                 <tr className="sub-hdr">
                   <th style={headerStyle}>Nº</th>
                   <th style={headerStyle}>ROTA</th>
+                  {isMultilogClient(displayClientName) && <th style={headerStyle}>OS</th>}
+                  {isMultilogClient(displayClientName) && <th style={headerStyle}>SM</th>}
                   <th style={headerStyle}>VALOR</th>
                   <th style={headerStyle}>HR FRANQ</th>
                   <th style={headerStyle}>KM FRANQ</th>
@@ -1663,6 +1757,8 @@ export default function RelatorioFaturamentoPage() {
                     <td style={{ ...cellBold, fontSize: "10.5px", backgroundColor: "#f3f4f6", color: "#111", fontWeight: 900 }}>{i + 1}</td>
                     <td style={{ ...cellBold, fontSize: "10.5px" }}>{r.id}</td>
                     <td className="route-cell" style={{ ...cellStyle, textAlign: "left", whiteSpace: "normal", wordWrap: "break-word", fontWeight: 700, fontSize: "9px", lineHeight: "1.3", color: "#111" }}>{r.route}</td>
+                    {isMultilogClient(displayClientName) && <td style={{ ...cellBold, fontSize: "10.5px" }}>{r.multilogOs || "—"}</td>}
+                    {isMultilogClient(displayClientName) && <td style={{ ...cellBold, fontSize: "10.5px" }}>{r.multilogSm || "—"}</td>}
                     <td style={{ ...cellMono, fontWeight: 700 }}>{fmt(r.activationFee)}</td>
                     <td style={{ ...cellMono }}>{r.franchiseHoursFmt}</td>
                     <td style={{ ...cellMono }}>{r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : "—"}</td>
@@ -1693,7 +1789,7 @@ export default function RelatorioFaturamentoPage() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: "2.5px solid #111" }}>
-                  <td colSpan={27} style={{ ...cellBold, textAlign: "right", fontSize: "11px", padding: "7px 10px", letterSpacing: "0.5px" }}>TOTAL GERAL</td>
+                  <td colSpan={isMultilogClient(displayClientName) ? 29 : 27} style={{ ...cellBold, textAlign: "right", fontSize: "11px", padding: "7px 10px", letterSpacing: "0.5px" }}>TOTAL GERAL</td>
                   <td style={{ ...cellBold, fontSize: "11px", fontFamily: fontMono, backgroundColor: "#111", color: "#fff", padding: "7px 10px", letterSpacing: "0.3px" }}>{fmt(grandTotal)}</td>
                 </tr>
               </tfoot>
@@ -2069,6 +2165,17 @@ export default function RelatorioFaturamentoPage() {
               <p className="text-[10px] text-gray-400 mt-1">E-mail de medição do cadastro. A Torres vai em cópia.</p>
             </div>
 
+            <div>
+              <Label className="text-[10px] font-bold uppercase text-gray-500 tracking-wider">Data do pagamento</Label>
+              <DateInputBR
+                value={sendDueDate}
+                onChange={(e) => setSendDueDate(e.target.value)}
+                className="mt-1 text-sm font-mono"
+                data-testid="input-send-due-date"
+              />
+              <p className="text-[10px] text-gray-400 mt-1">Vencimento do boleto na emissão, quando o cliente aprovar a medição.</p>
+            </div>
+
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1.5">
               <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">O que será enviado:</p>
               <div className="flex items-center gap-2 text-xs text-blue-800">
@@ -2098,7 +2205,7 @@ export default function RelatorioFaturamentoPage() {
             </Button>
             <Button
               onClick={() => handleSendToClient(false)}
-              disabled={sendLoading || !sendEmail}
+              disabled={sendLoading || !sendEmail || !sendDueDate}
               className="bg-blue-600 hover:bg-blue-700 text-xs font-black uppercase gap-2 px-6"
               data-testid="button-confirm-send"
             >

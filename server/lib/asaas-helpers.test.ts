@@ -155,6 +155,24 @@ test("buildServicoDiscriminacao: escolta + período + ANEXO IV + Simples", () =>
   assert.ok(d.includes(NF_SIMPLES_NACIONAL_TEXTO));
 });
 
+test("buildServicoDiscriminacao: MULTILOG preserva OS e SM antes dos textos legais", () => {
+  const desc = [
+    buildInvoiceDescription("MULTILOG BRASIL S.A", "2026-09-16", "2026-09-30"),
+    "OS. 1312",
+    "SM. 41128477",
+  ].join("\n");
+  const d = buildServicoDiscriminacao({ description: desc });
+  const osAt = d.indexOf("OS. 1312");
+  const smAt = d.indexOf("SM. 41128477");
+  const legalAt = d.indexOf("ANEXO IV");
+  assert.ok(osAt > 0 && smAt > osAt && legalAt > smAt);
+  const boleto = asaasBoletoDescription(desc);
+  assert.ok(boleto.length <= 500);
+  assert.match(boleto, /OS\. 1312/);
+  assert.match(boleto, /SM\. 41128477/);
+  assert.match(boleto, /ANEXO IV/);
+});
+
 test("asaasBoletoDescription: cabe em 500 e não perde o período", () => {
   const desc = buildInvoiceDescription("TM SEG", "2026-09-16", "2026-09-30");
   const boleto = asaasBoletoDescription(desc);
@@ -760,6 +778,22 @@ test("buildNfClientEmail: assunto e corpo seguem o modelo do financeiro", () => 
   assert.match(html, /PIX \(Copia e Cola\)/);
   assert.ok(html.includes("00020126PIXDINAMICOASAAS5204"));
   assert.match(html, /Permanecemos à disposição para quaisquer esclarecimentos\./);
+});
+
+test("buildNfClientEmail: MULTILOG exibe OS e SM vindas da descrição da fatura", () => {
+  const { html } = buildNfClientEmail({
+    client_name: "MULTILOG BRASIL S.A",
+    value: 3930.58,
+    due_date: "2026-10-15",
+    description: [
+      buildInvoiceDescription("MULTILOG BRASIL S.A", "2026-09-16", "2026-09-30"),
+      "OS. 1312",
+      "SM. 41128477",
+    ].join("\n"),
+    nfse_number: "325",
+  });
+  assert.match(html, /OS:<\/td><td[^>]*>1312/);
+  assert.match(html, /SM:<\/td><td[^>]*>41128477/);
 });
 
 test("buildNfClientEmail: PIX dinâmico do Asaas (baixa automática), nunca a chave estática", () => {

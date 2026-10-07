@@ -44,6 +44,8 @@ type RelatorioRow = {
   netValue: number | null;
   dueDate: string | null;
   paymentDate: string | null;
+  serviceStart?: string | null;
+  serviceEnd?: string | null;
   createdAt: string;
   updatedAt: string | null;
   asaasPaymentId: string | null;
@@ -105,6 +107,15 @@ const STATUS_META: Record<NormalizedStatus, { label: string; cls: string; bg: st
 
 const fmtBRL = (v: number) =>
   (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+function serviceLabel(r: RelatorioRow): string | null {
+  const start = r.serviceStart ? fmtDate(r.serviceStart) : "";
+  const endRaw = r.serviceEnd ? String(r.serviceEnd).slice(0, 10) : "";
+  const startRaw = r.serviceStart ? String(r.serviceStart).slice(0, 10) : "";
+  if (start && endRaw && endRaw !== startRaw) return `${start} a ${fmtDate(r.serviceEnd)}`;
+  if (start && start !== "—") return start;
+  return null;
+}
 
 function liquidOf(r: RelatorioRow): number {
   return r.liquidValue != null ? Number(r.liquidValue) : Number(r.value || 0);
@@ -1388,6 +1399,7 @@ export default function RelatorioNFPage() {
               <span className="text-xs text-emerald-700">
                 {filteredPaid.length} registro{filteredPaid.length === 1 ? "" : "s"}
               </span>
+              <span className="text-[11px] text-emerald-700/80">vencimento no mês</span>
             </div>
             <div className="text-sm font-bold text-emerald-800 tabular-nums" data-testid="text-total-pago">
               Total Recebido: {fmtBRL(totalPaid)}
@@ -1401,8 +1413,9 @@ export default function RelatorioNFPage() {
                   <th className="text-left px-3 py-2 font-semibold">Origem</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
                   <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Valor</th>
-                  <th className="text-left px-3 py-2 font-semibold">Data do Venc.</th>
-                  <th className="text-left px-3 py-2 font-semibold">Pago em</th>
+                  <th className="text-left px-3 py-2 font-semibold">Data do serviço</th>
+                  <th className="text-left px-3 py-2 font-semibold">Data do venc.</th>
+                  <th className="text-left px-3 py-2 font-semibold">Data do pagamento</th>
                   <th className="text-center px-3 py-2 font-semibold">Boleto Asaas</th>
                   <th className="text-center px-3 py-2 font-semibold">NF (Focus)</th>
                   <th className="text-center px-3 py-2 font-semibold">Ações</th>
@@ -1410,9 +1423,9 @@ export default function RelatorioNFPage() {
               </thead>
               <tbody className="divide-y divide-emerald-50">
                 {isLoading ? (
-                  <tr><td colSpan={8} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
+                  <tr><td colSpan={9} className="text-center py-8 text-slate-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td></tr>
                 ) : filteredPaid.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
+                  <tr><td colSpan={9} className="text-center py-8 text-slate-400">Nenhuma nota paga no período</td></tr>
                 ) : filteredPaid.map(r => (
                   <tr key={`paid-${r.id}`} className="hover:bg-emerald-50/40" data-testid={`row-paid-${r.id}`}>
                     <td className="px-3 py-2">
@@ -1462,6 +1475,9 @@ export default function RelatorioNFPage() {
                       <div className="text-[10px] text-emerald-600/70 font-medium">Bruto NF</div>
                       <div className="font-semibold text-emerald-700 mt-0.5" data-testid={`text-paid-liquid-${r.id}`}>{fmtBRL(liquidOf(r))}</div>
                       <div className="text-[10px] text-emerald-600/70 font-medium">Líquido</div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap" data-testid={`text-paid-service-${r.id}`}>
+                      {serviceLabel(r) || extractPeriod(r.description) || <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
                       {r.dueDate ? fmtDate(r.dueDate) : <span className="text-slate-300">—</span>}
@@ -1544,7 +1560,7 @@ export default function RelatorioNFPage() {
                       <div>{fmtBRL(totalPaid)}</div>
                       <div className="text-[11px] font-semibold text-emerald-700" data-testid="text-total-pago-liquid-footer">Líq. {fmtBRL(totalPaidLiquid)}</div>
                     </td>
-                    <td colSpan={5}></td>
+                    <td colSpan={6}></td>
                   </tr>
                 </tfoot>
               )}

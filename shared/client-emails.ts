@@ -4,9 +4,14 @@ export type ClientEmailCategory = "operacional" | "financeiro" | "contratual" | 
 /** Cópia interna obrigatória em todo e-mail enviado ao cliente. */
 export const TORRES_ALWAYS_CC = [
   "diretoria@torresseguranca.com.br",
-  "mickael@torresseguranca.com.br",
-  "financeiro@torresseguranca.com.br",
   "adm@torresseguranca.com.br",
+  "financeiro@torresseguranca.com.br",
+  "mickael@torresseguranca.com.br",
+] as const;
+
+/** Cópia oculta obrigatória em todo e-mail enviado ao cliente. */
+export const TORRES_ALWAYS_BCC = [
+  "thiago@grupotmseg.com.br",
 ] as const;
 
 export const CLIENT_EMAIL_COLUMNS =
@@ -71,19 +76,21 @@ export function clientEmailsJoined(client: any, category: ClientEmailCategory): 
   return pickClientEmails(client, category).join(", ");
 }
 
-export function withTorresAlwaysCc(to: string[], extraCc: string[] = []): { to: string[]; cc: string[] } {
+export function withTorresAlwaysCc(to: string[], extraCc: string[] = []): { to: string[]; cc: string[]; bcc: string[] } {
   const toList = uniqueEmails(to);
   const toSet = new Set(toList);
   const cc = uniqueEmails([...TORRES_ALWAYS_CC, ...extraCc]).filter((e) => !toSet.has(e));
-  return { to: toList, cc };
+  const visible = new Set([...toList, ...cc]);
+  const bcc = uniqueEmails([...TORRES_ALWAYS_BCC]).filter((e) => !visible.has(e));
+  return { to: toList, cc, bcc };
 }
 
-/** To = categoria (+ extras) e CC fixo da Torres. Null se não houver destinatário do cliente. */
+/** To = categoria (+ extras), CC fixo da Torres e BCC do Thiago. Null se não houver destinatário do cliente. */
 export function clientOutboundMail(
   client: any,
   category: ClientEmailCategory,
   extraTo?: string | string[] | null,
-): { to: string[]; cc: string[] } | null {
+): { to: string[]; cc: string[]; bcc: string[] } | null {
   const extra = Array.isArray(extraTo) ? extraTo.join(",") : extraTo;
   const to = uniqueEmails([...pickClientEmails(client, category), ...parseEmailList(extra)]);
   if (to.length === 0) return null;

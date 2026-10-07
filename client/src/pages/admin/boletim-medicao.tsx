@@ -18,6 +18,7 @@ import {
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { getRelatorioStatus, getBillingStatusInfo, getOsStatusInfo } from "@shared/constants/mission-status";
 import { appearsInFaturamentoReport, isCanceladaOs, isOsInvoicedStatus, isRecusadaOs } from "@shared/billing-cycle";
+import { isMultilogClient, multilogRefsForOrder } from "@shared/multilog-refs";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,47 @@ const computeKm = (os: any) => {
   const kmFim = Number(os.km_final || b?.km_final || 0);
   return Math.max(0, kmFim - kmChegada);
 };
+
+// Mesma conta de "Abrir Detalhes" para OS ainda não faturada: tabela vigente
+// (acionamento, hora extra, km extra) + pedágio e demais despesas já lançadas.
+// Faturada/paga permanece no valor gravado.
+export function cobrancaAlinhada(os: any) {
+  const b = os?.billing;
+  const status = String(b?.status || "").toUpperCase();
+  const invoiced = status === "FATURADO" || status === "FATURADA" || status === "PAGO";
+  const tabela = cobrancaDaTabela(computeHorasReais(os), computeKm(os), os?.contractValues);
+  const pass = b
+    ? Number(b.despesas_pedagio || 0) + Number(b.despesas_outras || 0) + Number(b.receitas_os || 0) + Number(b.fat_estadia || 0) + Number(b.fat_pernoite || 0) + Number(b.fat_adicional_noturno || 0)
+    : 0;
+  const osSt = String(os?.status || "").toLowerCase();
+  if (!invoiced && tabela.temTabela && osSt !== "recusada" && osSt !== "cancelada") {
+    return {
+      aplicada: true,
+      acionamento: tabela.acionamento,
+      horaExtra: tabela.horaExtra,
+      horasExtra: tabela.horasExtra,
+      kmExtraValor: tabela.kmExtraValor,
+      kmExc: tabela.kmExc,
+      valorHora: tabela.valorHora,
+      valorKm: tabela.valorKm,
+      total: Math.round((tabela.acionamento + tabela.horaExtra + tabela.kmExtraValor + pass) * 100) / 100,
+    };
+  }
+  const acionamento = Number(b?.fat_acionamento || 0);
+  const horaExtra = Number(b?.fat_hora_extra || 0);
+  const kmExtraValor = Number(b?.fat_km || 0);
+  return {
+    aplicada: false,
+    acionamento,
+    horaExtra,
+    horasExtra: Math.max(0, Number(b?.horas_missao || 0) - Number(b?.franquia_horas || os?.contractValues?.franquia_horas || 0)),
+    kmExtraValor,
+    kmExc: Number(b?.km_excedente || 0),
+    valorHora: Number(os?.contractValues?.valor_hora_extra || 0),
+    valorKm: Number(os?.contractValues?.valor_km_extra || 0),
+    total: Math.round((acionamento + horaExtra + kmExtraValor + pass) * 100) / 100,
+  };
+}
 
 type StatusFilter = "ALL" | "EM_ANDAMENTO" | "PENDENTE" | "ENVIADA_APROVACAO" | "APROVADA" | "REJEITADA" | "FORA_CICLO" | "A_FATURAR" | "FATURADA" | "CANCELADA";
 
@@ -591,14 +633,17 @@ export default function BoletimMedicaoPage() {
   const exportBoletimExcel = () => {
     const excelOs = periodFilteredOs.filter(o => appearsInFaturamentoReport(o.status, o.billing?.status));
     if (excelOs.length === 0) return;
-    const headers = ["#", "OS", "Cliente", "Rota", "Viatura", "Agente", "Data", "Hora Início", "Hora Fim", "KM Inicial", "KM Final", "KM Total", "Franquia KM", "KM Excedente", "Horas", "Acionamento", "Hora Extra", "KM Extra", "Pedágio", "Ad. Noturno", "Total", "Status"];
+    const hasMultilog = excelOs.some((os: any) => isMultilogClient(os.clientName));
+    const headers = ["#", "OS", "Cliente", ...(hasMultilog ? ["OS CLIENTE", "SM"] : []), "Rota", "Viatura", "Agente", "Data", "Hora Início", "Hora Fim", "KM Inicial", "KM Final", "KM Total", "Franquia KM", "KM Excedente", "Horas", "Acionamento", "Hora Extra", "KM Extra", "Pedágio", "Ad. Noturno", "Total", "Status"];
     const rows = excelOs.map((os: any, i: number) => {
       const b = os.billing;
       const route = [os.origin, os.destination].filter(Boolean).join(" → ");
+      const multilogRefs = multilogRefsForOrder(os);
       return [
         i + 1,
         os.osNumber || "",
         os.clientName || "",
+        ...(hasMultilog ? [multilogRefs.os, multilogRefs.sm] : []),
         route.substring(0, 50) || "",
         os.vehiclePlate || "",
         os.employee1Name || "",
@@ -616,29 +661,30 @@ export default function BoletimMedicaoPage() {
         Number(b?.fat_km || 0),
         Number(b?.despesas_pedagio || 0),
         Number(b?.fat_adicional_noturno || 0),
-        Number(b?.fat_acionamento || 0) + Number(b?.fat_hora_extra || 0) + Number(b?.fat_km || 0) + Number(b?.fat_adicional_noturno || 0) + Number(b?.despesas_pedagio || 0) + Number(b?.despesas_outras || 0) + Number(b?.fat_estadia || 0) + Number(b?.fat_pernoite || 0) + Number(b?.receitas_os || 0),
+        getBillingTotal(os),
         b?.status === "A_VERIFICAR" ? "A Verificar" : b?.status === "APROVADA" ? "Aprovada" : b?.status === "FATURADO" ? "Faturado" : b?.status || "—",
       ];
     });
-    const totals: (string | number)[] = Array(22).fill("");
+    const shift = hasMultilog ? 2 : 0;
+    const totals: (string | number)[] = Array(22 + shift).fill("");
     totals[0] = "TOTAL";
-    totals[14] = `${excelOs.length} OS`;
-    totals[15] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_acionamento || 0), 0).toFixed(2));
-    totals[16] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_hora_extra || 0), 0).toFixed(2));
-    totals[17] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_km || 0), 0).toFixed(2));
-    totals[18] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.despesas_pedagio || 0), 0).toFixed(2));
-    totals[19] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_adicional_noturno || 0), 0).toFixed(2));
-    totals[20] = Number(excelOs.reduce((s: number, o: any) => s + getBillingTotal(o), 0).toFixed(2));
+    totals[14 + shift] = `${excelOs.length} OS`;
+    totals[15 + shift] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_acionamento || 0), 0).toFixed(2));
+    totals[16 + shift] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_hora_extra || 0), 0).toFixed(2));
+    totals[17 + shift] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_km || 0), 0).toFixed(2));
+    totals[18 + shift] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.despesas_pedagio || 0), 0).toFixed(2));
+    totals[19 + shift] = Number(excelOs.reduce((s: number, o: any) => s + Number(o.billing?.fat_adicional_noturno || 0), 0).toFixed(2));
+    totals[20 + shift] = Number(excelOs.reduce((s: number, o: any) => s + getBillingTotal(o), 0).toFixed(2));
     const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
     exportFormattedExcel({
       title: "BOLETIM DE MEDIÇÃO — TORRES VIGILÂNCIA PATRIMONIAL",
       subtitle: "CNPJ 36.982.392/0001-89 — Serviço de Escolta Armada Caracterizada",
       period: `Gerado em ${today}`,
       headers,
-      colWidths: [5, 12, 25, 30, 12, 20, 12, 10, 10, 10, 10, 9, 9, 9, 8, 13, 13, 13, 12, 12, 12, 14, 12],
+      colWidths: [5, 12, 25, ...(hasMultilog ? [12, 14] : []), 30, 12, 20, 12, 10, 10, 10, 10, 9, 9, 9, 8, 13, 13, 13, 12, 12, 12, 14, 12],
       rows,
       totalsRow: totals,
-      currencyColumns: [15, 16, 17, 18, 19, 20, 21],
+      currencyColumns: [15, 16, 17, 18, 19, 20, 21].map((i) => i + shift),
       fileName: `Boletim_Medicao_${new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })}.xlsx`,
       sheetName: "Boletim",
     });
@@ -1217,6 +1263,8 @@ export default function BoletimMedicaoPage() {
                                 />
                               </th>
                               <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">OS</th>
+                              {isMultilogClient(group.clientName) && <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">OS cliente</th>}
+                              {isMultilogClient(group.clientName) && <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">SM</th>}
                               <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Data</th>
                               <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Rota</th>
                               <th className="text-left px-4 py-3 font-bold text-neutral-400 uppercase tracking-wider text-[10px]">Agente</th>
@@ -1267,12 +1315,14 @@ export default function BoletimMedicaoPage() {
                                         REJEITADA: {b.motivo_rejeicao || "Sem motivo informado"}
                                       </p>
                                     )}
-                                    {os.status !== "cancelada" && os.status !== "recusada" && (b?.status === "CANCELADA" || b?.status === "CANCELADO") && (
+                                    {os.status !== "cancelada" && os.status !== "recusada" && os.status !== "concluida" && os.status !== "concluída" && (b?.status === "CANCELADA" || b?.status === "CANCELADO") && (
                                       <p className="text-[9px] text-red-600 font-bold mt-0.5">
                                         CANCELADA: {b?.observacoes ? b.observacoes.split("|")[0].trim() : "Sem motivo informado"}
                                       </p>
                                     )}
                                   </td>
+                                  {isMultilogClient(group.clientName) && <td className="px-4 py-3.5 font-mono font-bold text-neutral-700">{multilogRefsForOrder(os).os || "—"}</td>}
+                                  {isMultilogClient(group.clientName) && <td className="px-4 py-3.5 font-mono font-bold text-neutral-700">{multilogRefsForOrder(os).sm || "—"}</td>}
                                   <td className="px-4 py-3.5">
                                     <span className="font-semibold text-neutral-700">{fmtDate(os.scheduledDate || os.createdAt)}</span>
                                     {os.missionStartedAt && <p className="text-[9px] text-neutral-400 mt-0.5">{fmtTime(os.missionStartedAt)} — {os.completedDate ? fmtTime(os.completedDate) : <span className="text-green-600 font-bold">em andamento</span>}</p>}

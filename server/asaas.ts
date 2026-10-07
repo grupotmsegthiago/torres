@@ -11,11 +11,12 @@ import {
 } from "../shared/client-duplicates";
 import { sendBillingEmail, maybeSendInvoiceReadyEmail } from "./lib/invoice-billing-email";
 import { applyPaymentToInvoice } from "./lib/invoice-payment";
-import { syncInvoiceReceivableById } from "./lib/invoice-receivable";
+import { settlePaidInvoiceReceivables, syncInvoiceReceivableById } from "./lib/invoice-receivable";
 import { bustBalancoCaches } from "./lib/balanco-cache";
 import { fetchBillingsByScheduledWindow } from "./lib/billing-period";
 import { notifyComissaoInvoiceEvent } from "./lib/comissao-ingest";
 import { normalizeBillingCycle, periodForDate } from "../shared/billing-cycle";
+import { appendMultilogToDescription, isMultilogClient, missingMultilogRefs, multilogDiscriminacaoLines } from "../shared/multilog-refs";
 import {
   markBillingsInvoicedAtomic,
   transitionInvoiceBillingsAtomic,
@@ -3079,12 +3080,20 @@ export function registerAsaasRoutes(app: Express) {
       // o conjunto carregado e filtrar.
       const soIds = periodBillings.map((b: any) => b.service_order_id).filter(Boolean);
       const soStatusMap = new Map<string, string>();
+      const soRefMap = new Map<string, { os: string | null; sm: string | null; osNumber: string }>();
       if (soIds.length > 0) {
         const { data: sos } = await supabaseAdmin
           .from("service_orders")
-          .select("id, status")
+          .select("id, os_number, status, multilog_os, multilog_sm")
           .in("id", soIds);
-        for (const so of (sos || [])) soStatusMap.set(String(so.id), String(so.status || "").toLowerCase());
+        for (const so of (sos || [])) {
+          soStatusMap.set(String(so.id), String(so.status || "").toLowerCase());
+          soRefMap.set(String(so.id), {
+            os: so.multilog_os,
+            sm: so.multilog_sm,
+            osNumber: String(so.os_number || `TOR-${String(so.id).padStart(4, "0")}`),
+          });
+        }
       }
       const billings = periodBillings.filter((b: any) => {
         const soSt = soStatusMap.get(String(b.service_order_id)) || "";
@@ -3106,7 +3115,27 @@ export function registerAsaasRoutes(app: Express) {
       console.log(`[asaas] Faturando ${billings.length} OS(s) para cliente ${clientId}. Período: ${startDate} a ${endDate}. Status: ${[...new Set(billings.map(b => b.status))].join(", ")}`);
 
 
-      const clientName = billings[0].client_name || "Cliente";
+      const clientName = clientStatusRow.name || billings[0].client_name || "Cliente";
+      if (isMultilogClient(clientName)) {
+        const incomplete = billings
+          .map((b: any) => {
+            const refs = soRefMap.get(String(b.service_order_id));
+            return {
+              id: Number(b.service_order_id),
+              osNumber: refs?.osNumber || `OS-${b.service_order_id}`,
+              missing: refs ? missingMultilogRefs({ multilog_os: refs.os, multilog_sm: refs.sm }) : ["OS", "SM"],
+            };
+          })
+          .filter((so: any) => so.missing.length > 0);
+        if (incomplete.length > 0) {
+          gerarFaturaLocks.delete(clientId);
+          return res.status(400).json({
+            code: "MULTILOG_REFS_REQUIRED",
+            message: `Faturamento MULTILOG bloqueado: preencha OS e SM nas ordens ${incomplete.map((so: any) => so.osNumber).join(", ")}.`,
+            incomplete,
+          });
+        }
+      }
 
       const osDescriptions: string[] = [];
       let totalValue = 0;
@@ -3217,7 +3246,11 @@ export function registerAsaasRoutes(app: Express) {
       const datasOs = billings.map(b => b.data_missao || b.created_at).filter(Boolean).sort();
       const periodoInicio = datasOs[0]?.split("T")[0] || invoiceDueDate;
       const periodoFim = datasOs[datasOs.length - 1]?.split("T")[0] || invoiceDueDate;
-      const descricaoFiscal = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
+      const descricaoBase = buildInvoiceDescription(clientName, periodoInicio, periodoFim);
+      const multilogLines = isMultilogClient(clientName)
+        ? multilogDiscriminacaoLines(billings.map((b: any) => soRefMap.get(String(b.service_order_id)) || { os: "", sm: "" }))
+        : [];
+      const descricaoFiscal = appendMultilogToDescription(descricaoBase, multilogLines);
       console.log(`[billing-audit] Detalhamento interno (${billings.length} OS):\n${osDescriptions.join("\n")}`);
 
       const { data: clientData } = await supabaseAdmin.from("clients").select("cnpj, cpf, emite_nf, retem_inss, inss_aliquota, billing_cycle, address, address_number, address_complement, bairro, city, state, zip, email, email_financeiro, email_contratual, email_operacional, email_medicao, phone, inscricao_municipal, inscricao_estadual").eq("id", clientId).single();
@@ -3293,7 +3326,10 @@ export function registerAsaasRoutes(app: Express) {
             splitCnpj = assertCpfCnpj(sp.cnpj);
           }
           const splitName = sp.razao_social || clientName;
-          const splitDescricao = `${buildInvoiceDescription(splitName, periodoInicio, periodoFim)} - ${splitName}`;
+          const splitDescricao = appendMultilogToDescription(
+            `${buildInvoiceDescription(splitName, periodoInicio, periodoFim)} - ${splitName}`,
+            multilogLines,
+          );
 
           let spAsaasCustomerId: string | null = null;
           let spAsaasPaymentId: string | null = null;
@@ -3757,6 +3793,27 @@ export function registerAsaasRoutes(app: Express) {
           }
         }
 
+        // Nota já paga entra em Notas Pagas pelo vencimento do mês vigente,
+        // mesmo quando o serviço é de um mês anterior.
+        const PAID_INVOICE_STATUSES = ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "PAGO", "PAID"];
+        const dueMonthStart = `${(from || "1900-01-01").slice(0, 7)}-01`;
+        const dueMonthRef = (to || from || "2999-12-31").slice(0, 7);
+        const dueMonthParts = dueMonthRef.split("-").map(Number);
+        const dueMonthLast = new Date(dueMonthParts[0], dueMonthParts[1], 0).getDate();
+        const dueMonthEnd = `${dueMonthRef}-${String(dueMonthLast).padStart(2, "0")}`;
+        const { data: invoicesPaidInPeriod, error: paidPeriodErr } = await supabaseAdmin
+          .from("invoices")
+          .select("*")
+          .in("status", PAID_INVOICE_STATUSES)
+          .gte("due_date", dueMonthStart)
+          .lte("due_date", dueMonthEnd);
+        if (paidPeriodErr) throw paidPeriodErr;
+        const paidInPeriodIds = new Set<number>();
+        for (const inv of (invoicesPaidInPeriod || [])) {
+          paidInPeriodIds.add(inv.id);
+          if (!invoiceMap.has(inv.id)) invoiceMap.set(inv.id, inv);
+        }
+
         const creatorIds = Array.from(new Set(
           [...invoiceMap.values()]
             .map((inv: any) => Number(inv.created_by))
@@ -3877,6 +3934,29 @@ export function registerAsaasRoutes(app: Express) {
           avulsos.push(b);
         }
 
+        const missionDay = (value: unknown) => {
+          const raw = String(value || "").trim();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+          const d = new Date(raw);
+          if (Number.isNaN(d.getTime())) return "";
+          return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/Sao_Paulo",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(d);
+        };
+        const missionSpan = (list: any[]) => {
+          const dates = list
+            .map((b) => missionDay(b?.data_missao))
+            .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+            .sort();
+          return {
+            serviceStart: dates[0] || null,
+            serviceEnd: dates[dates.length - 1] || null,
+          };
+        };
+
         const rows: any[] = [];
 
         // FAT — uma linha por invoice (valor = invoice.value real cobrado)
@@ -3884,6 +3964,7 @@ export function registerAsaasRoutes(app: Express) {
           const cli = clientMap.get(inv.client_id) || (bills[0] && clientMap.get(bills[0].client_id));
           const ns = normalizeInvoiceStatus(inv, { emiteNf: cli?.emiteNf });
           const earliest = bills.map(b => b.data_missao).sort()[0];
+          const span = missionSpan(bills);
           const nfAmt = nfGrossAndLiquid(Number(inv.value || 0), cli?.emiteNf !== false, !!cli?.retemInss, cli?.inssAliquota);
           rows.push({
             id: `INV-${inv.id}`,
@@ -3902,6 +3983,8 @@ export function registerAsaasRoutes(app: Express) {
             netValue: inv.net_value != null ? Number(inv.net_value) : null,
             dueDate: inv.due_date,
             paymentDate: inv.payment_date,
+            serviceStart: span.serviceStart,
+            serviceEnd: span.serviceEnd,
             createdAt: earliest || inv.created_at,
             updatedAt: inv.updated_at,
             asaasPaymentId: inv.asaas_payment_id,
@@ -3933,7 +4016,12 @@ export function registerAsaasRoutes(app: Express) {
         // (missões fora do período mas fatura criada dentro) +
         // invoices em aberto (PENDING/OVERDUE) de qualquer período —
         // pra nunca "sumirem" da tela enquanto não houver pagamento.
-        const extraInvoices = [...(invoicesCreatedInPeriod || []), ...openInvoicesAdded];
+        const createdInPeriodIds = new Set((invoicesCreatedInPeriod || []).map((inv: any) => inv.id));
+        const extraInvoices = [
+          ...(invoicesCreatedInPeriod || []),
+          ...openInvoicesAdded,
+          ...(invoicesPaidInPeriod || []),
+        ];
 
         // BUSCA REVERSA: para invoices em extraInvoices (faturas que vieram do
         // Asaas / criadas fora do período de missões), buscamos no banco TODOS
@@ -4039,7 +4127,9 @@ export function registerAsaasRoutes(app: Express) {
             netValue: inv.net_value != null ? Number(inv.net_value) : null,
             dueDate: inv.due_date,
             paymentDate: inv.payment_date,
+            ...missionSpan(linkedBills),
             createdAt: inv.created_at,
+            onlyByDueDate: paidInPeriodIds.has(inv.id) && !createdInPeriodIds.has(inv.id),
             updatedAt: inv.updated_at,
             asaasPaymentId: inv.asaas_payment_id,
             invoiceUrl: inv.invoice_url,
@@ -4084,10 +4174,19 @@ export function registerAsaasRoutes(app: Express) {
           totals[st] = { count: subset.length, value: subset.reduce((s, r) => s + Number(r.value || 0), 0) };
         }
         // "Total no período" exclui NFs canceladas para refletir a receita efetiva
-        const validRows = rows.filter(r => r.normalizedStatus !== "NF_CANCELADA");
+        const validRows = rows.filter(r => r.normalizedStatus !== "NF_CANCELADA" && !r.onlyByDueDate);
         (totals as any).total = { count: validRows.length, value: validRows.reduce((s, r) => s + Number(r.value || 0), 0) };
 
         rows.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+
+        const paidInvoiceIds = rows
+          .filter(r => r.normalizedStatus === "PAGO" && r.invoiceId)
+          .map(r => Number(r.invoiceId));
+        try {
+          await settlePaidInvoiceReceivables(paidInvoiceIds);
+        } catch (settleErr: any) {
+          console.error("[relatorio-nf] baixa contas a receber:", settleErr?.message || settleErr);
+        }
 
         unstickStaleNfReconcile(nfReconcileState);
         res.json({

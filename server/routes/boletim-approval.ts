@@ -19,11 +19,30 @@ import {
 } from "../lib/boletim-send-prepare";
 import { logSystemAudit } from "../audit";
 import { assessBoletimCoverage, missionDateYmd, normalizeBillingCycle, periodForDate } from "../../shared/billing-cycle";
+import { appendMultilogToDescription, isMultilogClient, missingMultilogRefs, multilogDiscriminacaoLines } from "../../shared/multilog-refs";
 import { fetchBillingsByScheduledWindow, fetchServiceOrdersScheduledInWindow } from "../lib/billing-period";
 import crypto from "crypto";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
+
+function boletoDueDateOrNull(raw: unknown): string | null {
+  const s = String(raw || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return s;
+}
+
+function todayBrtYmd(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 const requireAdminRole = (req: Request, res: Response, next: any) => {
   if (!req.user) return res.status(401).json({ message: "Não autenticado" });
@@ -117,7 +136,8 @@ export async function generateBoletimExcel(
   wb.created = new Date();
 
   const isOmegaClient = clientName.toUpperCase().includes("OMEGA SOLUTIONS");
-  const colCount = isOmegaClient ? 28 : 27;
+  const isMultilog = isMultilogClient(clientName);
+  const colCount = isOmegaClient ? 28 : isMultilog ? 29 : 27;
   const ws = wb.addWorksheet("Boletim", {
     views: [{ showGridLines: false }],
     pageSetup: {
@@ -129,7 +149,11 @@ export async function generateBoletimExcel(
   });
 
   const baseColWidths = [10, 30, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14];
-  const colWidths = isOmegaClient ? [10, 30, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14] : baseColWidths;
+  const colWidths = isOmegaClient
+    ? [10, 30, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14]
+    : isMultilog
+      ? [10, 30, 12, 14, 12, 7, 7, 12, 12, 12, 8, 10, 12, 12, 8, 9, 9, 8, 7, 7, 7, 6, 12, 12, 7, 12, 12, 12, 14]
+      : baseColWidths;
   ws.columns = colWidths.map(w => ({ width: w }));
 
   const darkFill: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_BG } };
@@ -211,7 +235,7 @@ export async function generateBoletimExcel(
         { label: "VALORES", span: 2 },
       ]
     : [
-        { label: "TABELA ACORDADA", span: 7 },
+        { label: "TABELA ACORDADA", span: isMultilog ? 9 : 7 },
         { label: "INFORMAÇÕES DA VIAGEM", span: 6 },
         { label: "KILOMETRAGEM", span: 3 },
         { label: "HORÁRIOS", span: 3 },
@@ -240,7 +264,9 @@ export async function generateBoletimExcel(
   const baseHeaders = ["Nº", "ROTA", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"];
   const headers = isOmegaClient
     ? ["Nº", "ROTA", "PROCESSO", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"]
-    : baseHeaders;
+    : isMultilog
+      ? ["Nº", "ROTA", "OS", "SM", "VALOR", "HR FRANQ", "KM FRANQ", "HR EXTRA R$", "KM EXTRA R$", "DATA INÍCIO", "HORA INÍCIO", "VIATURA", "VEÍC. ESCOLTADO", "DATA FIM", "HORA FIM", "KM INICIAL", "KM FINAL", "KM TOTAL", "HR INÍCIO", "HR FIM", "HR TOTAL", "KM EXC.", "VLR KM", "TOT KM", "HR EXC.", "VLR HR", "TOT HR", "PEDÁGIO", "TOTAL"]
+      : baseHeaders;
   const headerRow = ws.addRow(headers);
   headerRow.height = 24;
   for (let i = 1; i <= colCount; i++) {
@@ -256,7 +282,9 @@ export async function generateBoletimExcel(
 
   const currCols = isOmegaClient
     ? new Set([3, 6, 7, 21, 22, 24, 25, 26, 27])
-    : new Set([2, 5, 6, 20, 21, 23, 24, 25, 26]);
+    : isMultilog
+      ? new Set([4, 7, 8, 22, 23, 25, 26, 27, 28])
+      : new Set([2, 5, 6, 20, 21, 23, 24, 25, 26]);
   const ordersMap = new Map(orders.map(o => [Number(o.id), o]));
   const contractsMap = new Map(contracts.map(c => [c.id, c]));
 
@@ -291,8 +319,8 @@ export async function generateBoletimExcel(
     grandTotal += fatTotal;
 
     const osNum = boletimOsNumber(b, so);
-    const origem = b.origem || so.origin || "";
-    const destino = b.destino || so.destination || "";
+    const origem = so.origin || b.origem || "";
+    const destino = so.destination || b.destino || "";
     const routeStr = (origem && destino) ? `${extractCity(origem)} × ${extractCity(destino)}` : (origem || destino || "—");
     const viatura = b.placa_viatura || so.vehicle_plate || "—";
     const escoltado = b.placa_escoltado || so.escorted_vehicle_plate || "—";
@@ -322,7 +350,13 @@ export async function generateBoletimExcel(
       baseRowData[24] = 0;
       baseRowData[25] = 0;
     }
-    const rowData = isOmegaClient ? [baseRowData[0], baseRowData[1], "", ...baseRowData.slice(2)] : baseRowData;
+    const osCliente = String(so.multilog_os || "").trim();
+    const smViagem = String(so.multilog_sm || "").trim();
+    const rowData = isOmegaClient
+      ? [baseRowData[0], baseRowData[1], "", ...baseRowData.slice(2)]
+      : isMultilog
+        ? [baseRowData[0], baseRowData[1], osCliente, smViagem, ...baseRowData.slice(2)]
+        : baseRowData;
 
     const row = ws.addRow(rowData);
     row.height = 20.1;
@@ -406,6 +440,7 @@ async function sendApprovalEmailWithExcel(
   osCount: number, totalValue: number, excelBuffer: Buffer, fileName: string,
   processoNumbers: string[] = [],
   cc: string[] = [],
+  multilogLines: string[] = [],
 ) {
   const isOmegaSubject = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
   const processosLabel = processoNumbers.length > 0
@@ -448,6 +483,11 @@ async function sendApprovalEmailWithExcel(
               <td style="padding: 8px 0; color: #64748b; font-size: 13px; border-top: 1px solid #e2e8f0;">Quantidade de OS:</td>
               <td style="padding: 8px 0; text-align: right; font-weight: 700; font-size: 14px; color: #1e293b; border-top: 1px solid #e2e8f0;">${osCount}</td>
             </tr>
+            ${multilogLines.length > 0 ? `<tr>
+              <td colspan="2" style="padding: 8px 0; color: #1e293b; font-size: 13px; font-weight: 700; border-top: 1px solid #e2e8f0; line-height: 1.6;">
+                ${multilogLines.map((line) => `<div>${line}</div>`).join("")}
+              </td>
+            </tr>` : ""}
             <tr>
               <td style="padding: 8px 0; color: #64748b; font-size: 13px; border-top: 1px solid #e2e8f0;">Valor Total:</td>
               <td style="padding: 8px 0; text-align: right; font-weight: 800; font-size: 18px; color: #059669; border-top: 1px solid #e2e8f0;">${fmt(totalValue)}</td>
@@ -490,6 +530,7 @@ async function sendApprovalEmailWithExcel(
     from: getSmtpFrom(),
     to: envelope.to,
     cc: envelope.cc,
+    bcc: envelope.bcc,
     subject,
     headers: isOmegaSubject && processoNumbers.length > 0
       ? {
@@ -512,6 +553,13 @@ export function registerBoletimApprovalRoutes(app: Express) {
   app.post("/api/boletim/enviar-aprovacao", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const { clientId, clientName, clientEmail, billingIds, totalValue, osCount, force } = req.body;
+      const boletoDueDate = boletoDueDateOrNull(req.body?.dueDate);
+      if (!boletoDueDate) {
+        return res.status(400).json({ message: "Informe a data do pagamento para a emissão do boleto." });
+      }
+      if (boletoDueDate < todayBrtYmd()) {
+        return res.status(400).json({ message: "A data do pagamento do boleto não pode ser anterior a hoje." });
+      }
       let { periodStart, periodEnd } = req.body;
       const user = req.user as any;
 
@@ -529,6 +577,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         return res.status(400).json({ message: "Cliente sem e-mail de medição cadastrado." });
       }
       const resolvedClientEmail = mail.to.join(", ");
+      const resolvedClientName = String(clientRow?.name || clientName || "").trim();
 
       // ============================================================
       // Período do boletim = data de agendamento da OS (1–15 / 16–fim).
@@ -744,7 +793,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
         // caindo em OS-{id} (ex. OS-1325) em vez de TOR-0931.
         const { data: sos, error: soErr } = await supabaseAdmin
           .from("service_orders")
-          .select("id, os_number, origin, destination, scheduled_date, vehicle_id, escorted_vehicle_plate, completed_date, processo_omega, status, escort_contract_id, client_id")
+          .select("id, os_number, origin, destination, scheduled_date, vehicle_id, escorted_vehicle_plate, completed_date, processo_omega, status, escort_contract_id, client_id, multilog_os, multilog_sm")
           .in("id", soIds);
         if (soErr) {
           console.error("[boletim-approval] falha ao carregar OS:", soErr.message);
@@ -763,6 +812,23 @@ export function registerBoletimApprovalRoutes(app: Express) {
         }
       }
       const ordersById = new Map((ordersData || []).map((o: any) => [Number(o.id), o]));
+
+      if (isMultilogClient(resolvedClientName)) {
+        const incomplete = ordersData
+          .map((so: any) => ({
+            id: Number(so.id),
+            osNumber: String(so.os_number || `TOR-${String(so.id).padStart(4, "0")}`),
+            missing: missingMultilogRefs(so),
+          }))
+          .filter((so: any) => so.missing.length > 0);
+        if (incomplete.length > 0) {
+          return res.status(400).json({
+            code: "MULTILOG_REFS_REQUIRED",
+            message: `Preencha OS e SM da MULTILOG nas ordens antes de enviar para aprovação: ${incomplete.map((so: any) => so.osNumber).join(", ")}.`,
+            incomplete,
+          });
+        }
+      }
 
       // Recusada fora do boletim (§8.1). Contrato OS × billing deve bater
       // (PR5B1_TX_SNAPSHOT_CONTRACT_MISMATCH). Heal: OS passa a apontar o
@@ -812,9 +878,15 @@ export function registerBoletimApprovalRoutes(app: Express) {
         .map((b: any) => ordersById.get(Number(b.service_order_id)))
         .filter(Boolean);
 
-      const isOmega = String(clientName || "").toUpperCase().includes("OMEGA SOLUTIONS");
+      const isOmega = resolvedClientName.toUpperCase().includes("OMEGA SOLUTIONS");
       const processoNumbers = isOmega
         ? Array.from(new Set(ordersData.map((o: any) => String(o?.processo_omega || "").trim()).filter(Boolean)))
+        : [];
+      const multilogLines = isMultilogClient(resolvedClientName)
+        ? multilogDiscriminacaoLines(billingsData.map((b: any) => {
+            const so = ordersById.get(Number(b.service_order_id)) || {};
+            return { os: (so as any).multilog_os, sm: (so as any).multilog_sm };
+          }))
         : [];
 
       let contractsData: any[] = [];
@@ -828,7 +900,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       }
 
       const excelBuffer = await generateBoletimExcel(
-        clientName, periodStart, periodEnd,
+        resolvedClientName, periodStart, periodEnd,
         billingsData, ordersData, contractsData,
       );
 
@@ -860,6 +932,8 @@ export function registerBoletimApprovalRoutes(app: Express) {
           despesas_outras: comp(b.despesas_outras),
           receitas_os: comp(b.receitas_os),
           total: billingTotalForBoletim(b, osStatus),
+          multilog_os: String((so as any).multilog_os || "").trim() || null,
+          multilog_sm: String((so as any).multilog_sm || "").trim() || null,
         };
       });
       const canonicalTotal = round2(billingSnapshot.reduce((sum: number, s: any) => sum + s.total, 0));
@@ -872,7 +946,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
       const data = await createBoletimApprovalAtomic({
         token,
         clientId,
-        clientName,
+        clientName: resolvedClientName,
         clientEmail: resolvedClientEmail,
         periodStart,
         periodEnd,
@@ -884,12 +958,20 @@ export function registerBoletimApprovalRoutes(app: Express) {
         sentByUserId: user?.id || null,
       });
 
+      if (data?.id) {
+        const { error: dueErr } = await supabaseAdmin
+          .from("boletim_approvals")
+          .update({ boleto_due_date: boletoDueDate })
+          .eq("id", data.id);
+        if (dueErr) throw dueErr;
+      }
+
       const periodShort = `${periodStart.replace(/-/g, "")}_${periodEnd.replace(/-/g, "")}`;
       const safeClient = clientName.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 20);
       const fileName = `Boletim_${safeClient}_${periodShort}.xlsx`;
 
       try {
-        await sendApprovalEmailWithExcel(mail.to, clientName, approvalUrl, period, sendBillingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers);
+        await sendApprovalEmailWithExcel(mail.to, resolvedClientName, approvalUrl, period, sendBillingIds.length, canonicalTotal, excelBuffer, fileName, processoNumbers, [], multilogLines);
         console.log(`[boletim-approval] E-mail com Excel enviado para ${resolvedClientEmail} (token: ${token.substring(0, 8)}...)`);
       } catch (emailErr: any) {
         console.error(`[boletim-approval] Erro ao enviar e-mail:`, emailErr.message);
@@ -1065,6 +1147,35 @@ export function registerBoletimApprovalRoutes(app: Express) {
       let autoEmitResult: { success: boolean; message: string; nfEmitted: boolean; paymentId?: string } | null = null;
       const billingIds = approval.billing_ids || [];
       if (billingIds.length > 0) {
+        if (isMultilogClient(approval.client_name)) {
+          const { data: billingRefs, error: billingRefsError } = await supabaseAdmin
+            .from("escort_billings")
+            .select("service_order_id")
+            .in("id", billingIds);
+          if (billingRefsError) throw billingRefsError;
+          const serviceOrderIds = Array.from(new Set(
+            (billingRefs || []).map((b: any) => Number(b.service_order_id)).filter(Boolean),
+          ));
+          const { data: serviceOrders, error: serviceOrdersError } = await supabaseAdmin
+            .from("service_orders")
+            .select("id, os_number, multilog_os, multilog_sm")
+            .in("id", serviceOrderIds);
+          if (serviceOrdersError) throw serviceOrdersError;
+          const incomplete = (serviceOrders || [])
+            .map((so: any) => ({
+              id: Number(so.id),
+              osNumber: String(so.os_number || `TOR-${String(so.id).padStart(4, "0")}`),
+              missing: missingMultilogRefs(so),
+            }))
+            .filter((so: any) => so.missing.length > 0);
+          if (incomplete.length > 0 || (serviceOrders || []).length !== serviceOrderIds.length) {
+            return res.status(400).json({
+              code: "MULTILOG_REFS_REQUIRED",
+              message: `A medição da MULTILOG não pode ser aprovada sem OS e SM em todas as ordens: ${incomplete.map((so: any) => so.osNumber).join(", ") || "OS não encontrada"}.`,
+              incomplete,
+            });
+          }
+        }
         await freezeBoletimBillingsAtomic(
           Number(approval.id),
           nome || approval.client_name || "Cliente",
@@ -1097,7 +1208,23 @@ export function registerBoletimApprovalRoutes(app: Express) {
         if (totalCalc <= 0) totalCalc = round2(liveSum);
 
         const periodLabel = `${approval.period_start ? new Date(approval.period_start + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"} a ${approval.period_end ? new Date(approval.period_end + "T12:00:00Z").toLocaleDateString("pt-BR") : "—"}`;
-        const description = `Escolta Armada — ${approval.client_name} — Período: ${periodLabel} — ${billingIds.length} OS(s): ${osDescParts.join(", ")}`;
+        let description = `Escolta Armada — ${approval.client_name} — Período: ${periodLabel} — ${billingIds.length} OS(s): ${osDescParts.join(", ")}`;
+        if (isMultilogClient(approval.client_name)) {
+          const soIdsNf = (billingsDetail || []).map((b: any) => b.service_order_id).filter(Boolean);
+          let nfLines: string[] = [];
+          if (soIdsNf.length > 0) {
+            const { data: sosNf } = await supabaseAdmin
+              .from("service_orders")
+              .select("id, multilog_os, multilog_sm")
+              .in("id", soIdsNf);
+            const byId = new Map((sosNf || []).map((s: any) => [Number(s.id), s]));
+            nfLines = multilogDiscriminacaoLines((billingsDetail || []).map((b: any) => {
+              const so = byId.get(Number(b.service_order_id));
+              return { os: so?.multilog_os || b.service_order_id, sm: so?.multilog_sm };
+            }));
+          }
+          description = appendMultilogToDescription(description, nfLines);
+        }
 
         // ─── Emissão atômica (Asaas + NFS-e) ──────────────────────────────
         // Cria a invoice + dispara cobrança/NF na mesma transação lógica:
@@ -1109,7 +1236,7 @@ export function registerBoletimApprovalRoutes(app: Express) {
             client_name: approval.client_name,
             description,
             value: totalCalc,
-            due_date: "PENDENTE",
+            due_date: boletoDueDateOrNull(approval.boleto_due_date) || "PENDENTE",
             billing_type: "BOLETO",
             status: "AGUARDANDO_FATURAMENTO",
             external_reference: `BOLETIM-${approval.id}`,
@@ -1126,7 +1253,8 @@ export function registerBoletimApprovalRoutes(app: Express) {
                 .eq("id", approval.client_id).single();
               const prazo = Number(cli?.payment_terms_days) > 0 ? Number(cli?.payment_terms_days) : 30;
               const due = new Date(Date.now() + prazo * 24 * 60 * 60 * 1000);
-              const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(due);
+              const prazoDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(due);
+              const dueDate = boletoDueDateOrNull(approval.boleto_due_date) || prazoDate;
               const billingType = (cli?.billing_type as string) || "BOLETO";
 
               autoEmitResult = await emitInvoiceAuto(invInserted.id, {

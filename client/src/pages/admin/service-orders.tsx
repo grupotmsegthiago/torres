@@ -3,6 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { suggestPriceTableByRouteKm, contractFranquiaKm } from "@/lib/suggest-price-table-by-km";
+import { pickCanceladaPriceTable } from "@shared/cancelada-price-table";
+import { isMultilogClient } from "@shared/multilog-refs";
 import { computeRouteTollsBrowser } from "@/lib/google-routes-tolls-browser";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -960,6 +962,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     cancellationReason: (order as any)?.cancellationReason || "",
     processoOmega: (order as any)?.processoOmega || "",
     gtmNumber: (order as any)?.gtmNumber || "",
+    multilogOs: (order as any)?.multilogOs || "",
+    multilogSm: (order as any)?.multilogSm || "",
   });
 
   const clientContracts = escortContracts.filter(c => c.client_id === form.clientId && c.status === "Ativo");
@@ -1016,13 +1020,34 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   }, [isNewOs, priceTableUserPicked, routeKm, priceTableSuggestion.suggested?.id, form.escortContractId, applySuggestedPriceTable]);
 
   useEffect(() => {
+    if (form.status === "cancelada") return;
     if (form.escortContractId && !form.valorEstimado) {
       const est = computeEstimado(form.escortContractId);
       if (est != null) {
         setForm(prev => prev.valorEstimado ? prev : { ...prev, valorEstimado: est.toFixed(2).replace(".", ",") });
       }
     }
-  }, [form.escortContractId]);
+  }, [form.escortContractId, form.status]);
+
+  // Cancelada cobra a tabela ativa de 100 km / 3 h (menor acionamento). Recusada continua R$ 0.
+  useEffect(() => {
+    if (form.status !== "cancelada" || form.clientId <= 0) return;
+    const picked = pickCanceladaPriceTable(
+      escortContracts.filter((c) => c.client_id === form.clientId && c.status === "Ativo"),
+    );
+    if (!picked?.id) return;
+    const est = Number(picked.valor_acionamento || 0);
+    const estLabel = est > 0 ? est.toFixed(2).replace(".", ",") : "";
+    setForm((prev) => {
+      if (prev.status !== "cancelada") return prev;
+      if (prev.escortContractId === picked.id && prev.valorEstimado === estLabel) return prev;
+      return {
+        ...prev,
+        escortContractId: picked.id,
+        ...(estLabel ? { valorEstimado: estLabel } : {}),
+      };
+    });
+  }, [form.status, form.clientId, escortContracts]);
 
   const handlePriorityChange = (priority: string) => {
     const updates: any = { priority };
@@ -1275,6 +1300,12 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       ? { operacaoDhl: !!data.operacaoDhl }
       : {}),
     escortedDriverName: data.escortedDriverName ?? "",
+    ...(isMultilogClient(clients.find((c) => c.id === Number(data.clientId))?.name)
+      ? {
+          multilogOs: String(data.multilogOs || order?.id || "").trim(),
+          multilogSm: String(data.multilogSm || "").trim(),
+        }
+      : {}),
     escortedDriverPhone: data.escortedDriverPhone ?? "",
     escortedVehiclePlate: data.escortedVehiclePlate ?? "",
     ...(forceReassign ? { _forceReassign: true } : {}),
@@ -1778,8 +1809,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                         const id = e.target.value;
                         setPriceTableUserPicked(true);
                         setForm((prev) => {
-                          const blocked = prev.status === "recusada" || prev.status === "cancelada";
-                          const est = (!blocked && id) ? computeEstimado(id) : null;
+                          if (prev.status === "cancelada") return prev;
+                          if (prev.status === "recusada") return { ...prev, escortContractId: id };
+                          const est = id ? computeEstimado(id) : null;
                           return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
                         });
                       }}
@@ -1797,6 +1829,9 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                         </option>
                       ))}
                     </select>
+                    {form.status === "cancelada" && (
+                      <p className="text-[11px] text-amber-700 mt-1" data-testid="hint-os-cancelada-tabela">Cancelada usa a tabela de 100 km / 3 h, pelo menor acionamento.</p>
+                    )}
                     {!form.escortContractId && (
                       <p className="text-[11px] text-amber-600 mt-1" data-testid="warn-os-price-table">Selecione uma tabela de preços para poder criar a OS.</p>
                     )}
@@ -1819,8 +1854,10 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               )}
               <div>
                 <FieldLabel>Valor Estimado (R$)</FieldLabel>
-                {form.status === "recusada" || form.status === "cancelada" ? (
+                {form.status === "recusada" ? (
                   <Input type="text" readOnly value="0,00" className="text-sm font-mono bg-red-50 text-red-500 cursor-not-allowed" data-testid="input-os-valor-estimado" />
+                ) : form.status === "cancelada" ? (
+                  <Input type="text" readOnly value={form.valorEstimado || "0,00"} className="text-sm font-mono bg-amber-50" data-testid="input-os-valor-estimado" />
                 ) : (
                   <Input type="text" inputMode="decimal" value={form.valorEstimado} onChange={(e) => setForm(prev => ({ ...prev, valorEstimado: maskBRL(e.target.value) }))} placeholder="0,00" className="text-sm font-mono" data-testid="input-os-valor-estimado" />
                 )}
@@ -2016,6 +2053,31 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   </div>
                 );
               })()}
+              {isMultilogClient(clients.find((c) => c.id === form.clientId)?.name) && (
+                <div className="grid grid-cols-2 gap-2" data-testid="fields-multilog-refs">
+                  <div>
+                    <FieldLabel>OS do cliente</FieldLabel>
+                    <Input
+                      value={form.multilogOs || (order?.id ? String(order.id) : "")}
+                      onChange={(e) => setForm(prev => ({ ...prev, multilogOs: e.target.value }))}
+                      placeholder="Ex.: 1312"
+                      className="text-sm border-amber-300 bg-amber-50/30"
+                      data-testid="input-os-multilog"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>SM da viagem</FieldLabel>
+                    <Input
+                      value={form.multilogSm}
+                      onChange={(e) => setForm(prev => ({ ...prev, multilogSm: e.target.value }))}
+                      placeholder="Ex.: 41128477"
+                      className="text-sm border-amber-300 bg-amber-50/30"
+                      data-testid="input-sm-multilog"
+                    />
+                  </div>
+                  <p className="col-span-2 text-[11px] text-neutral-500">Entra na discriminação do faturamento, do e-mail e da NF.</p>
+                </div>
+              )}
               <div>
                 <FieldLabel>Prioridade</FieldLabel>
                 <select value={form.priority} onChange={(e) => handlePriorityChange(e.target.value)} className={selectClass} data-testid="select-os-priority">

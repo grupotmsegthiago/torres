@@ -9,6 +9,7 @@ import {
   financeiroCadastroEmails,
   nfseTomadorEmail,
   TORRES_ALWAYS_CC,
+  TORRES_ALWAYS_BCC,
 } from "@shared/client-emails";
 
 test("parseEmailList: vírgula, ponto-e-vírgula e duplicata", () => {
@@ -57,8 +58,8 @@ test("pickClientEmails: aceita camelCase do storage", () => {
   );
 });
 
-test("withTorresAlwaysCc: os 4 sempre em cópia, sem duplicar quem já está no To", () => {
-  const { to, cc } = withTorresAlwaysCc(["fin@cliente.com", "financeiro@torresseguranca.com.br"]);
+test("withTorresAlwaysCc: os 4 sempre em cópia e thiago em cópia oculta", () => {
+  const { to, cc, bcc } = withTorresAlwaysCc(["fin@cliente.com", "financeiro@torresseguranca.com.br"]);
   assert.deepEqual(to, ["fin@cliente.com", "financeiro@torresseguranca.com.br"]);
   for (const must of TORRES_ALWAYS_CC) {
     if (must === "financeiro@torresseguranca.com.br") {
@@ -67,6 +68,7 @@ test("withTorresAlwaysCc: os 4 sempre em cópia, sem duplicar quem já está no 
       assert.equal(cc.includes(must), true);
     }
   }
+  assert.deepEqual(bcc, [...TORRES_ALWAYS_BCC]);
 });
 
 test("clientOutboundMail: junta cadastro da categoria com extra e aplica CC", () => {

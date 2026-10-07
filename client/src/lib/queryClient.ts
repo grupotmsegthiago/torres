@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { supabase, isSupabaseConfigured } from "./supabase";
+import { supabase, supabaseOpsRealtime, setOpsRealtimeAuth, isSupabaseConfigured } from "./supabase";
 
 const CACHE_VERSION = "20260521-realtime-trim-v3";
 if (typeof window !== "undefined") {
@@ -421,17 +421,8 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
 
   function _buildOperationalChannel(name: string) {
     return supabase.channel(name)
-      .on("postgres_changes", { event: "*", schema: "public", table: "service_orders" }, () => {
-        _refreshEveryOpenPage();
-      })
       .on("postgres_changes", { event: "*", schema: "public", table: "mission_updates" }, () => {
         _invalidateLocal("mission-update");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "escort_billings" }, () => {
-        _refreshEveryOpenPage();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "boletim_approvals" }, () => {
-        _refreshEveryOpenPage();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "billing_alerts" }, () => {
         _invalidateLocal("jornada-diretoria");
@@ -645,9 +636,93 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
       console.log("[Realtime] heartbeat: reconnecting (connected:", _realtimeConnected, "stale:", Math.round(staleMs / 1000), "s)");
       _subscribeRealtime();
     }
+    // O socket geral pode continuar saudável enquanto o canal dedicado de
+    // OS/billing caiu. São conexões diferentes e precisam de health próprio.
+    if (!_opsConnected && !_opsRetryTimer) _subscribeOpsRealtime(_opsToken);
   }
 
-  _subscribeRealtime();
+  let _opsChannel: ReturnType<typeof supabaseOpsRealtime.channel> | null = null;
+  let _opsToken: string | null = null;
+  let _opsGen = 0;
+  let _opsConnected = false;
+  let _opsRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  let _opsRetryDelay = 3000;
+
+  function _scheduleOpsRetry() {
+    if (_opsRetryTimer) return;
+    const delay = Math.min(_opsRetryDelay, 60_000);
+    _opsRetryTimer = setTimeout(() => {
+      _opsRetryTimer = null;
+      _subscribeOpsRealtime(_opsToken);
+    }, delay);
+    _opsRetryDelay = Math.min(_opsRetryDelay * 2, 60_000);
+  }
+
+  async function _subscribeOpsRealtime(token: string | null) {
+    const gen = ++_opsGen;
+    _opsConnected = false;
+    if (_opsChannel) {
+      try { supabaseOpsRealtime.removeChannel(_opsChannel); } catch {}
+      _opsChannel = null;
+    }
+    try {
+      await setOpsRealtimeAuth(token);
+    } catch (err) {
+      console.warn("[Realtime:os] auth:", err);
+    }
+    if (gen !== _opsGen) return;
+    _opsChannel = supabaseOpsRealtime.channel("realtime-os-billing")
+      .on("postgres_changes", { event: "*", schema: "public", table: "service_orders" }, () => {
+        _lastRealtimeEvent = Date.now();
+        _invalidateLocal("service-order");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "escort_billings" }, () => {
+        _lastRealtimeEvent = Date.now();
+        _invalidateLocal("billing");
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "boletim_approvals" }, () => {
+        _lastRealtimeEvent = Date.now();
+        _invalidateLocal("service-order");
+      })
+      .subscribe((status, err) => {
+        if (gen !== _opsGen) return;
+        if (status === "SUBSCRIBED") {
+          console.log("[Realtime:os] ouvindo OS, billing e boletim");
+          _opsConnected = true;
+          _opsRetryDelay = 3000;
+          _invalidateLocal("service-order");
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          _opsConnected = false;
+          console.warn("[Realtime:os]", err?.message ?? status);
+          _scheduleOpsRetry();
+        }
+      });
+  }
+
+  supabase.auth.getSession().then(async ({ data }) => {
+    _opsToken = data.session?.access_token ?? null;
+    if (_opsToken) {
+      try { await supabase.realtime.setAuth(_opsToken); } catch {}
+    }
+    _subscribeRealtime();
+    _subscribeOpsRealtime(_opsToken);
+  });
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    const next = session?.access_token ?? null;
+    if (next === _opsToken && _opsChannel) return;
+    _opsToken = next;
+    if (_opsRetryTimer) {
+      clearTimeout(_opsRetryTimer);
+      _opsRetryTimer = null;
+    }
+    if (next) {
+      try { await supabase.realtime.setAuth(next); } catch {}
+    }
+    _reconnecting = false;
+    _subscribeRealtime();
+    _subscribeOpsRealtime(next);
+  });
 
   setInterval(_ensureRealtimeAlive, 60_000);
 
@@ -656,13 +731,18 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
     queryClient.invalidateQueries();
     _retryDelay = _RETRY_MIN;
     if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+    _opsRetryDelay = 3000;
+    if (_opsRetryTimer) { clearTimeout(_opsRetryTimer); _opsRetryTimer = null; }
     _reconnecting = false;
     setTimeout(_subscribeRealtime, 1000);
+    setTimeout(() => _subscribeOpsRealtime(_opsToken), 1000);
   });
 
   window.addEventListener("offline", () => {
     console.log("[Network] Offline detected");
     if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+    if (_opsRetryTimer) { clearTimeout(_opsRetryTimer); _opsRetryTimer = null; }
+    _opsConnected = false;
     _reconnecting = false;
   });
 }

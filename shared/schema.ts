@@ -334,6 +334,10 @@ export const serviceOrders = pgTable("service_orders", {
   cancellationReason: text("cancellation_reason"),
   processoOmega: text("processo_omega"),
   gtmNumber: text("gtm_number"),
+  /** OS do cliente MULTILOG. Texto de discriminação; não entra no cálculo. */
+  multilogOs: text("multilog_os"),
+  /** SM da viagem MULTILOG. Texto de discriminação; não entra no cálculo. */
+  multilogSm: text("multilog_sm"),
   stepLogs: jsonb("step_logs").default([]),
   waypoints: jsonb("waypoints").default([]),
   createdByUserId: integer("created_by_user_id"),

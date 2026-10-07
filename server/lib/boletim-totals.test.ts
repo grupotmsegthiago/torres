@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { round2, osCanonicalTotal, billingTotalForBoletim, boletimOsNumber } from "./boletim-totals";
+import { round2, osCanonicalTotal, billingTotalForBoletim, boletimOsNumber, chargeIsStored } from "./boletim-totals";
 
 const billing = (over: Record<string, any> = {}) => ({
   fat_acionamento: 1000,
@@ -56,4 +56,20 @@ test("boletimOsNumber: TOR da OS vence o fallback OS-{id} do billing", () => {
 
 test("boletimOsNumber: sem número comercial, cai no id interno", () => {
   assert.equal(boletimOsNumber({ service_order_id: 1325, os_number: null }, {}), "OS-1325");
+});
+
+test("boletimOsNumber: TOR-0918 não vira OS-1312 quando o billing não copiou o número", () => {
+  assert.equal(
+    boletimOsNumber({ service_order_id: 1312, os_number: null }, { id: 1312, os_number: "TOR-0918" }),
+    "TOR-0918",
+  );
+});
+
+test("chargeIsStored: aprovada e faturada não são recalculadas no relatório", () => {
+  assert.equal(chargeIsStored("APROVADA"), true);
+  assert.equal(chargeIsStored("ENVIADA_APROVACAO"), true);
+  assert.equal(chargeIsStored("FATURADO"), true);
+  assert.equal(chargeIsStored("PAGO"), true);
+  assert.equal(chargeIsStored("A_VERIFICAR"), false);
+  assert.equal(chargeIsStored("PENDENTE"), false);
 });

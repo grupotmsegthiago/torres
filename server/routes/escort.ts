@@ -9,6 +9,7 @@ import type { Express } from "express";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
   import { fetchBillingsByScheduledWindow } from "../lib/billing-period";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
+  import { isMultilogClient, missingMultilogRefs } from "../../shared/multilog-refs";
 
   import { getHorasElapsedFromDB, calcularFaturamentoLive, calcularEscolta, calcularInicioCobranca, calcularHorasTrabalhadas, computeBillingPayloadForOs, extractKmFromText, splitMissionCostsForBilling } from "../billing-calc";
   import { applyPedagioClientMarkup, osCobraMarkupPedagio } from "../../shared/pedagio-markup";
@@ -2206,7 +2207,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
               payload: {
               ...cancelada.fatFields,
               service_order_id: existing.service_order_id,
-              contract_id: lotSo.escort_contract_id,
+              contract_id: cancelada.contrato?.id || lotSo.escort_contract_id,
               horario_agendado: cancelada.horarios.horario_agendado,
               horario_inicio: cancelada.horarios.horario_inicio,
               horario_fim: cancelada.horarios.horario_fim,
@@ -2217,6 +2218,12 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
                 ipAddress: req.ip,
               },
             });
+            const cancelTotal = Number(cancelada.fatFields.fat_total) || 0;
+            await supabaseAdmin.from("service_orders").update({
+              escort_contract_id: cancelada.contrato.id,
+              valor_estimado: cancelTotal,
+              fat_calculado: cancelTotal,
+            }).eq("id", existing.service_order_id);
             success++;
             continue;
           }
@@ -2486,11 +2493,25 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
         // recálculo. Para cobrar, é preciso reabrir a OS (status concluída) primeiro.
         if (billing.service_order_id) {
           const { data: soRow, error: soRowError } = await supabaseAdmin
-            .from("service_orders").select("status")
+            .from("service_orders").select("id, status, client_id, multilog_os, multilog_sm")
             .eq("id", billing.service_order_id).maybeSingle();
           if (soRowError) throw soRowError;
           if (soRow?.status === "recusada") {
             return res.status(400).json({ message: "OS recusada não pode ser aprovada — o faturamento é sempre R$ 0,00. Reabra a OS (status concluída) antes de aprovar o boletim." });
+          }
+          const { data: clientRow, error: clientError } = await supabaseAdmin
+            .from("clients").select("name").eq("id", soRow?.client_id).maybeSingle();
+          if (clientError) throw clientError;
+          if (isMultilogClient(clientRow?.name)) {
+            const missing = missingMultilogRefs(soRow || {});
+            if (missing.length > 0) {
+              return res.status(400).json({
+                code: "MULTILOG_REFS_REQUIRED",
+                message: `Informe ${missing.join(" e ")} da MULTILOG na OS antes de aprovar a medição.`,
+                serviceOrderId: billing.service_order_id,
+                missing,
+              });
+            }
           }
         }
 

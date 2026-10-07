@@ -249,13 +249,11 @@ export async function sendBoletimEmail(xlsxBuffer: Buffer): Promise<void> {
     ["mariaeduarda.nogueira@omegasolutions.com.br"],
     ["gr.transportes@omegasolutions.com.br"],
   );
-  const bcc = ["thiago@grupotmseg.com.br"];
-
   await transporter.sendMail({
     from,
     to: envelope.to,
     cc: envelope.cc,
-    bcc,
+    bcc: envelope.bcc,
     subject: "Boletim de Medição — Abril/2026 — Torres Vigilância Patrimonial",
     html: `
       <div style="font-family: Arial, sans-serif; color: #333;">

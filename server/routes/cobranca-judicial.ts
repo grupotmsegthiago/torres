@@ -718,7 +718,7 @@ async function sendJudicialEmail(dossie: any, processo: any): Promise<void> {
     from: getSmtpFrom(),
     to: recipients,
     cc: envelope.cc,
-    bcc: ["thiago@grupotmseg.com.br"],
+    bcc: envelope.bcc,
     subject: `[Jurídico] Cobrança judicial — ${inv.client_name} — Fatura #${inv.id}`,
     html,
   });

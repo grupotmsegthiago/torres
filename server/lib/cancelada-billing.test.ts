@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { calcularEscolta } from "../billing-calc";
 import {
   CANCELADA_CLEAN_FINANCIAL_FIELDS,
@@ -111,4 +113,15 @@ test("cancelada limpa resíduos de custos, receitas e pagamentos anteriores", ()
   for (const field of Object.keys(CANCELADA_CLEAN_FINANCIAL_FIELDS)) {
     assert.equal((final as any)[field], 0, `${field} deve ser limpo`);
   }
+});
+
+test("rota calcular alinha contrato 100 km antes da RPC e restaura se a escrita falhar", () => {
+  const source = readFileSync(resolve(process.cwd(), "server/routes/service-orders.ts"), "utf8");
+  const start = source.indexOf('app.post("/api/boletim-medicao/calcular/:osId"');
+  const end = source.indexOf('app.patch("/api/boletim-medicao/os/:id/diretoria-override"', start);
+  const route = source.slice(start, end);
+  const alignAt = route.indexOf(".update({ escort_contract_id: cancelledContractId })");
+  const writeAt = route.indexOf("billing = await writeEscortBillingAtomic");
+  assert.ok(alignAt > 0 && writeAt > alignAt);
+  assert.match(route, /\.update\(\{ escort_contract_id: previousContractId \}\)/);
 });

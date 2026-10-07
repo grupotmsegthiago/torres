@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { invoiceReadyForClientEmail, INVOICE_CLIENT_EMAIL_CC, INVOICE_CLIENT_EMAIL_BCC } from "./invoice-billing-email";
 
-test("e-mail da NF: CC financeiro/adm e BCC thiago", () => {
+test("e-mail da NF: CC da diretoria e BCC thiago", () => {
   assert.deepEqual([...INVOICE_CLIENT_EMAIL_CC], [
-    "financeiro@torresseguranca.com.br",
+    "diretoria@torresseguranca.com.br",
     "adm@torresseguranca.com.br",
+    "financeiro@torresseguranca.com.br",
+    "mickael@torresseguranca.com.br",
   ]);
   assert.deepEqual([...INVOICE_CLIENT_EMAIL_BCC], ["thiago@grupotmseg.com.br"]);
 });

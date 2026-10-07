@@ -144,6 +144,24 @@ test("buildFocusNfsePayload: SP, 07870, ISS sem retenção, discriminacao escolt
   assert.equal("payment" in p, false);
 });
 
+test("buildFocusNfsePayload: discriminação MULTILOG leva OS e SM sem alterar o tomador", () => {
+  const p = buildFocusNfsePayload({
+    value: 3930.58,
+    description: [
+      "Referente aos serviços de Escolta Armada - Período: 16/09/2026 a 30/09/2026 (Setembro/2026)",
+      "OS. 1312",
+      "SM. 41128477",
+    ].join("\n"),
+    prestadorIm: "12345",
+    tomador: tomadorOk,
+    retemInss: true,
+    inssAliquota: 11,
+  });
+  assert.match(p.servico.discriminacao, /OS\. 1312/);
+  assert.match(p.servico.discriminacao, /SM\. 41128477/);
+  assert.equal(p.tomador.cnpj, "07504505000132");
+});
+
 test("buildFocusNfsePayload: tomador fora de SP não envia CCM paulistana", () => {
   const fora = buildFocusNfsePayload({
     value: 550,

@@ -94,6 +94,37 @@ function getWaClient(): SupabaseClient {
   return _waClient;
 }
 
+// Canal só de OS, billing e boletim. O socket geral divide o limite de
+// eventos com o GPS e entra como anônimo, então a RLS engole a alteração
+// da ordem de serviço e o boletim não atualiza.
+let _opsClient: SupabaseClient | null = null;
+
+function getOpsRealtimeClient(): SupabaseClient {
+  if (!_opsClient) {
+    if (!isSupabaseConfigured) {
+      throw new Error("VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set");
+    }
+    _opsClient = createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      realtime: { params: { eventsPerSecond: 20 } },
+    });
+  }
+  return _opsClient;
+}
+
+export const supabaseOpsRealtime: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getOpsRealtimeClient();
+    const value = Reflect.get(client, prop, client);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});
+
+export async function setOpsRealtimeAuth(token: string | null): Promise<void> {
+  const client = getOpsRealtimeClient();
+  await client.realtime.setAuth(token || supabaseAnonKey);
+}
+
 export const supabaseWa: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
     const client = getWaClient();

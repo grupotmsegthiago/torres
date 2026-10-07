@@ -1,3 +1,6 @@
+import { writeEscortBillingAtomic, type AtomicBillingActor } from "./atomic-billing";
+import { isStaleRefusalBilling } from "./recusada-guard";
+
 export const COMMERCIAL_FROZEN_BILLING_STATUSES = new Set([
   "APROVADA",
   "FATURADO",
@@ -92,6 +95,54 @@ export async function billingHasCommercialSnapshot(
     throw new Error(`Falha ao verificar snapshot comercial: ${error.message}`);
   }
   return data === true;
+}
+
+/**
+ * OS concluída não pode continuar com o faturamento zerado da recusa.
+ * Reabre só esse caso, se não estiver em snapshot de boletim.
+ * Cancelada de cliente e billing aprovado/faturado continuam protegidos.
+ */
+export async function prepareConcluidaOfficialWrite(
+  sb: any,
+  billing: {
+    id?: string | number | null;
+    status?: unknown;
+    observacoes?: string | null;
+    lock_version?: number | null;
+    service_order_id?: number | null;
+  } | null | undefined,
+  osStatus: string | null | undefined,
+  serviceOrderId: number,
+  actor?: AtomicBillingActor,
+): Promise<{ write: boolean; expectedVersion: number | null; replacedRefusal: boolean }> {
+  if (!billing?.id) return { write: true, expectedVersion: null, replacedRefusal: false };
+  const version = Number(billing.lock_version) || 0;
+  if (!(await isBillingProtected(sb, billing))) {
+    return { write: true, expectedVersion: version, replacedRefusal: false };
+  }
+  if (!isStaleRefusalBilling(osStatus, billing)) {
+    return { write: false, expectedVersion: version, replacedRefusal: false };
+  }
+  if (await billingHasCommercialSnapshot(sb, billing.id, version)) {
+    return { write: false, expectedVersion: version, replacedRefusal: false };
+  }
+  const reopened = await writeEscortBillingAtomic({
+    action: "REOPEN_CANCELLED",
+    billingId: String(billing.id),
+    serviceOrderId: billing.service_order_id ?? serviceOrderId,
+    expectedVersion: version,
+    payload: { status: "A_VERIFICAR", observacoes: null },
+    actor: {
+      ...actor,
+      reason: actor?.reason || "OS concluída depois da recusa: reabre o faturamento oficial",
+    },
+  }, sb);
+  const nextVersion = Number(reopened?.lock_version ?? reopened?.lockVersion);
+  return {
+    write: true,
+    expectedVersion: Number.isFinite(nextVersion) ? nextVersion : version + 1,
+    replacedRefusal: true,
+  };
 }
 
 export async function isBillingProtected(
