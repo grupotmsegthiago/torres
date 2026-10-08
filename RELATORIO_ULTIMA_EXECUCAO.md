@@ -4,7 +4,7 @@
 **Tarefa:** sincronismo OS → Boletim → Faturamento e referências OS/SM da MULTILOG
 **Branch:** `dev`
 **Ambiente validado:** desenvolvimento conectado ao Supabase configurado localmente
-**PUBLICADO:** **NÃO para a correção de vencimento — publicação anterior em 2026-10-07**
+**PUBLICADO:** **SIM — correção de vencimento publicada em 2026-10-08**
 
 ## 1. Problema e causa raiz
 
@@ -200,6 +200,9 @@ explícito do boletim pendente para gerar novo e-mail/anexo com OS e SM.
 
 ## 11. Publicação
 
+- Correção de vencimento: `eeedda37db72e8722035b3007f1d6f1240d5de1a`
+- Vercel da correção: `Deployment has completed`
+- Deploy da correção: https://vercel.com/grupotmsegs-projects/torres/8DXEdeHtNSZnZKbtfRNQZMriaWUD
 - Commit funcional: `6215e47dfe057a558ca9ffdc9c0313fe45d6cd5c`
 - `dev` e `main`: sincronizadas no commit funcional
 - Vercel: `Deployment has completed`
