@@ -1397,7 +1397,18 @@ export function isManualInvoiceDueDate(invoice: {
   notes?: string | null;
 }): boolean {
   const text = `${invoice.nfse_observations || ""}\n${invoice.notes || ""}`;
-  return /\[Vencimento alterado/i.test(text);
+  return /\[Vencimento (?:alterado|definido na emissão)/i.test(text);
+}
+
+/** Registra que o vencimento foi escolhido no Torres e deve prevalecer no reconcile. */
+export function markInvoiceDueDateFromTorres(
+  existing: string | null | undefined,
+  dueDate: string,
+): string {
+  const current = String(existing || "").trim();
+  const marker = `[Vencimento definido na emissão pelo Torres: ${dueDate}]`;
+  if (/\[Vencimento definido na emissão/i.test(current)) return current;
+  return `${marker}${current ? ` | ${current}` : ""}`.slice(0, 2000);
 }
 
 export type DueDateReconcilePlan =

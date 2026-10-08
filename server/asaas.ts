@@ -85,6 +85,7 @@ import {
   isAsaasNotificationPolicyCompliant,
   buildAsaasNotificationPolicyUpdate,
   isManualInvoiceDueDate,
+  markInvoiceDueDateFromTorres,
   planDueDateReconcile,
   resolveAsaasBaseUrl,
   assertAsaasDate,
@@ -975,6 +976,33 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
   return data;
 }
 
+/**
+ * Cria a cobrança e confirma no próprio Asaas que o boleto manteve exatamente
+ * o vencimento informado no Torres. Se o POST normalizar a data, corrige a
+ * mesma cobrança e valida novamente antes de persistir/enviar o boleto.
+ */
+async function createAsaasPaymentWithDueDate(
+  payload: AsaasPaymentCreatePayload,
+): Promise<any> {
+  const expected = assertAsaasDate(payload.dueDate);
+  let payment = await asaasRequest("POST", "/payments", payload);
+  const paymentId = String(payment?.id || "").trim();
+  if (!paymentId) throw new Error("Asaas criou a cobrança sem retornar o ID do pagamento.");
+
+  let actual = String(payment?.dueDate || "").slice(0, 10);
+  if (actual !== expected) {
+    await asaasRequest("POST", `/payments/${paymentId}`, { dueDate: expected });
+    payment = await asaasRequest("GET", `/payments/${paymentId}`);
+    actual = String(payment?.dueDate || "").slice(0, 10);
+  }
+  if (actual !== expected) {
+    throw new Error(
+      `Asaas não confirmou o vencimento informado no Torres (${expected}); retornou ${actual || "sem data"}.`,
+    );
+  }
+  return payment;
+}
+
 export function getAsaasApiKey(): string | null {
   return resolveAsaasApiKey();
 }
@@ -1333,7 +1361,7 @@ export async function emitInvoiceAuto(
   }
 
   console.log(`[asaas] [auto] Emitindo fatura #${invoiceId} para ${clientName}: bruto=R$${totalValue.toFixed(2)} boleto=R$${boletoValue.toFixed(2)}${retemInss ? ` (INSS retido R$${inssValor.toFixed(2)})` : ""} venc=${dueDate}`);
-  const payment = await asaasRequest("POST", "/payments", paymentPayload);
+  const payment = await createAsaasPaymentWithDueDate(paymentPayload);
   await applyAsaasPaymentEmailPolicy(payment.id);
 
   const updates: any = {
@@ -1341,6 +1369,7 @@ export async function emitInvoiceAuto(
     asaas_payment_id: payment.id,
     client_cpf_cnpj: cpfCnpj,
     due_date: dueDate,
+    nfse_observations: markInvoiceDueDateFromTorres(invoice.nfse_observations, dueDate),
     billing_type: billingType,
     status: payment.status || "PENDING",
     invoice_url: payment.invoiceUrl,
@@ -1837,7 +1866,7 @@ export function registerAsaasRoutes(app: Express) {
         }
 
         try {
-          const payment = await asaasRequest("POST", "/payments", paymentPayload);
+          const payment = await createAsaasPaymentWithDueDate(paymentPayload);
           asaasPaymentId = payment.id;
           await applyAsaasPaymentEmailPolicy(payment.id);
           invoiceUrl = payment.invoiceUrl;
@@ -1896,6 +1925,9 @@ export function registerAsaasRoutes(app: Express) {
         description,
         value: parsedValue,
         due_date: parsedDue,
+        nfse_observations: asaasPaymentId
+          ? markInvoiceDueDateFromTorres(null, parsedDue)
+          : null,
         billing_type: asAsaasBillingType(billingType),
         status,
         invoice_url: invoiceUrl,
@@ -2564,7 +2596,7 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       console.log(`[asaas] Emitindo fatura #${id} para ${clientName}: bruto R$${totalValue.toFixed(2)}${retemInss ? ` − INSS R$${inssValor.toFixed(2)} = boleto R$${boletoValue.toFixed(2)}` : ""} venc=${parsedDue}`);
-      const payment = await asaasRequest("POST", "/payments", paymentPayload);
+      const payment = await createAsaasPaymentWithDueDate(paymentPayload);
       await applyAsaasPaymentEmailPolicy(payment.id);
 
       const updates: any = {
@@ -2572,6 +2604,7 @@ export function registerAsaasRoutes(app: Express) {
         asaas_payment_id: payment.id,
         client_cpf_cnpj: cpfCnpj,
         due_date: parsedDue,
+        nfse_observations: markInvoiceDueDateFromTorres(invoice.nfse_observations, parsedDue),
         billing_type: asAsaasBillingType(billingType),
         status: payment.status || "PENDING",
         invoice_url: payment.invoiceUrl,
@@ -3372,7 +3405,7 @@ export function registerAsaasRoutes(app: Express) {
                 });
               }
               console.log(`[asaas] SPLIT ${idx + 1}/${splits.length} — CNPJ ${splitCnpj}, Valor R$${splitValue.toFixed(2)}. Payload:`, JSON.stringify(payload));
-              const payment = await asaasRequest("POST", "/payments", payload);
+              const payment = await createAsaasPaymentWithDueDate(payload);
               spAsaasPaymentId = payment.id;
               await applyAsaasPaymentEmailPolicy(payment.id);
               spInvoiceUrl = payment.invoiceUrl;
@@ -3413,6 +3446,9 @@ export function registerAsaasRoutes(app: Express) {
             description: splitDescricao,
             value: splitValue,
             due_date: invoiceDueDate,
+            nfse_observations: spAsaasPaymentId
+              ? markInvoiceDueDateFromTorres(null, invoiceDueDate)
+              : null,
             billing_type: billingType || "BOLETO",
             status: spInvoiceStatus,
             invoice_url: spInvoiceUrl,
@@ -3544,7 +3580,7 @@ export function registerAsaasRoutes(app: Express) {
             });
           }
           console.log(`[asaas] PAYLOAD AUDIT — Enviando para Asaas:`, JSON.stringify(consolidadoPayload, null, 2));
-          const payment = await asaasRequest("POST", "/payments", consolidadoPayload);
+          const payment = await createAsaasPaymentWithDueDate(consolidadoPayload);
           asaasPaymentId = payment.id;
           await applyAsaasPaymentEmailPolicy(payment.id);
           invoiceUrl = payment.invoiceUrl;
@@ -3587,6 +3623,9 @@ export function registerAsaasRoutes(app: Express) {
         description: descricaoFiscal,
         value: totalValue,
         due_date: invoiceDueDate,
+        nfse_observations: asaasPaymentId
+          ? markInvoiceDueDateFromTorres(null, invoiceDueDate)
+          : null,
         billing_type: billingType || "BOLETO",
         status: invoiceStatus,
         invoice_url: invoiceUrl,

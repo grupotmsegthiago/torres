@@ -4,7 +4,7 @@
 **Tarefa:** sincronismo OS → Boletim → Faturamento e referências OS/SM da MULTILOG
 **Branch:** `dev`
 **Ambiente validado:** desenvolvimento conectado ao Supabase configurado localmente
-**PUBLICADO:** **SIM — 2026-10-07**
+**PUBLICADO:** **NÃO para a correção de vencimento — publicação anterior em 2026-10-07**
 
 ## 1. Problema e causa raiz
 
@@ -159,6 +159,21 @@ canal operacional, com backoff, reconexão ao voltar a rede e nova assinatura
 quando o canal fecha. As três tabelas estão na publicação
 `supabase_realtime`; smoke real de UPDATE em `service_orders.id=1312` recebeu
 o evento corretamente. Build: PASS.
+
+### Correção complementar — vencimento do boleto Asaas
+
+A data escolhida ao emitir a NF/cobrança agora é a fonte da verdade do
+vencimento. Os cinco caminhos de criação de cobrança usam
+`createAsaasPaymentWithDueDate`: após o `POST /payments`, o Torres compara a
+data retornada pelo Asaas; se divergir, corrige a mesma cobrança e consulta
+novamente antes de persistir ou enviar o boleto. Se o Asaas não confirmar, a
+operação falha com mensagem explícita.
+
+O vencimento inicial também recebe o marcador
+`Vencimento definido na emissão pelo Torres`, fazendo o reconciliador empurrar
+a data local para o Asaas em vez de substituir silenciosamente a data escolhida.
+Auditoria read-only dos 30 boletos mais recentes: nenhuma divergência atual.
+Testes da integração: 119/119 PASS; módulo `server/asaas.ts`: compilação PASS.
 
 ## 8. Riscos e pendências
 

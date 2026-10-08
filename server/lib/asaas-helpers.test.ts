@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   cleanCnpj,
   buildInvoiceDescription,
@@ -83,6 +85,7 @@ import {
   buildAsaasNotificationPolicyUpdate,
   asaasDueDateIfDifferent,
   isManualInvoiceDueDate,
+  markInvoiceDueDateFromTorres,
   planDueDateReconcile,
   resolveAsaasBaseUrl,
   normalizeAsaasUrl,
@@ -1271,7 +1274,22 @@ test("asaasDueDateIfDifferent: só devolve se o boleto Asaas divergir", () => {
 
 test("isManualInvoiceDueDate: marca de alteração de vencimento", () => {
   assert.equal(isManualInvoiceDueDate({ nfse_observations: "[Vencimento alterado por x: 2026-09-18 → 2026-09-01]" }), true);
+  assert.equal(isManualInvoiceDueDate({ nfse_observations: "[Vencimento definido na emissão pelo Torres: 2026-09-18]" }), true);
   assert.equal(isManualInvoiceDueDate({ notes: "Aprovado por TAINA" }), false);
+});
+
+test("markInvoiceDueDateFromTorres: grava fonte sem duplicar histórico", () => {
+  const once = markInvoiceDueDateFromTorres("observação anterior", "2026-10-30");
+  assert.match(once, /Vencimento definido na emissão pelo Torres: 2026-10-30/);
+  assert.match(once, /observação anterior/);
+  assert.equal(markInvoiceDueDateFromTorres(once, "2026-10-30"), once);
+});
+
+test("emissão de boleto: os cinco caminhos confirmam no Asaas o vencimento do Torres", () => {
+  const source = readFileSync(resolve(process.cwd(), "server/asaas.ts"), "utf8");
+  assert.equal((source.match(/await createAsaasPaymentWithDueDate\(/g) || []).length, 5);
+  assert.equal((source.match(/await asaasRequest\("POST", "\/payments",/g) || []).length, 1);
+  assert.match(source, /Asaas não confirmou o vencimento informado no Torres/);
 });
 
 test("planDueDateReconcile: manual empurra Torres→Asaas; automático espelha boleto", () => {
