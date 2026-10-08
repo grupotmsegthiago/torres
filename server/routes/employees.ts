@@ -2,7 +2,7 @@ import type { Express } from "express";
   import { storage, toCamelObj } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria, invalidateAuthCacheByUser } from "../auth";
-  import { insertEmployeeSchema } from "@shared/schema";
+  import { insertEmployeeSchema, type InsertEmployee } from "@shared/schema";
   import * as apibrasil from "../apibrasil";
   import { validateContactFields } from "../lib/normalize-contact";
   import OpenAI from "openai";
@@ -120,7 +120,7 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
     const offset = (page - 1) * limit;
 
-    const EMP_LIST_COLS = "id,name,role,cpf,matricula,pis,phone,email,status,hire_date,cnh_expiry,cnv_expiry,ctps_number,ctps_serie,vacation_expiry,block_type,block_reason,photo_url,tipo_contratacao,category,created_at";
+    const EMP_LIST_COLS = "id,name,role,cpf,matricula,pis,phone,email,status,hire_date,inactivated_at,cnh_expiry,cnv_expiry,ctps_number,ctps_serie,vacation_expiry,block_type,block_reason,photo_url,tipo_contratacao,category,created_at";
 
     let data: any[];
     try {
@@ -316,6 +316,8 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
   app.patch("/api/employees/:id", requireAuth, requireAdminRole, async (req, res) => {
     if (req.user!.role !== "admin" && req.user!.role !== "diretoria") return res.status(403).json({ message: "Acesso negado" });
     const body = { ...req.body };
+    delete body.inactivatedAt;
+    delete body.inactivated_at;
     if ("docGraceUntil" in body && req.user!.role !== "diretoria") {
       return res.status(403).json({ message: "Somente a Diretoria pode liberar prazo para não travar o funcionário." });
     }
@@ -342,7 +344,23 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
       }
       parsed.data.cpf = formatCpfMasked(parsed.data.cpf);
     }
-    const data = await storage.updateEmployee(empId, parsed.data);
+    const updates: Partial<InsertEmployee> = { ...parsed.data };
+    if (parsed.data.status !== undefined) {
+      const { data: atual, error: atualErr } = await supabaseAdmin
+        .from("employees")
+        .select("status")
+        .eq("id", empId)
+        .maybeSingle();
+      if (atualErr) throw atualErr;
+      const novo = String(parsed.data.status || "").trim().toLowerCase();
+      const velho = String(atual?.status || "").trim().toLowerCase();
+      if (novo === "inativo" && velho !== "inativo") {
+        updates.inactivatedAt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      } else if (novo !== "inativo" && velho === "inativo") {
+        updates.inactivatedAt = null;
+      }
+    }
+    const data = await storage.updateEmployee(empId, updates);
     if (!data) return res.status(404).json({ message: "Funcionário não encontrado" });
     console.log(`[emp-debug PATCH ${req.params.id}] saved.rg:`, JSON.stringify((data as any).rg));
     if (parsed.data.cpf) {

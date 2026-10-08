@@ -148,6 +148,8 @@ export const employees = pgTable("employees", {
   pixKey: text("pix_key"),
   photoUrl: text("photo_url"),
   status: text("status").notNull().default("ativo"),
+  /** Dia em que o cadastro passou para inativo. Limpo se voltar a ativo. */
+  inactivatedAt: date("inactivated_at"),
   cnhExpiry: date("cnh_expiry"),
   cnvNumber: text("cnv_number"),
   cnvExpiry: date("cnv_expiry"),

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
@@ -40,6 +41,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link } from "wouter";
 import { maskBRL, parseBRL } from "@/lib/utils";
+import { authFetch, invalidateRelatedQueries, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { GaugeRing } from "@/components/admin/balanco-executivo";
 import {
@@ -50,7 +53,6 @@ import {
   buildFolhaAgentsView,
   buildKnowledgeGraph,
   buildMemoriaCustoFuncionario,
-  buildMemoriaCustos,
   buildMemoriaEficiencia,
   buildMemoriaFaturamento,
   buildMemoriaKm,
@@ -70,7 +72,9 @@ import {
 } from "@/lib/gestor-financeiro";
 import { computeProjection } from "@/lib/balanco-projection";
 import { metaPeriodoFromMensal } from "@shared/balanco-meta";
+import { buildCustosPagosEspelho, buildCustosPorMes, detalheCategoriaPorMes, linhaGasto, ORDEM_PESSOAL, type CategoriaPaga, type LancamentoPago, type LinhaTom, type TxPago } from "@shared/custos-pagos-espelho";
 import { SeloTermometro, TermometroFinanceiroSvg } from "@/components/admin/termometro-financeiro";
+import { gruposNaOrdem, porOrdemCategoria } from "@/lib/category-order";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
@@ -250,6 +254,635 @@ function FatList({
   );
 }
 
+function tomClass(tom: LinhaTom): string {
+  if (tom === "melhoria") return "text-emerald-400";
+  if (tom === "queda") return "text-rose-400";
+  if (tom === "novo") return "text-cyan-300";
+  if (tom === "aguardando") return "text-amber-300";
+  return "text-slate-400";
+}
+
+const PALAVRAS_MENORES = new Set(["de", "da", "do", "das", "dos", "e", "em", "para"]);
+
+function padronizarTexto(valor: string): string {
+  const limpo = valor.trim().replace(/\s+/g, " ");
+  if (!limpo || limpo === "—") return limpo || "—";
+  return limpo.toLocaleLowerCase("pt-BR").split(" ").map((parte, i) => {
+    if (i > 0 && PALAVRAS_MENORES.has(parte)) return parte;
+    return parte.charAt(0).toLocaleUpperCase("pt-BR") + parte.slice(1);
+  }).join(" ");
+}
+
+type JustificativaRow = {
+  id: string;
+  created_at: string;
+  changed_by: string | null;
+  new_value: string | null;
+  target_id?: string;
+  action?: string;
+  metadata?: { lida?: boolean; lida_por?: string | null; lida_em?: string | null; autor_nome?: string | null } | null;
+};
+
+function justificativaPendente(item: JustificativaRow): boolean {
+  return item.metadata?.lida !== true;
+}
+
+function nomeJustificativa(item: JustificativaRow): string {
+  return item.changed_by || item.metadata?.autor_nome || "Sem nome";
+}
+
+function useJustificativas() {
+  return useQuery({
+    queryKey: ["/api/financial/audit-logs", "JUSTIFICATIVA"],
+    queryFn: async () => {
+      const r = await authFetch("/api/financial/audit-logs?target_table=financial_transactions&action=JUSTIFICATIVA&limit=300");
+      const body = await r.json().catch(() => []);
+      if (!r.ok) throw new Error(body?.message || "Não carregou as justificativas.");
+      return (Array.isArray(body) ? body : []) as JustificativaRow[];
+    },
+    staleTime: 30_000,
+  });
+}
+
+async function marcarJustificativaLida(id: string) {
+  const r = await authFetch(`/api/financial/audit-logs/${encodeURIComponent(id)}/lida`, { method: "PATCH" });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body?.message || "Não marcou como lida.");
+  await queryClient.invalidateQueries({ queryKey: ["/api/financial/audit-logs", "JUSTIFICATIVA"] });
+}
+
+const CLASSE_JUSTIFICATIVA = "h-7 px-2 rounded-md text-[10px] font-black uppercase tracking-wide text-amber-950 bg-gradient-to-b from-yellow-200 via-amber-300 to-amber-500 border border-yellow-100 shadow-[0_3px_0_#92400e,inset_0_1px_0_rgba(255,255,255,0.85)] hover:from-yellow-100 active:translate-y-[2px] active:shadow-[0_1px_0_#92400e]";
+
+function fmtQuando(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function mesDaData(valor: unknown): string {
+  const s = String(valor || "").trim();
+  return /^\d{4}-\d{2}/.test(s) ? s.slice(0, 7) : "";
+}
+
+function movimentoFuncionarios(
+  emps: { hireDate?: string | null; inactivatedAt?: string | null }[],
+  chave: string,
+): { entrou: number; saiu: number } {
+  let entrou = 0;
+  let saiu = 0;
+  for (const emp of emps) {
+    if (mesDaData(emp.hireDate) === chave) entrou++;
+    if (mesDaData(emp.inactivatedAt) === chave) saiu++;
+  }
+  return { entrou, saiu };
+}
+
+function partirDescricao(descricao: string): { titulo: string; nomes: string[] } {
+  const idx = descricao.indexOf(":");
+  if (idx < 1) return { titulo: descricao, nomes: [] };
+  const titulo = descricao.slice(0, idx).trim();
+  const nomes = descricao.slice(idx + 1).split(",").map((s) => s.trim()).filter(Boolean);
+  if (nomes.length < 3) return { titulo: descricao, nomes: [] };
+  return { titulo, nomes };
+}
+
+type CategoriaCadastro = { id: string; name: string; parent_name: string | null; type: string; sort_order?: number | null };
+
+function nomeGrupo(cat: CategoriaCadastro | undefined): string {
+  return cat?.parent_name?.trim() || "Sem grupo";
+}
+
+function acharCategoria(cats: CategoriaCadastro[], id?: string, nome?: string): CategoriaCadastro | undefined {
+  if (id) {
+    const porId = cats.find((c) => c.id === id);
+    if (porId) return porId;
+  }
+  const alvo = (nome || "").trim();
+  if (!alvo) return undefined;
+  const iguais = cats.filter((c) => c.name.trim().toLocaleLowerCase("pt-BR") === alvo.toLocaleLowerCase("pt-BR"));
+  return iguais.find((c) => c.name.trim() === alvo) || iguais.find((c) => c.parent_name) || iguais[0];
+}
+
+function LinhaPagamento({
+  l,
+  aberto,
+  onToggle,
+  categorias,
+}: {
+  l: LancamentoPago;
+  aberto: boolean;
+  onToggle: () => void;
+  categorias: CategoriaCadastro[];
+}) {
+  const partes = partirDescricao(l.descricao);
+  const titulo = padronizarTexto(partes.titulo);
+  const entidade = l.entidade ? padronizarTexto(l.entidade) : "";
+  const dataCheia = l.chave && l.chave.length >= 10 ? `${l.data}/${l.chave.slice(0, 4)}` : l.data;
+  const [justOpen, setJustOpen] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [hist, setHist] = useState<JustificativaRow[]>([]);
+  const { data: todasJust = [] } = useJustificativas();
+  const { user } = useAuth();
+  const podeLer = (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br";
+  const doBanco = l.id ? todasJust.filter((item) => item.target_id === l.id) : [];
+  const porIdJust = new Map<string, JustificativaRow>();
+  for (const item of [...doBanco, ...hist]) porIdJust.set(item.id, item);
+  const listaJust = [...porIdJust.values()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  const temJust = listaJust.length > 0;
+  const temPendente = listaJust.some(justificativaPendente);
+  const autorJust = listaJust[0] ? nomeJustificativa(listaJust[0]) : "";
+  const [gravando, setGravando] = useState(false);
+  const [erroJust, setErroJust] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [catLocal, setCatLocal] = useState<{ id: string; name: string; parent: string | null } | null>(null);
+  const [grupoSel, setGrupoSel] = useState("Sem grupo");
+  const [subSel, setSubSel] = useState("");
+  const [gravandoCat, setGravandoCat] = useState(false);
+  const [erroCat, setErroCat] = useState("");
+  const cadastro = catLocal
+    ? { id: catLocal.id, name: catLocal.name, parent_name: catLocal.parent, type: "EXPENSE" }
+    : acharCategoria(categorias, l.categoryId, l.subcategoria);
+  const grupoAtual = nomeGrupo(cadastro);
+  const subAtual = cadastro?.name || l.subcategoria || "Sem subcategoria";
+  const grupos = gruposNaOrdem(categorias.filter((c) => c.type === "EXPENSE"));
+  const filhas = porOrdemCategoria(categorias.filter((c) => c.type === "EXPENSE" && nomeGrupo(c) === grupoSel));
+
+  async function carregarHistorico() {
+    if (!l.id) return;
+    const r = await authFetch(`/api/financial/audit-logs?target_table=financial_transactions&target_id=${encodeURIComponent(l.id)}&limit=50`);
+    const body = await r.json().catch(() => []);
+    if (!r.ok) throw new Error(body?.message || "Não carregou o histórico.");
+    const lista = Array.isArray(body) ? body.filter((item) => item.action === "JUSTIFICATIVA") : [];
+    setHist(lista);
+    await queryClient.invalidateQueries({ queryKey: ["/api/financial/audit-logs", "JUSTIFICATIVA"] });
+  }
+
+  async function abrirJustificativa() {
+    setErroJust("");
+    setJustOpen((v) => !v);
+    if (justOpen || !l.id) return;
+    try {
+      await carregarHistorico();
+    } catch (err) {
+      setErroJust(err instanceof Error ? err.message : "Não carregou o histórico.");
+    }
+  }
+
+  function abrirEdicao() {
+    const atual = acharCategoria(categorias, catLocal?.id || l.categoryId, catLocal?.name || l.subcategoria);
+    const grupo = nomeGrupo(atual);
+    setGrupoSel(grupo);
+    setSubSel(atual?.id || "");
+    setErroCat("");
+    setEditOpen((v) => !v);
+  }
+
+  async function salvarCategoria() {
+    if (!l.id || !subSel) return;
+    setGravandoCat(true);
+    setErroCat("");
+    try {
+      const r = await authFetch(`/api/financial/transactions/${encodeURIComponent(l.id)}/categoria`, {
+        method: "PATCH",
+        body: JSON.stringify({ category_id: subSel }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body?.message || "Não alterou a categoria.");
+      setCatLocal({ id: String(body.category_id || subSel), name: String(body.category_name || ""), parent: body.parent_name || null });
+      setEditOpen(false);
+      invalidateRelatedQueries("financial");
+    } catch (err) {
+      setErroCat(err instanceof Error ? err.message : "Não alterou a categoria.");
+    } finally {
+      setGravandoCat(false);
+    }
+  }
+
+  async function salvarJustificativa() {
+    if (!l.id) return;
+    setGravando(true);
+    setErroJust("");
+    try {
+      const r = await authFetch(`/api/financial/transactions/${encodeURIComponent(l.id)}/justificativa`, {
+        method: "POST",
+        body: JSON.stringify({ texto }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body?.message || "Não gravou a justificativa.");
+      setTexto("");
+      await carregarHistorico();
+    } catch (err) {
+      setErroJust(err instanceof Error ? err.message : "Não gravou a justificativa.");
+    } finally {
+      setGravando(false);
+    }
+  }
+
+  return (
+    <div className="border border-slate-800 rounded-lg px-3 py-2 hover:bg-slate-900/70" data-testid="linha-pagamento">
+      <div className="flex justify-between gap-3 items-start">
+        <button type="button" onClick={onToggle} className="min-w-0 flex-1 text-left">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-rose-300">Saiu · {dataCheia}</p>
+          <p className="text-[13px] font-semibold text-slate-100 whitespace-normal break-words">{titulo}</p>
+          {entidade ? <p className="text-[11px] text-slate-400">{entidade}</p> : null}
+          <p className="text-[11px] text-slate-300" data-testid="texto-categoria-lancamento">
+            <span className="text-slate-500">Categoria</span> {padronizarTexto(grupoAtual)}
+            <span className="text-slate-500"> · Subcategoria</span> {padronizarTexto(subAtual)}
+          </p>
+          {partes.nomes.length > 0 && !aberto ? (
+            <p className="text-[10px] font-bold uppercase tracking-wide text-cyan-300">{partes.nomes.length} nomes · clique para abrir</p>
+          ) : null}
+        </button>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <span className="font-mono text-[13px] font-black text-slate-100">{fmt(l.valor)}</span>
+          {l.id ? (
+            <div className="flex gap-1">
+              <button type="button" onClick={abrirEdicao} className="h-7 px-2 rounded-md border border-slate-600 text-[10px] font-black uppercase tracking-wide text-slate-200 hover:bg-slate-800" data-testid="button-editar-categoria">
+                Editar
+              </button>
+              <button type="button" onClick={abrirJustificativa} className={temJust ? CLASSE_JUSTIFICATIVA : "h-7 px-2 rounded-md border border-slate-600 text-[10px] font-black uppercase tracking-wide text-slate-200 hover:bg-slate-800"} data-testid="button-justificativa">
+                Justificativa{temJust ? ` (${listaJust.length})` : ""}{temPendente ? " · pendente" : ""}
+              </button>
+            </div>
+          ) : null}
+          {temJust ? <p className="text-[9px] font-black uppercase tracking-wide text-amber-300">por {autorJust}</p> : null}
+        </div>
+      </div>
+      {editOpen ? (
+        <div className="mt-2 space-y-2 border-t border-slate-800 pt-2" data-testid="painel-editar-categoria">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Categoria</span>
+              <select
+                value={grupoSel}
+                onChange={(e) => {
+                  const grupo = e.target.value;
+                  setGrupoSel(grupo);
+                  const primeira = categorias.find((c) => c.type === "EXPENSE" && nomeGrupo(c) === grupo);
+                  setSubSel(primeira?.id || "");
+                }}
+                className="mt-1 h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-[12px] text-slate-100"
+              >
+                {grupos.map((g) => <option key={g} value={g}>{padronizarTexto(g)}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Subcategoria</span>
+              <select value={subSel} onChange={(e) => setSubSel(e.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-[12px] text-slate-100">
+                <option value="">Selecione</option>
+                {filhas.map((c) => <option key={c.id} value={c.id}>{padronizarTexto(c.name)}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] text-slate-500">{erroCat || "A alteração entra no contas a pagar, no contas a receber e nas outras telas deste lançamento."}</p>
+            <button type="button" disabled={gravandoCat || !subSel} onClick={salvarCategoria} className="h-7 px-3 rounded-md bg-white text-slate-950 text-[10px] font-black uppercase disabled:opacity-40">
+              {gravandoCat ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {justOpen ? (
+        <div className="mt-2 space-y-2 border-t border-slate-800 pt-2" data-testid="painel-justificativa">
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            rows={3}
+            maxLength={2000}
+            placeholder="Por que este pagamento foi feito assim?"
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-[12px] text-slate-100 placeholder:text-slate-600"
+          />
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] text-slate-500">{erroJust || "O histórico fica gravado neste lançamento."}</p>
+            <button type="button" disabled={gravando || texto.trim().length < 3} onClick={salvarJustificativa} className="h-7 px-3 rounded-md bg-white text-slate-950 text-[10px] font-black uppercase disabled:opacity-40">
+              {gravando ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+          {listaJust.length > 0 ? (
+            <div className="space-y-1">
+              {listaJust.map((item) => (
+                <div key={item.id} className="rounded-md border border-slate-800 px-2 py-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    {fmtQuando(item.created_at)} · {nomeJustificativa(item)}
+                    {justificativaPendente(item) ? " · pendente" : ` · lida por ${item.metadata?.lida_por || "Thiago"}`}
+                  </p>
+                  <p className="text-[12px] text-slate-200 whitespace-normal break-words">{item.new_value}</p>
+                  {podeLer && justificativaPendente(item) ? (
+                    <button type="button" onClick={() => marcarJustificativaLida(item.id).catch((err) => setErroJust(err instanceof Error ? err.message : "Não marcou como lida."))} className="mt-1 h-7 px-2 rounded-md bg-white text-slate-950 text-[10px] font-black uppercase" data-testid="button-justificativa-lida">
+                      Marcar como lida
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500">Nenhuma justificativa ainda.</p>
+          )}
+        </div>
+      ) : null}
+      {aberto ? (
+        <div className="mt-2 space-y-1.5 border-t border-slate-800 pt-2">
+          {partes.nomes.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {partes.nomes.map((n, i) => (
+                <span key={`${n}-${i}`} className="rounded bg-slate-800 px-1.5 py-0.5 text-[11px] text-slate-200">{padronizarTexto(n)}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="whitespace-normal break-words text-[12px] text-slate-300">{padronizarTexto(l.descricao)}</p>
+          )}
+          <p className="text-[10px] uppercase tracking-wide text-slate-500">
+            {l.categoria}
+            {l.vencimento ? ` · vencimento ${l.vencimento}` : ""}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GrupoPagamentos({
+  titulo,
+  itens,
+  aberto,
+  setAberto,
+  prefixo,
+  categorias,
+}: {
+  titulo: string;
+  itens: LancamentoPago[];
+  aberto: string | null;
+  setAberto: (v: string | null) => void;
+  prefixo: string;
+  categorias: CategoriaCadastro[];
+}) {
+  const soma = itens.reduce((s, l) => s + l.valor, 0);
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{titulo} · {itens.length} lançamento(s) · {fmt(soma)}</p>
+      {itens.length === 0 ? <p className="text-slate-500">Nenhum pagamento nesse período.</p> : itens.map((l, i) => {
+        const id = `${prefixo}-${l.chave}-${i}`;
+        return (
+          <LinhaPagamento
+            key={id}
+            l={l}
+            aberto={aberto === id}
+            onToggle={() => setAberto(aberto === id ? null : id)}
+            categorias={categorias}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function useCategoriasCadastro(): CategoriaCadastro[] {
+  const { data } = useQuery({
+    queryKey: ["/api/financial/categories"],
+    queryFn: async () => {
+      const r = await authFetch("/api/financial/categories");
+      const body = await r.json().catch(() => []);
+      if (!r.ok) throw new Error(body?.message || "Não carregou as categorias.");
+      return (Array.isArray(body) ? body : []) as CategoriaCadastro[];
+    },
+    staleTime: 60_000,
+  });
+  return data || [];
+}
+
+function DetalheCategoriaDialog({
+  categoria,
+  onOpenChange,
+  rows,
+  ano,
+  meses,
+}: {
+  categoria: string | null;
+  onOpenChange: (v: boolean) => void;
+  rows: TxPago[];
+  ano: number;
+  meses: number[];
+}) {
+  const [aberto, setAberto] = useState<string | null>(null);
+  const categorias = useCategoriasCadastro();
+  const pessoal = !!categoria && (ORDEM_PESSOAL as readonly string[]).includes(categoria);
+  const { data: cadastroFuncionarios = [] } = useQuery<{ hireDate?: string | null; inactivatedAt?: string | null }[]>({
+    queryKey: ["/api/employees", "movimento-cadastro"],
+    enabled: pessoal,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const todos: { hireDate?: string | null; inactivatedAt?: string | null }[] = [];
+      for (let page = 1; page <= 20; page++) {
+        const r = await authFetch(`/api/employees?page=${page}&limit=100`);
+        const body = await r.json().catch(() => []);
+        if (!r.ok) throw new Error(body?.message || "Não carregou o cadastro de funcionários.");
+        const rows = Array.isArray(body) ? body : [];
+        todos.push(...rows);
+        if (rows.length < 100) break;
+      }
+      return todos;
+    },
+  });
+  const blocos = useMemo(
+    () => (categoria ? detalheCategoriaPorMes(rows, ano, meses, categoria) : []),
+    [categoria, rows, ano, meses],
+  );
+  const total = blocos.reduce((s, b) => s + b.total, 0);
+  const qtd = blocos.reduce((s, b) => s + b.itens.length, 0);
+  useEffect(() => { setAberto(null); }, [categoria]);
+  return (
+    <Dialog open={!!categoria} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl bg-slate-950 border-slate-700 text-slate-100" data-testid="dialog-detalhe-categoria">
+        <DialogHeader>
+          <DialogTitle className="text-base font-black tracking-tight text-slate-50">{categoria}</DialogTitle>
+          <DialogDescription className="text-[12px] text-slate-400">
+            Tudo que já foi pago nessa categoria, de março até o mês atual. Clique num lançamento para abrir a descrição. Justificativa grava o histórico no banco.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {blocos.map((b, i) => {
+              const anterior = i > 0 ? blocos[i - 1] : null;
+              const leitura = anterior ? linhaGasto(b.total, anterior.total) : null;
+              const piorou = leitura?.tom === "queda" || leitura?.tom === "novo";
+              const melhorou = leitura?.tom === "melhoria" || leitura?.tom === "aguardando";
+              const mov = pessoal ? movimentoFuncionarios(cadastroFuncionarios, b.chave) : { entrou: 0, saiu: 0 };
+              return (
+                <div key={b.chave} className="rounded-lg border border-slate-700 p-2" data-testid="card-mes-categoria">
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{b.nome}</p>
+                    {piorou ? <p className="text-[9px] font-black uppercase text-rose-400 shrink-0">↑ piorou</p> : null}
+                    {melhorou ? <p className="text-[9px] font-black uppercase text-emerald-400 shrink-0">↓ melhorou</p> : null}
+                  </div>
+                  <p className="font-mono text-[13px] font-black text-rose-300">{fmt(b.total)}</p>
+                  {mov.entrou > 0 ? <p className="text-[9px] font-bold leading-tight text-amber-300">Aumentou ({mov.entrou}) funcionários</p> : null}
+                  {mov.saiu > 0 ? <p className="text-[9px] font-bold leading-tight text-emerald-300">Diminuiu ({mov.saiu}) funcionários</p> : null}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-slate-400">{qtd} lançamento(s) · total {fmt(total)}</p>
+          {blocos.filter((b) => b.itens.length > 0).map((b) => (
+            <GrupoPagamentos key={b.chave} titulo={b.nome} itens={b.itens} aberto={aberto} setAberto={setAberto} prefixo={b.chave} categorias={categorias} />
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CustosEspelhoDialog({
+  open,
+  onOpenChange,
+  espelho,
+  catSel,
+  setCatSel,
+  tipo,
+  setTipo,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  espelho: ReturnType<typeof buildCustosPagosEspelho> | null;
+  catSel: string;
+  setCatSel: (v: string) => void;
+  tipo: "Saiu" | "Entrou" | "Tudo";
+  setTipo: (v: "Saiu" | "Entrou" | "Tudo") => void;
+}) {
+  const [aberto, setAberto] = useState<string | null>(null);
+  const categorias = useCategoriasCadastro();
+  const detalheRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { setAberto(null); }, [catSel, tipo]);
+  useEffect(() => {
+    if (open && catSel !== "Todas") detalheRef.current?.scrollIntoView({ block: "nearest" });
+  }, [open, catSel]);
+  if (!espelho) return null;
+  const linhas = [...espelho.categorias, ...espelho.aguardando];
+  const cat = linhas.find((c) => c.nome === catSel) || null;
+  const mesmoDia = espelho.lancamentosComparacao.filter((l) => catSel !== "Todas" && l.categoria === catSel && l.janela === "mesmo-dia");
+  const restoMes = espelho.lancamentosComparacao.filter((l) => catSel !== "Todas" && l.categoria === catSel && l.janela === "resto");
+  const lanc = espelho.lancamentos.filter((l) => {
+    if (tipo !== "Tudo" && l.tipo !== tipo) return false;
+    if (catSel !== "Todas" && l.categoria !== catSel) return false;
+    return true;
+  });
+  const saldoSel = lanc.reduce((s, l) => s + (l.tipo === "Entrou" ? l.valor : -l.valor), 0);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl bg-slate-950 border-slate-700 text-slate-100" data-testid="dialog-memoria-custos-pagos">
+        <DialogHeader>
+          <DialogTitle className="text-slate-50">Memória de cálculo — Custos totais</DialogTitle>
+          <DialogDescription className="text-slate-400">
+            Espelho da categoria do contas a pagar. Só o que já está pago. Dia {espelho.dia}.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-xs max-h-[75vh] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="rounded-lg border border-slate-700 p-2">
+              <p className="text-slate-500 font-bold uppercase">Saiu até o dia {espelho.dia}</p>
+              <p className="font-mono font-black text-rose-300">{fmt(espelho.saiuHoje)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700 p-2">
+              <p className="text-slate-500 font-bold uppercase">Mesmo dia · mês passado</p>
+              <p className="font-mono font-black text-slate-100">{fmt(espelho.saiuMesmoDia)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700 p-2">
+              <p className="text-slate-500 font-bold uppercase">Total pago no mês passado</p>
+              <p className="font-mono font-black text-slate-100">{fmt(espelho.saiuMes)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700 p-2">
+              <p className="text-slate-500 font-bold uppercase">Linha do mesmo dia</p>
+              <p className={`font-black ${tomClass(espelho.tom)}`}>{espelho.linha}</p>
+            </div>
+          </div>
+          <p className="font-mono text-emerald-300/90">
+            Saldo até o dia {espelho.dia}: {fmt(espelho.saldoHoje)} · mesmo dia {fmt(espelho.saldoMesmoDia)} · mês passado fechado {fmt(espelho.saldoMes)}. Entrou {fmt(espelho.entrouHoje)}.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-slate-500 uppercase text-[9px]">
+                  <th className="text-left font-black py-1">Categoria</th>
+                  <th className="text-right font-black">Até hoje</th>
+                  <th className="text-right font-black">Mesmo dia</th>
+                  <th className="text-right font-black">Mês passado</th>
+                  <th className="text-right font-black">Já é</th>
+                  <th className="text-left font-black pl-2">Linha</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((c, i) => {
+                  const pessoal = (ORDEM_PESSOAL as readonly string[]).includes(c.nome);
+                  const anteriorPessoal = i > 0 && (ORDEM_PESSOAL as readonly string[]).includes(linhas[i - 1].nome);
+                  const abreOutras = !pessoal && (i === 0 || anteriorPessoal);
+                  return (
+                  <tr
+                    key={c.nome}
+                    className={`border-t border-slate-800 cursor-pointer hover:bg-slate-900 ${catSel === c.nome ? "bg-slate-900" : ""}`}
+                    onClick={() => { setCatSel(c.nome); setTipo("Saiu"); }}
+                  >
+                    <td className="py-1 text-slate-200">
+                      {abreOutras ? <span className="block text-[9px] font-black uppercase tracking-wide text-slate-500 pt-2">Outras despesas</span> : null}
+                      {c.nome}
+                    </td>
+                    <td className="text-right font-mono">{fmt(c.out)}</td>
+                    <td className="text-right font-mono text-slate-300">{fmt(c.dia)}</td>
+                    <td className="text-right font-mono text-slate-300">{fmt(c.mes)}</td>
+                    <td className="text-right font-mono">{c.jae == null ? "—" : fmtPct(c.jae * 100)}</td>
+                    <td className={`pl-2 font-bold ${tomClass(c.tom)}`}>{c.linha}</td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-slate-500">Já é = pago até hoje dividido pelo total pago nessa categoria no mês passado. Conta que ainda não caiu neste dia não entra como melhoria.</p>
+          <div className="flex flex-wrap gap-1">
+            {(["Saiu", "Entrou", "Tudo"] as const).map((op) => (
+              <button key={op} type="button" onClick={() => { setTipo(op); if (op !== "Saiu") setCatSel("Todas"); }} className={`px-2 py-0.5 rounded-full border text-[10px] font-black uppercase ${tipo === op ? "bg-slate-100 text-slate-950 border-slate-100" : "border-slate-600 text-slate-300"}`}>{op}</button>
+            ))}
+            <button type="button" onClick={() => { setCatSel("Todas"); setTipo("Saiu"); }} className={`px-2 py-0.5 rounded-full border text-[10px] font-black uppercase ${catSel === "Todas" ? "bg-slate-100 text-slate-950 border-slate-100" : "border-slate-600 text-slate-300"}`}>Todas</button>
+            {espelho.categorias.map((c) => (
+              <button key={c.nome} type="button" onClick={() => { setCatSel(c.nome); setTipo("Saiu"); }} className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${catSel === c.nome ? "bg-slate-100 text-slate-950 border-slate-100" : "border-slate-600 text-slate-300"}`}>{c.nome}</button>
+            ))}
+          </div>
+          {cat ? (
+            <div ref={detalheRef} className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 space-y-3" data-testid="detalhe-categoria">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-black text-slate-50">{cat.nome}</p>
+                <p className={`text-[11px] font-black uppercase ${tomClass(cat.tom)}`}>{cat.linha}</p>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                <div>
+                  <p className="text-[9px] font-black uppercase text-slate-500">Até hoje</p>
+                  <p className="font-mono font-black text-rose-300">{fmt(cat.out)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase text-slate-500">Mesmo dia</p>
+                  <p className="font-mono font-black">{fmt(cat.dia)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase text-slate-500">Mês passado</p>
+                  <p className="font-mono font-black">{fmt(cat.mes)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase text-slate-500">Já é</p>
+                  <p className="font-mono font-black">{cat.jae == null ? "—" : fmtPct(cat.jae * 100)}</p>
+                </div>
+              </div>
+              <GrupoPagamentos titulo={`Pago até o dia ${espelho.dia}`} itens={lanc} aberto={aberto} setAberto={setAberto} prefixo="hoje" categorias={categorias} />
+              <GrupoPagamentos titulo="Mesmo período no mês passado" itens={mesmoDia} aberto={aberto} setAberto={setAberto} prefixo="mesmo" categorias={categorias} />
+              <GrupoPagamentos titulo="Depois desse dia, no mês passado" itens={restoMes} aberto={aberto} setAberto={setAberto} prefixo="resto" categorias={categorias} />
+            </div>
+          ) : (
+            <GrupoPagamentos titulo="Lançamentos" itens={lanc} aberto={aberto} setAberto={setAberto} prefixo="lista" categorias={categorias} />
+          )}
+          <p className="text-[10px] text-slate-500">{lanc.length} lançamento(s) até o dia {espelho.dia} · saldo da seleção {fmt(saldoSel)}</p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function GestorFinanceiroPanel(props: Props) {
   const {
     periodLabel, daysInPeriod, costDays, period, totals, missions, vehicles, agents, rhSummary, allEmployees,
@@ -259,6 +892,9 @@ export function GestorFinanceiroPanel(props: Props) {
   } = props;
 
   const { toast } = useToast();
+  const { user } = useAuth();
+  const podeLerJustificativa = (user?.email || "").toLowerCase() === "thiago@grupotmseg.com.br";
+  const { data: justificativas = [] } = useJustificativas();
   const [showMetaDialog, setShowMetaDialog] = useState(false);
   const [metaDraft, setMetaDraft] = useState("");
 
@@ -278,6 +914,30 @@ export function GestorFinanceiroPanel(props: Props) {
   const today = new Date();
   const pad2 = (x: number) => String(x).padStart(2, "0");
   const todayBRT = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const [showEspelho, setShowEspelho] = useState(false);
+  const [catDetalhe, setCatDetalhe] = useState<string | null>(null);
+  const [catSel, setCatSel] = useState("Todas");
+  const [tipoPago, setTipoPago] = useState<"Saiu" | "Entrou" | "Tudo">("Saiu");
+  const { data: pagosRaw, isLoading: pagosLoading, isError: pagosError } = useQuery({
+    queryKey: ["/api/financial/transactions", "PAID", "espelho-custos"],
+    queryFn: async () => {
+      const r = await authFetch("/api/financial/transactions?status=PAID&from=2026-01-01&to=2026-12-31");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+  const espelho = useMemo(
+    () => (Array.isArray(pagosRaw) ? buildCustosPagosEspelho(pagosRaw, todayBRT) : null),
+    [pagosRaw, todayBRT],
+  );
+  const anoCustos = today.getFullYear();
+  const mesesCustos = Array.from({ length: Math.max(0, today.getMonth() + 1 - 2) }, (_, i) => i + 3).join(",");
+  const mesesNum = useMemo(() => mesesCustos.split(",").filter(Boolean).map(Number), [mesesCustos]);
+  const porMes = useMemo(
+    () => (Array.isArray(pagosRaw) ? buildCustosPorMes(pagosRaw, anoCustos, mesesNum) : null),
+    [pagosRaw, anoCustos, mesesNum],
+  );
   const elapsed = Math.max(1, Math.floor((Math.min(today.getTime(), rangeEnd.getTime()) - rangeStart.getTime()) / 86400000) + 1);
   const isPast = today > rangeEnd;
   const realizadoFat = missions.filter((m: any) => !m.data || m.data <= todayBRT).reduce((a: number, m: any) => a + (m.fat_total || 0), 0);
@@ -502,6 +1162,44 @@ export function GestorFinanceiroPanel(props: Props) {
         </div>
       </div>
 
+      {(() => {
+        const pendentes = justificativas.filter(justificativaPendente);
+        if (pendentes.length === 0) return null;
+        const porLancamento = new Map((Array.isArray(pagosRaw) ? pagosRaw : []).map((tx) => [String(tx.id || ""), tx]));
+        return (
+          <div className="rounded-2xl border border-amber-400/60 bg-gradient-to-b from-amber-400/20 to-amber-700/10 p-3 shadow-[0_4px_0_#92400e]" data-testid="aviso-justificativa-pendente">
+            <p className="text-[11px] font-black uppercase tracking-wide text-amber-100">
+              {pendentes.length} justificativa{pendentes.length === 1 ? "" : "s"} pendente{pendentes.length === 1 ? "" : "s"}
+            </p>
+            <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
+              {pendentes.slice(0, 8).map((item) => {
+                const tx = porLancamento.get(String(item.target_id || ""));
+                const titulo = tx?.description ? padronizarTexto(String(tx.description)) : "Lançamento";
+                return (
+                  <div key={item.id} className="flex items-start justify-between gap-2 rounded-lg border border-amber-300/30 bg-slate-950/50 px-2 py-1.5">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-200">{fmtQuando(item.created_at)} · por {nomeJustificativa(item)}</p>
+                      <p className="text-[12px] text-slate-100 whitespace-normal break-words">{titulo}</p>
+                      <p className="text-[12px] text-amber-50 whitespace-normal break-words">{item.new_value}</p>
+                    </div>
+                    {podeLerJustificativa ? (
+                      <button
+                        type="button"
+                        onClick={() => marcarJustificativaLida(item.id).catch((err) => toast({ title: "Não marcou como lida", description: err instanceof Error ? err.message : "", variant: "destructive" }))}
+                        className="shrink-0 h-7 px-2 rounded-md bg-white text-slate-950 text-[10px] font-black uppercase"
+                        data-testid="button-justificativa-lida-balanco"
+                      >
+                        Marcar como lida
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* REGRA Nº 1 — gate de módulos */}
       <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3" data-testid="gate-modulos">
         <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
@@ -723,11 +1421,12 @@ export function GestorFinanceiroPanel(props: Props) {
         </div>
       )}
 
-      {/* Linha 1 — 6 KPIs */}
+      {/* Linha 1 — 4 quadros do mesmo tamanho: fat+margem, custos, lucro, eficiência+km */}
       {showKpis ? (
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3" data-testid="kpi-row-gestor">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(240px,300px)_minmax(0,1fr)] gap-3 items-start" data-testid="kpi-row-gestor">
+        <div className="flex flex-col gap-3">
         {/* FATURAMENTO */}
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-2" data-testid="kpi-faturamento">
+        <div className="h-full flex flex-col gap-2 rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3" data-testid="kpi-faturamento">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black uppercase text-slate-400">Faturamento</span>
             <Target size={14} className="text-emerald-400" />
@@ -766,48 +1465,8 @@ export function GestorFinanceiroPanel(props: Props) {
           </Button>
         </div>
 
-        {/* CUSTOS */}
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-2" data-testid="kpi-custos">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Custos Totais</span>
-            <Activity size={14} className="text-rose-400" />
-          </div>
-          <p className="text-lg font-black font-mono text-rose-300">{fmt(totals.custoTotal)}</p>
-          {[
-            ["RH (Custo Empresa CCT — cadastro)", totals.provisaoRH, "bg-amber-400"],
-            ["Fixos", totals.custosFixosRateados, "bg-violet-400"],
-            ["Combustível (abastecimento)", totals.desp_combustivel, "bg-orange-400"],
-            ["Pedágio (Ticketlog)", totals.desp_pedagio, "bg-yellow-400"],
-            ["Manutenção", totals.desp_manutencao, "bg-pink-400"],
-          ].map(([label, val, bar]) => (
-            <div key={String(label)} className="space-y-0.5">
-              <div className="flex justify-between text-[10px]">
-                <span className="text-slate-400 font-bold">{label}</span>
-                <span className="font-mono text-slate-200">{fmt(Number(val))}</span>
-              </div>
-              <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
-                <div className={`h-full ${bar}`} style={{ width: `${totals.custoTotal > 0 ? Math.min(100, (Number(val) / totals.custoTotal) * 100) : 0}%` }} />
-              </div>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() => { setOverlayHoverId(folhaAgents[0]?.id ?? null); setShowFolhaOverlay(true); }}
-            className="w-full text-left text-[10px] font-black uppercase text-amber-300 hover:text-amber-200 underline underline-offset-2"
-            data-testid="link-ver-funcionarios-rh"
-          >
-            → Ver todos os funcionários da folha ({folhaAgents.length})
-          </button>
-          <p className="text-[9px] text-slate-500">
-            Soma das barras = custo da DRE. Mão de obra entra só pela folha RH. Pedágio = custo real Ticketlog lançado em Pedágio: Pago × Cobrado.
-          </p>
-          <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaCustos(gestorInput))} data-testid="button-memoria-custos">
-            Ver memória de cálculo
-          </Button>
-        </div>
-
         {/* LUCRO */}
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-2" data-testid="kpi-lucro">
+        <div className="h-full flex flex-col gap-2 rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3" data-testid="kpi-lucro">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black uppercase text-slate-400">Lucro Líquido</span>
             {totals.lucro >= 0 ? <TrendingUp size={14} className="text-sky-400" /> : <TrendingDown size={14} className="text-rose-400" />}
@@ -819,51 +1478,13 @@ export function GestorFinanceiroPanel(props: Props) {
           <p className="text-[10px] text-slate-500">Financeiro <b className="font-mono text-slate-400">{fmt(0)}</b> <span className="normal-case font-normal">(sem lançamento separado no motor)</span></p>
           <p className="text-[10px] text-slate-400">Acumulado no período <b className="font-mono text-slate-200">{fmt(lucroAcumulado)}</b></p>
           <p className={`text-[10px] font-bold ${tend.delta >= 0 ? "text-emerald-400" : "text-rose-300"}`}>{tend.label}</p>
-          <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaLucro(gestorInput))}>
+          <Button size="sm" variant="outline" className="mt-auto w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaLucro(gestorInput))}>
             Ver memória de cálculo
           </Button>
         </div>
 
-        {/* MARGEM */}
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-2" data-testid="kpi-margem">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Margem</span>
-            <Gauge size={14} className="text-cyan-400" />
-          </div>
-          <div className="flex items-center gap-3">
-            <GaugeRing pct={Math.max(0, totals.margem)} color={totals.margem >= 35 ? "#34d399" : "#fbbf24"} label="Atual" size={72} stroke={7} />
-            <div>
-              <p className="text-2xl font-black font-mono text-cyan-300">{fmtPct(totals.margem)}</p>
-              <p className="text-[10px] text-slate-500 font-bold">Meta 35%</p>
-              <p className={`text-[10px] font-black uppercase ${totals.margem >= 35 ? "text-emerald-400" : "text-amber-300"}`}>
-                {totals.margem >= 35 ? "Na meta" : "Abaixo da meta"}
-              </p>
-              <p className="text-[10px] text-slate-500">Tendência: ver gráfico Margem × Meta</p>
-            </div>
-          </div>
-          <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaMargem(gestorInput))}>
-            Ver memória de cálculo
-          </Button>
-        </div>
-
-        {/* KM */}
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-1.5" data-testid="kpi-km">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">KM Rodado</span>
-            <Fuel size={14} className="text-indigo-300" />
-          </div>
-          <p className="text-xl font-black font-mono text-indigo-300">{fmtN(totals.km)} <span className="text-sm">km</span></p>
-          <p className="text-[10px] text-slate-400">Média/dia <b className="text-slate-200 font-mono">{fmtN(totals.km / Math.max(daysInPeriod, 1))}</b></p>
-          <p className="text-[10px] text-slate-400">Média/missão <b className="text-slate-200 font-mono">{fmtN(totals.total > 0 ? totals.km / totals.total : 0)}</b></p>
-          <p className="text-[10px] text-slate-400">Custo/KM <b className="text-slate-200 font-mono">{fmt(custoKm)}</b></p>
-          <p className="text-[10px] text-slate-400">Combustível <b className="text-orange-300 font-mono">{fmt(totals.desp_combustivel)}</b></p>
-          <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaKm(gestorInput))}>
-            Ver memória de cálculo
-          </Button>
-        </div>
-
-        {/* EFICIÊNCIA */}
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-1.5" data-testid="kpi-eficiencia">
+        {/* EFICIÊNCIA + KM — um quadro só, eficiência em cima */}
+        <div className="h-full flex flex-col gap-1.5 rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3" data-testid="kpi-eficiencia">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black uppercase text-slate-400">Eficiência</span>
             <Gauge size={14} className="text-emerald-300" />
@@ -890,6 +1511,94 @@ export function GestorFinanceiroPanel(props: Props) {
             )}
           </div>
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaEficiencia(gestorInput))}>
+            Ver memória de cálculo
+          </Button>
+          <div className="mt-auto border-t border-slate-800 pt-2 space-y-1.5" data-testid="kpi-km">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">KM Rodado</span>
+              <Fuel size={14} className="text-indigo-300" />
+            </div>
+            <p className="text-xl font-black font-mono text-indigo-300">{fmtN(totals.km)} <span className="text-sm">km</span></p>
+            <p className="text-[10px] text-slate-400">Média/dia <b className="text-slate-200 font-mono">{fmtN(totals.km / Math.max(daysInPeriod, 1))}</b></p>
+            <p className="text-[10px] text-slate-400">Média/missão <b className="text-slate-200 font-mono">{fmtN(totals.total > 0 ? totals.km / totals.total : 0)}</b></p>
+            <p className="text-[10px] text-slate-400">Custo/KM <b className="text-slate-200 font-mono">{fmt(custoKm)}</b></p>
+            <p className="text-[10px] text-slate-400">Combustível <b className="text-orange-300 font-mono">{fmt(totals.desp_combustivel)}</b></p>
+            <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaKm(gestorInput))}>
+              Ver memória de cálculo
+            </Button>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-2" data-testid="kpi-margem">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase text-slate-400">Margem</span>
+            <Gauge size={14} className="text-cyan-400" />
+          </div>
+          <div className="flex items-center gap-3">
+            <GaugeRing pct={Math.max(0, totals.margem)} color={totals.margem >= 35 ? "#34d399" : "#fbbf24"} label="Atual" size={64} stroke={6} />
+            <div>
+              <p className="text-2xl font-black font-mono text-cyan-300">{fmtPct(totals.margem)}</p>
+              <p className="text-[10px] text-slate-500 font-bold">Meta 35%</p>
+              <p className={`text-[10px] font-black uppercase ${totals.margem >= 35 ? "text-emerald-400" : "text-amber-300"}`}>
+                {totals.margem >= 35 ? "Na meta" : "Abaixo da meta"}
+              </p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" className="w-full h-7 text-[10px] font-black uppercase border-slate-600" onClick={() => setMemoria(buildMemoriaMargem(gestorInput))}>
+            Ver memória de cálculo
+          </Button>
+        </div>
+        </div>
+        <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3 space-y-2 min-w-0" data-testid="kpi-custos">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase text-slate-400">Custos Totais · {anoCustos}</span>
+            <Activity size={14} className="text-rose-400" />
+          </div>
+          {pagosError && <p className="text-[10px] text-rose-300">Não carregou o contas a pagar.</p>}
+          {!porMes && <p className="text-lg font-black font-mono text-rose-300">{pagosLoading ? "…" : "—"}</p>}
+          {porMes && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px]">
+                <thead>
+                  <tr className="text-slate-500 uppercase text-[9px]">
+                    <th className="sticky left-0 bg-slate-950 text-left font-black py-1 pr-3">Categoria</th>
+                    {porMes.meses.map((m) => (
+                      <th key={m.chave} className="text-right font-black px-1 whitespace-nowrap">{m.nome}</th>
+                    ))}
+                  </tr>
+                  <tr className="border-t border-slate-800">
+                    <td className="sticky left-0 bg-slate-950 py-1 pr-3 font-black uppercase text-slate-400">Total pago</td>
+                    {porMes.meses.map((m) => (
+                      <td key={m.chave} className="text-right font-mono font-black text-rose-300 px-1">{fmt(m.total)}</td>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {porMes.linhas.map((l, i) => {
+                    const abreOutras = !l.pessoal && (i === 0 || porMes.linhas[i - 1].pessoal);
+                    return (
+                      <tr key={l.nome} className="group border-t border-slate-800 cursor-pointer" onClick={() => setCatDetalhe(l.nome)} data-testid="linha-categoria-custo">
+                        <td className="sticky left-0 bg-slate-950 group-hover:bg-slate-900 py-1 pr-3 text-slate-300 font-bold whitespace-nowrap">
+                          {abreOutras ? <span className="block text-[9px] font-black uppercase tracking-wide text-slate-500 pt-2">Outras despesas</span> : null}
+                          {l.nome}
+                        </td>
+                        {l.valores.map((v, mi) => {
+                          const anterior = mi > 0 ? l.valores[mi - 1] : null;
+                          const seta = anterior == null || anterior <= 0 && v <= 0 ? "" : v > anterior * 1.05 ? "↑" : v < anterior * 0.95 ? "↓" : "";
+                          const cor = seta === "↓" ? "text-emerald-400" : seta === "↑" ? "text-rose-300" : "text-slate-400";
+                          return (
+                            <td key={porMes.meses[mi].chave} className="text-right font-mono px-1 whitespace-nowrap group-hover:bg-slate-900">
+                              <span className={cor}>{seta ? `${seta} ` : ""}{fmt(v)}</span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <Button size="sm" className="w-full h-7 text-[10px] font-black uppercase bg-white text-slate-950 hover:bg-slate-100" onClick={() => setShowEspelho(true)} data-testid="button-memoria-custos">
             Ver memória de cálculo
           </Button>
         </div>
@@ -1141,6 +1850,22 @@ export function GestorFinanceiroPanel(props: Props) {
         onOpenChange={(v) => !v && setMemoria(null)}
         memoria={memoria}
         fatExtra={memoria?.indicator === "Faturamento" ? fatBreakdown : null}
+      />
+      <DetalheCategoriaDialog
+        categoria={catDetalhe}
+        onOpenChange={(v) => !v && setCatDetalhe(null)}
+        rows={Array.isArray(pagosRaw) ? pagosRaw : []}
+        ano={anoCustos}
+        meses={mesesNum}
+      />
+      <CustosEspelhoDialog
+        open={showEspelho}
+        onOpenChange={setShowEspelho}
+        espelho={espelho}
+        catSel={catSel}
+        setCatSel={setCatSel}
+        tipo={tipoPago}
+        setTipo={setTipoPago}
       />
 
       <Dialog open={!!finding} onOpenChange={(v) => !v && setFinding(null)}>

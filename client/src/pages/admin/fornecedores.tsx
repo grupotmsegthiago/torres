@@ -12,6 +12,7 @@ import {
   MapPin, Briefcase, Users, BadgeCheck, AlertTriangle, Tag,
 } from "lucide-react";
 import { CategoryManagerModal, type FinancialCategory } from "@/components/admin/CategoryManagerModal";
+import { porOrdemCategoria } from "@/lib/category-order";
 import { BulkFixContactsDialog } from "@/components/admin/bulk-fix-contacts-dialog";
 import { getContactIssues, summarizeContactIssues } from "@shared/contact-validation";
 
@@ -608,11 +609,10 @@ function FornecedorFormModal({ editing, onClose }: { editing: Fornecedor | null;
               >
                 <option value="">Selecione...</option>
                 {Object.entries(groupedCategories)
-                  .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
+                  .sort(([, a], [, b]) => Math.min(...a.map((c) => c.sort_order ?? 1_000_000)) - Math.min(...b.map((c) => c.sort_order ?? 1_000_000)))
                   .map(([parent, cats]) => (
                     <optgroup key={parent} label={parent}>
-                      {cats
-                        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+                      {porOrdemCategoria(cats)
                         .map(c => (
                           <option key={c.id} value={c.name}>{c.name}</option>
                         ))}

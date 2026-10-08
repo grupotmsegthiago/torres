@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Tag, Plus, Trash2, Loader2, X } from "lucide-react";
+import { gruposNaOrdem, porOrdemCategoria } from "@/lib/category-order";
 
 export type CategoryTransactionType = "INCOME" | "EXPENSE";
 
@@ -16,6 +17,7 @@ export interface FinancialCategory {
   tag: string | null;
   scope: string | null;
   parent_name: string | null;
+  sort_order?: number | null;
 }
 
 const GROUP_OPTIONS = [
@@ -48,13 +50,9 @@ export function CategoryManagerModal({
   const [newSubType, setNewSubType] = useState<CategoryTransactionType>(initialType);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const parents = Array.from(new Set(
-    allCategories.filter(c => c.parent_name).map(c => c.parent_name as string)
-  )).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const parents = gruposNaOrdem(allCategories);
 
-  const subcategories = allCategories
-    .filter(c => c.parent_name === selectedParent)
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const subcategories = porOrdemCategoria(allCategories.filter(c => c.parent_name === selectedParent));
 
   const createParentMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/financial/categories", {

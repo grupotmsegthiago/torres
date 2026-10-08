@@ -46,8 +46,9 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
   // Financial Categories
   app.get("/api/financial/categories", requireAdminRole, async (req, res) => {
     try {
-      const { data, error } = await supabaseAdmin.from("financial_categories").select("*").order("name");
-      if (error) throw error;
+      const data = await fetchAllSupabaseRows((from, to) =>
+        supabaseAdmin.from("financial_categories").select("*").order("sort_order", { ascending: true, nullsFirst: false }).order("name").order("id").range(from, to),
+      );
       // Dedup defensivo: a tabela tem 50+ registros duplicados (mesmo
       // type+parent_name+name, IDs diferentes) por causa de boots antigos
       // que executavam ensureCategoryHierarchy sem check de duplicidade.
@@ -61,7 +62,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
         const existing = seen.get(k);
         if (!existing || String(c.id) < String(existing.id)) seen.set(k, c);
       }
-      res.json([...seen.values()]);
+      res.json([...seen.values()].sort((a, b) => (a.sort_order ?? 1_000_000) - (b.sort_order ?? 1_000_000)));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -85,6 +86,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
       if (dup) {
         return res.status(409).json({ message: `Categoria "${name}" já existe nesse grupo`, existingId: dup.id });
       }
+      const { data: ultima } = await supabaseAdmin.from("financial_categories").select("sort_order").order("sort_order", { ascending: false }).limit(1).maybeSingle();
       const { data, error } = await supabaseAdmin.from("financial_categories").insert({
         name, type, group,
         recurrence_type: recurrence_type || "VARIAVEL",
@@ -92,6 +94,7 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
         scope: scope || "EMPRESA",
         is_deduction: is_deduction || false,
         parent_name: parent_name || null,
+        sort_order: Number(ultima?.sort_order || 0) + 1,
       }).select().single();
       if (error) throw error;
       res.json(data);
@@ -1031,12 +1034,110 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
     }
   });
 
+  app.post("/api/financial/transactions/:id/justificativa", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const texto = String(req.body?.texto || "").trim().replace(/\s+/g, " ");
+      if (texto.length < 3) return res.status(400).json({ message: "Escreva a justificativa." });
+      if (texto.length > 2000) return res.status(400).json({ message: "A justificativa passa de 2000 caracteres." });
+      const { data: tx, error: txErr } = await supabaseAdmin.from("financial_transactions").select("id").eq("id", req.params.id).maybeSingle();
+      if (txErr) throw txErr;
+      if (!tx) return res.status(404).json({ message: "Lançamento não encontrado." });
+      const { data, error } = await supabaseAdmin.from("financial_audit_logs").insert({
+        target_table: "financial_transactions",
+        target_id: String(req.params.id),
+        action: "JUSTIFICATIVA",
+        field_name: "justificativa",
+        new_value: texto,
+        changed_by: user.name || user.email || "sistema",
+        changed_by_id: user.id || null,
+        reason: texto,
+        metadata: { autor_nome: user.name || user.email || "sistema", lida: false },
+      }).select("id, created_at, changed_by, new_value, metadata, target_id").single();
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/financial/transactions/:id/categoria", requireAdminRole, async (req, res) => {
+    try {
+      const user = req.user!;
+      const categoryId = String(req.body?.category_id || "").trim();
+      if (!categoryId) return res.status(400).json({ message: "Escolha a subcategoria." });
+      const { data: existing, error: txErr } = await supabaseAdmin
+        .from("financial_transactions")
+        .select("id, type, category_id, category_name")
+        .eq("id", req.params.id)
+        .maybeSingle();
+      if (txErr) throw txErr;
+      if (!existing) return res.status(404).json({ message: "Lançamento não encontrado." });
+      const { data: cat, error: catErr } = await supabaseAdmin
+        .from("financial_categories")
+        .select("id, name, type, parent_name")
+        .eq("id", categoryId)
+        .maybeSingle();
+      if (catErr) throw catErr;
+      if (!cat?.name) return res.status(404).json({ message: "Subcategoria não encontrada." });
+      if (existing.type && cat.type && existing.type !== cat.type) {
+        return res.status(400).json({ message: "A subcategoria não é do mesmo tipo do lançamento." });
+      }
+      const { data, error } = await supabaseAdmin.from("financial_transactions").update({
+        category_id: cat.id,
+        category_name: cat.name,
+        updated_by: user.name || user.email || "sistema",
+      }).eq("id", req.params.id).select("id, category_id, category_name").single();
+      if (error) throw error;
+      await logFinancialAudit("financial_transactions", String(req.params.id), "UPDATE", [
+        { field: "category_id", old: existing.category_id, new_val: cat.id },
+        { field: "category_name", old: existing.category_name, new_val: cat.name },
+      ], user.name || user.email || "sistema", user.id, "Categoria alterada no balanço");
+      res.json({ ...data, parent_name: cat.parent_name || null });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/financial/audit-logs/:id/lida", requireAuth, requireThiago, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { data: existing, error: chkErr } = await supabaseAdmin
+        .from("financial_audit_logs")
+        .select("id, action, metadata")
+        .eq("id", req.params.id)
+        .maybeSingle();
+      if (chkErr) throw chkErr;
+      if (!existing || existing.action !== "JUSTIFICATIVA") {
+        return res.status(404).json({ message: "Justificativa não encontrada." });
+      }
+      const nowBrt = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T");
+      const metadata = {
+        ...(existing.metadata || {}),
+        lida: true,
+        lida_em: nowBrt,
+        lida_por: user.name || "Thiago",
+      };
+      const { data, error } = await supabaseAdmin
+        .from("financial_audit_logs")
+        .update({ metadata })
+        .eq("id", req.params.id)
+        .select("id, created_at, changed_by, new_value, metadata, target_id")
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/financial/audit-logs", requireAdminRole, async (req, res) => {
     try {
-      const { target_table, target_id, limit: lim } = req.query as any;
+      const { target_table, target_id, action, limit: lim } = req.query as any;
       let query = supabaseAdmin.from("financial_audit_logs").select("*").order("created_at", { ascending: false }).limit(Number(lim) || 100);
       if (target_table) query = query.eq("target_table", target_table);
       if (target_id) query = query.eq("target_id", target_id);
+      if (action) query = query.eq("action", action);
       const { data, error } = await query;
       if (error) throw error;
       res.json(data || []);

@@ -29,6 +29,7 @@ import {
 import html2canvas from "html2canvas";
 import { filterTransactionsByPeriod, brtTodayStr } from "@shared/financeiroPeriod";
 import { isLancamentoPedagioVigilante } from "@shared/pedagio-markup";
+import { gruposNaOrdem, porOrdemCategoria } from "@/lib/category-order";
 
 type TransactionType = "INCOME" | "EXPENSE";
 type TransactionStatus = "PENDING" | "PAID" | "CANCELLED" | "AGUARDANDO_APROVACAO" | "RECUSADA";
@@ -228,6 +229,7 @@ interface FinancialCategory {
   tag: string | null;
   scope: string | null;
   parent_name: string | null;
+  sort_order?: number | null;
 }
 
 interface FinancialAccount {
@@ -546,9 +548,9 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
               </div>
               <select required className="w-full p-2.5 border border-neutral-200 rounded-lg text-xs bg-white uppercase font-bold" value={categoryId} onChange={e => setCategoryId(e.target.value)} data-testid="select-category">
                 <option value="">Selecione...</option>
-                {Object.entries(groupedCategories).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([parent, cats]) => (
+                {Object.entries(groupedCategories).sort(([, a], [, b]) => Math.min(...a.map((c) => c.sort_order ?? 1_000_000)) - Math.min(...b.map((c) => c.sort_order ?? 1_000_000))).map(([parent, cats]) => (
                   <optgroup key={parent} label={parent}>
-                    {cats.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map(c => (
+                    {porOrdemCategoria(cats).map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </optgroup>
@@ -904,13 +906,9 @@ function CategoryManagerModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Derive parent categories from data
-  const parents = Array.from(new Set(
-    allCategories.filter(c => c.parent_name).map(c => c.parent_name as string)
-  )).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const parents = gruposNaOrdem(allCategories);
 
-  const subcategories = allCategories
-    .filter(c => c.parent_name === selectedParent)
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const subcategories = porOrdemCategoria(allCategories.filter(c => c.parent_name === selectedParent));
 
   const createParentMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/financial/categories", {
@@ -2029,6 +2027,39 @@ export default function FinanceiroPage() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const [selecionadosAprovacao, setSelecionadosAprovacao] = useState<Set<string>>(new Set());
+  const checkboxTodosRef = useRef<HTMLInputElement>(null);
+  const aprovarLoteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      let ok = 0;
+      const falhas: string[] = [];
+      for (let i = 0; i < ids.length; i += 8) {
+        const lote = ids.slice(i, i + 8);
+        await Promise.all(lote.map(async (id) => {
+          try {
+            await apiRequest("PATCH", `/api/financial/transactions/${id}/aprovar`);
+            ok += 1;
+          } catch (err) {
+            falhas.push(err instanceof Error ? err.message : "Falha ao aprovar");
+          }
+        }));
+      }
+      return { ok, falhas };
+    },
+    onSuccess: ({ ok, falhas }) => {
+      invalidateRelatedQueries("financial");
+      setSelecionadosAprovacao(new Set());
+      if (ok > 0 && falhas.length === 0) {
+        toast({ title: ok === 1 ? "1 lançamento aprovado" : `${ok} lançamentos aprovados` });
+      } else if (ok > 0) {
+        toast({ title: `${ok} aprovado(s)`, description: `${falhas.length} não entrou: ${falhas[0]}`, variant: "destructive" });
+      } else {
+        toast({ title: "Nenhum lançamento aprovado", description: falhas[0], variant: "destructive" });
+      }
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
   const aprovarSerieMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PATCH", `/api/financial/transactions/${id}/aprovar-serie`),
     onSuccess: (data: any) => {
@@ -2238,6 +2269,20 @@ export default function FinanceiroPage() {
     return t.type === "EXPENSE" && t.status === "PENDING" && faltaAprovacaoDiretoria(t) && !isDespesaExcluidaContasPagar(t);
   }), [periodFilteredTransactions]);
   const totalAguardando = useMemo(() => aguardandoAprovacao.reduce((s, t) => s + Number(t.amount || 0), 0), [aguardandoAprovacao]);
+  useEffect(() => {
+    const vivos = new Set(aguardandoAprovacao.map((t) => t.id));
+    setSelecionadosAprovacao((prev) => {
+      const next = new Set([...prev].filter((id) => vivos.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [aguardandoAprovacao]);
+  const marcadosAprovacao = aguardandoAprovacao.filter((t) => selecionadosAprovacao.has(t.id));
+  const totalMarcados = marcadosAprovacao.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const todosMarcados = aguardandoAprovacao.length > 0 && marcadosAprovacao.length === aguardandoAprovacao.length;
+  useEffect(() => {
+    const el = checkboxTodosRef.current;
+    if (el) el.indeterminate = marcadosAprovacao.length > 0 && !todosMarcados;
+  }, [marcadosAprovacao.length, todosMarcados]);
   const recusados = useMemo(() => periodFilteredTransactions.filter(t => t.status === "RECUSADA"), [periodFilteredTransactions]);
 
   const filteredByStep = useMemo(() => {
@@ -3399,9 +3444,30 @@ export default function FinanceiroPage() {
         {(activeStep === "PAGAR" || activeStep === "RECEBER") && renderPagarReceber()}
         {activeStep === "AGUARDANDO" && (
           <div className="rounded-[28px] border border-white bg-gradient-to-b from-neutral-100 via-neutral-50 to-neutral-200/70 p-3 shadow-[0_28px_60px_-32px_rgba(15,23,42,0.55),inset_0_1px_0_rgba(255,255,255,0.9)]" data-testid="table-aguardando">
-            <div className="mb-3 px-4 py-3 rounded-2xl bg-white/90 border border-amber-100 shadow-[0_10px_24px_-18px_rgba(180,83,9,0.45),inset_0_1px_0_#fff] flex items-center gap-2">
+            <div className="mb-3 px-4 py-3 rounded-2xl bg-white/90 border border-amber-100 shadow-[0_10px_24px_-18px_rgba(180,83,9,0.45),inset_0_1px_0_#fff] flex items-center gap-2 flex-wrap">
               <AlertTriangle size={16} className="text-amber-700" />
               <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Aguardando aprovação da diretoria — {aguardandoAprovacao.length} lançamento(s)</h3>
+              {isThiagoAprovador && aguardandoAprovacao.length > 0 && (
+                <button
+                  type="button"
+                  disabled={marcadosAprovacao.length === 0 || aprovarLoteMutation.isPending}
+                  onClick={() => {
+                    const n = marcadosAprovacao.length;
+                    if (confirm(`Aprovar ${n} lançamento(s) marcado(s)?\n\nTotal: ${formatCurrency(totalMarcados)}`)) {
+                      aprovarLoteMutation.mutate(marcadosAprovacao.map((t) => t.id));
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase flex items-center gap-1 disabled:opacity-40"
+                  data-testid="button-aprovar-selecionados"
+                >
+                  <CheckCircle2 size={12} /> {aprovarLoteMutation.isPending ? "Aprovando..." : `Aprovar selecionados${marcadosAprovacao.length ? ` (${marcadosAprovacao.length})` : ""}`}
+                </button>
+              )}
+              {isThiagoAprovador && marcadosAprovacao.length > 0 && (
+                <span className="text-[10px] font-black uppercase tracking-wide text-emerald-800" data-testid="text-total-selecionados">
+                  {marcadosAprovacao.length} marcado(s) · {formatCurrency(totalMarcados)}
+                </span>
+              )}
               {aguardandoAprovacao.length > 0 && (
                 <span className="ml-auto text-xs font-black text-amber-900 uppercase tracking-widest" data-testid="text-total-aguardando-header">
                   Total: {formatCurrency(totalAguardando)}
@@ -3412,6 +3478,19 @@ export default function FinanceiroPage() {
               <table className="min-w-full w-max text-left border-separate border-spacing-y-2 whitespace-nowrap">
                 <thead>
                   <tr className="text-[10px] font-black uppercase tracking-widest [&>th]:bg-neutral-900 [&>th]:text-white [&>th]:shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_18px_-14px_rgba(0,0,0,0.7)] [&>th:first-child]:rounded-l-2xl [&>th:last-child]:rounded-r-2xl">
+                    {isThiagoAprovador && (
+                      <th className="px-3 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={todosMarcados}
+                          ref={checkboxTodosRef}
+                          onChange={(e) => setSelecionadosAprovacao(e.target.checked ? new Set(aguardandoAprovacao.map((t) => t.id)) : new Set())}
+                          aria-label="Selecionar todos"
+                          data-testid="checkbox-aprovar-todos"
+                          className="h-4 w-4 accent-green-600"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3">Solicitado em</th>
                     <th className="px-4 py-3">Vencimento</th>
                     <th className="px-4 py-3">Título</th>
@@ -3424,12 +3503,30 @@ export default function FinanceiroPage() {
                 </thead>
                 <tbody>
                   {aguardandoAprovacao.length === 0 ? (
-                    <tr><td colSpan={8} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
+                    <tr><td colSpan={isThiagoAprovador ? 9 : 8} className="p-12 text-center text-neutral-400 italic font-bold uppercase text-sm">Nenhum lançamento aguardando aprovação</td></tr>
                   ) : aguardandoAprovacao.map(t => {
                     const isSeries = !!t.installment_group && (t.installment_total || 0) > 1;
                     const pendingInSeries = isSeries ? aguardandoAprovacao.filter(x => x.installment_group === t.installment_group).length : 0;
+                    const marcado = selecionadosAprovacao.has(t.id);
                     return (
-                    <tr key={t.id} className="relative hover:z-20 [&>td]:bg-white [&>td]:border-y [&>td]:border-white [&>td:first-child]:rounded-l-2xl [&>td:first-child]:border-l [&>td:last-child]:rounded-r-2xl [&>td:last-child]:border-r [&>td]:shadow-[0_10px_18px_-16px_rgba(15,23,42,0.7)] hover:[&>td]:shadow-[0_16px_28px_-16px_rgba(15,23,42,0.55)]" data-testid={`row-aguardando-${t.id}`}>
+                    <tr key={t.id} className={`relative hover:z-20 [&>td]:border-y [&>td]:border-white [&>td:first-child]:rounded-l-2xl [&>td:first-child]:border-l [&>td:last-child]:rounded-r-2xl [&>td:last-child]:border-r [&>td]:shadow-[0_10px_18px_-16px_rgba(15,23,42,0.7)] hover:[&>td]:shadow-[0_16px_28px_-16px_rgba(15,23,42,0.55)] ${marcado ? "[&>td]:bg-emerald-50" : "[&>td]:bg-white"}`} data-testid={`row-aguardando-${t.id}`}>
+                      {isThiagoAprovador && (
+                        <td className="px-3 py-3">
+                          <input
+                            type="checkbox"
+                            checked={marcado}
+                            onChange={() => setSelecionadosAprovacao((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(t.id)) next.delete(t.id);
+                              else next.add(t.id);
+                              return next;
+                            })}
+                            aria-label={`Selecionar ${t.description}`}
+                            data-testid={`checkbox-aprovar-${t.id}`}
+                            className="h-4 w-4 accent-green-600"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-500">{new Date(t.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                       <td className="px-4 py-3 text-xs font-mono font-bold text-neutral-700">{new Date(t.due_date).toLocaleDateString("pt-BR", { timeZone: "UTC" })}</td>
                       <td className="px-4 py-3 relative hover:z-30"><LancamentoTitulo description={t.description} notes={t.notes} entityName={t.entity_name} /></td>
