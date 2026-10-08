@@ -4,7 +4,7 @@
 **Tarefa:** sincronismo OS → Boletim → Faturamento e referências OS/SM da MULTILOG
 **Branch:** `dev`
 **Ambiente validado:** desenvolvimento conectado ao Supabase configurado localmente
-**PUBLICADO:** **NÃO**
+**PUBLICADO:** **SIM — 2026-10-07**
 
 ## 1. Problema e causa raiz
 
@@ -164,7 +164,7 @@ o evento corretamente. Build: PASS.
 
 - Approval #136 e seu e-mail antigo continuam históricos; reenvio é ação
   explícita ainda pendente.
-- Produção ainda não possui os campos/código; não publicar sem autorização.
+- Produção recebeu o código no commit `6215e47d`.
 - A suíte geral precisa ter o script `npm test` portável e as falhas
   preexistentes saneadas separadamente.
 - A detecção de cliente permanece por nome contendo `MULTILOG`, regra já
@@ -180,6 +180,14 @@ Não apagar snapshot, billing ou histórico.
 
 ## 10. Próximo passo
 
-Revisão humana do fluxo financeiro e, após autorização, publicação controlada.
-Depois do deploy, reenviar explicitamente o boletim Multilog pendente para que o
-novo e-mail/anexo contenha OS e SM.
+Validar no navegador de produção o Realtime, o bloqueio Multilog e o reenvio
+explícito do boletim pendente para gerar novo e-mail/anexo com OS e SM.
+
+## 11. Publicação
+
+- Commit funcional: `6215e47dfe057a558ca9ffdc9c0313fe45d6cd5c`
+- `dev` e `main`: sincronizadas no commit funcional
+- Vercel: `Deployment has completed`
+- Deploy: https://vercel.com/grupotmsegs-projects/torres/nH6gm61Fh9sNENqajRUZaTnCA52A
+- Migrações Multilog, vencimento e policy Realtime já constavam aplicadas no
+  Supabase hospedado antes do deploy; não houve reaplicação manual.
