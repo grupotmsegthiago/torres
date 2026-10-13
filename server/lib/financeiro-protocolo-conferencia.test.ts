@@ -43,4 +43,30 @@ describe("protocolo de assinatura + conferido diretoria", () => {
     assert.match(ui, /Conferido \(diretoria\)/);
     assert.match(ui, /handleUploadDoc\(t\.id, "protocolo"\)/);
   });
+
+  it("listagem de contas a pagar anexa protocolo mesmo depois de pago ou aprovado", () => {
+    const ui = readFileSync(path.join(root, "client/src/pages/admin/financeiro.tsx"), "utf8");
+    const start = ui.indexOf("{/* 4 — PROTOCOLO DE ASSINATURA");
+    const end = ui.indexOf("cell-dir-", start);
+    assert.ok(start >= 0 && end > start, "bloco 4-PROT da listagem não encontrado");
+    const block = ui.slice(start, end);
+    assert.match(block, /<button[\s\S]*handleUploadDoc\(t\.id, "protocolo"\)/);
+    assert.match(block, /badge-prot-pend-/);
+    assert.match(block, /4-PROT \?/);
+    assert.doesNotMatch(block, /<span[\s\S]*badge-prot-pend-/);
+    assert.doesNotMatch(block, /entra em Aguardando aprovação/);
+    assert.match(ui, /também pode anexar depois na listagem/);
+    assert.match(ui, /data-testid="text-protocolo-depois-listagem"/);
+  });
+
+  it("API de protocolo não exige fila de aprovação", () => {
+    const escort = readFileSync(path.join(root, "server/routes/escort.ts"), "utf8");
+    const start = escort.indexOf('app.post("/api/financial/transactions/:id/protocolo"');
+    const end = escort.indexOf('app.get("/api/financial/transactions/:id/protocolo-url"');
+    assert.ok(start >= 0 && end > start);
+    const block = escort.slice(start, end);
+    assert.match(block, /canEditTransactionDocs/);
+    assert.doesNotMatch(block, /AGUARDANDO_APROVACAO/);
+    assert.doesNotMatch(block, /status\s*[!=]==/);
+  });
 });

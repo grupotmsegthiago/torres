@@ -812,7 +812,7 @@ function TransactionFormModal({ onClose, editingTransaction, categories, account
                       </span>
                     )}
                   </div>
-                  <p className="text-[9px] font-bold text-neutral-400 mt-1">Foto das contas assinadas. Anexe agora ou na fila de Aguardando aprovação, antes da diretoria liberar.</p>
+                  <p className="text-[9px] font-bold text-neutral-400 mt-1" data-testid="text-protocolo-depois-listagem">Foto das contas assinadas. Opcional neste momento — também pode anexar depois na listagem.</p>
                 </div>
               )}
 
@@ -2636,11 +2636,13 @@ export default function FinanceiroPage() {
                         ) : (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="Após pagamento" data-testid={`badge-comp-na-${t.id}`}>3-COMP —</span>
                         )}
-                        {/* 4 — PROTOCOLO DE ASSINATURA */}
+                        {/* 4 — PROTOCOLO DE ASSINATURA
+                            Anexa nesta listagem, inclusive Pago e Aprovado.
+                            A fila Aguardando é atalho. Não trocar este botão por texto. */}
                         {t.protocolo_url ? (
                           <button onClick={() => openDoc(t.id, "protocolo")} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" title="Protocolo anexado" data-testid={`badge-prot-ok-${t.id}`}>4-PROT ✓</button>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-neutral-100 text-neutral-400 border border-neutral-200" title="O protocolo de assinatura entra em Aguardando aprovação" data-testid={`badge-prot-pend-${t.id}`}>4-PROT —</span>
+                          <button onClick={() => canEditDocs(t) ? handleUploadDoc(t.id, "protocolo") : blockDocEdit()} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200" title={canEditDocs(t) ? "Anexar protocolo de assinatura" : "Sem permissão para anexar"} data-testid={`badge-prot-pend-${t.id}`}>4-PROT ?</button>
                         )}
                       </div>
                     ) : (

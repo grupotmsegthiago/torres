@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-10-13 — Protocolo de assinatura de volta na listagem
+
+- O botão **4-PROT ?** da listagem de contas a pagar voltou. Lançamento pago ou aprovado volta a aceitar a foto das contas assinadas.
+- A fila Aguardando aprovação continua com o atalho. A API não exige essa fila.
+- O teste antigo só procurava a função em qualquer lugar do arquivo e deixou a mudança de 01/10 passar. Agora o teste exige o botão dentro da coluna Conferência.
+
 ## 2026-10-03 — Gestão: e-mail ou CPF só para admin/diretoria
 
 - Aba Gestão aceita e-mail **ou** CPF.
