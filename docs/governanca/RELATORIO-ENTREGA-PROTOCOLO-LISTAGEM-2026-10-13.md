@@ -3,7 +3,7 @@
 **Data:** 2026-10-13
 **Branch:** `cursor/restore-protocolo-listagem-880f`
 **Ambiente validado:** [x] local (teste de contrato)  [ ] preview  [ ] produção
-**Publicou?** [x] Não
+**Publicou?** [x] Sim — fluxo `publicar.ps1` (merge `dev` → `main` e push), a pedido do dono em 13/10/2026.
 
 ### Reutilização (D11 / P13)
 - Busca: `protocolo`, `4-PROT`, `handleUploadDoc`, `badge-prot-pend`, `POST /api/financial/transactions/:id/protocolo`.
@@ -60,7 +60,7 @@ A Juliana volta a anexar o protocolo na mesma linha do lançamento, inclusive qu
 - Commit anterior da `main` no momento da branch.
 
 ### Deploy
-- Não publicado. A Vercel só recebe quando houver pedido explícito de publicação.
+- Publicado a pedido do dono em 13/10/2026. A Vercel faz o deploy da `main`.
 
 ### Pendências
 - Conferir na tela logada, no ticket de pedágio da Juliana, que o `4-PROT ?` abre o seletor de arquivo. Este ambiente não tem login do financeiro.
