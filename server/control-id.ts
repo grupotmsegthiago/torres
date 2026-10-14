@@ -1595,6 +1595,9 @@ export async function buildFolhaStats(
   ).toFixed(2);
 
   // ===== Faturamento das OSs em que o funcionário participou no mês =====
+  // Margem do agente NÃO usa cegamente resultado_liquido do billing: esse campo
+  // pode carregar combustível fantasma (TOR-0783 / L002). Recalcula com
+  // mission_costs via computeMargemAgenteFromBilling (fat comercial intacto).
   let faturamentoBruto = 0;
   let faturamentoEmpregado = 0;
   let faturamentoOsCount = 0;
@@ -1617,17 +1620,33 @@ export async function buildFolhaStats(
 
     const osIds = (osRows || []).map((o: any) => o.id);
     if (osIds.length > 0) {
-      const { data: billRows } = await supabaseAdmin
-        .from("escort_billings")
-        .select("service_order_id, fat_total, resultado_liquido, desp_total")
-        .in("service_order_id", osIds);
+      const [{ data: billRows }, { data: mcRows }] = await Promise.all([
+        supabaseAdmin
+          .from("escort_billings")
+          .select("service_order_id, fat_total, resultado_liquido, desp_total, despesas_combustivel, despesas_pedagio, despesas_outras, pag_vrp, pag_periculosidade, pag_adicional_noturno, pag_reembolsos, pag_total")
+          .in("service_order_id", osIds),
+        supabaseAdmin
+          .from("mission_costs")
+          .select("service_order_id, amount, category, cost_type")
+          .in("service_order_id", osIds),
+      ]);
+      const mcByOs = new Map<number, any[]>();
+      for (const mc of (mcRows || [])) {
+        const soId = Number((mc as any).service_order_id);
+        const arr = mcByOs.get(soId) || [];
+        arr.push(mc);
+        mcByOs.set(soId, arr);
+      }
+      const { computeMargemAgenteFromBilling } = await import("./lib/billing-margem-agente");
       for (const b of (billRows || [])) {
         const os = (osRows || []).find((o: any) => o.id === (b as any).service_order_id);
         const hasDoubleAgent = os && os.assigned_employee_id && os.assigned_employee_2_id;
         const share = hasDoubleAgent ? 0.5 : 1.0;
         const total = Number((b as any).fat_total || 0);
-        const liquido = Number((b as any).resultado_liquido || 0);
-        const despesas = Number((b as any).desp_total || 0);
+        const soId = Number((b as any).service_order_id);
+        const margem = computeMargemAgenteFromBilling(b as any, mcByOs.get(soId) || []);
+        const liquido = margem.margemLiquida;
+        const despesas = margem.despesas;
         if (total > 0) {
           faturamentoBruto += total;
           faturamentoEmpregado += total * share;
