@@ -20,9 +20,20 @@ export { getSlowRoutes } from "./slow-routes";
     initWhatsappMonitor();
   }
 
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(port, "0.0.0.0", () => {
-    log(`serving on port ${port}`);
+  const port = Number(process.env.PORT) || 5001;
+  // localhost no Windows aponta para ::1. Escutar só em 0.0.0.0 recusa o navegador.
+  const onListening = () => log(`serving on port ${port}`);
+  const onBindError = (err: NodeJS.ErrnoException) => {
+    if (err.code === "EAFNOSUPPORT" || err.code === "EADDRNOTAVAIL") {
+      httpServer.listen(port, "0.0.0.0", onListening);
+      return;
+    }
+    throw err;
+  };
+  httpServer.once("error", onBindError);
+  httpServer.listen({ port, host: "::", ipv6Only: false }, () => {
+    httpServer.removeListener("error", onBindError);
+    onListening();
   });
 
   const shutdown = (signal: string) => {
