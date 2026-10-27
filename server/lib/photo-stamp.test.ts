@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import sharp from "sharp";
-import { INSTITUTIONAL_FOOTER, stampInstitutionalDataUri, stampInstitutionalPhoto } from "./photo-stamp";
+import { INSTITUTIONAL_FOOTER, institutionalFooterSvg, stampInstitutionalDataUri, stampInstitutionalPhoto } from "./photo-stamp";
 
 async function solidJpeg(width: number, height: number, color: { r: number; g: number; b: number }) {
   return sharp({
@@ -53,7 +53,36 @@ test("data URI vira JPEG carimbado e texto que não é imagem passa intacto", as
   assert.match(stamped, /^data:image\/jpeg;base64,/);
   assert.notEqual(stamped, uri);
   assert.equal(await stampInstitutionalDataUri("ja-e-path/foto.jpg"), "ja-e-path/foto.jpg");
-  assert.match(INSTITUTIONAL_FOOTER, /www\.grupotmseg\.com\.br/);
-  assert.match(INSTITUTIONAL_FOOTER, /\(11\) 96369-6699/);
-  assert.match(INSTITUTIONAL_FOOTER, /Instagram: @grupotmseg/);
+  assert.equal(
+    INSTITUTIONAL_FOOTER,
+    "www.torresseguranca.com.br  |  (11) 96369-6699  |  Instagram: @grupotorres.seguranca",
+  );
+  assert.doesNotMatch(INSTITUTIONAL_FOOTER, /grupotmseg/i);
+});
+
+test("rodapé vertical desenha o texto da Torres em curvas, sem fonte do sistema", async () => {
+  const svg = institutionalFooterSvg(720, 40);
+  const xml = svg.toString("utf-8");
+  assert.match(xml, /encoding="UTF-8"/);
+  assert.match(xml, /<path [^>]*fill="#ffffff"/);
+  assert.doesNotMatch(xml, /<text[\s>]/);
+  assert.doesNotMatch(xml, /grupotmseg/i);
+  assert.doesNotMatch(xml, /Arial|Helvetica|DejaVu|sans-serif/);
+
+  const src = await solidJpeg(720, 1280, { r: 235, g: 235, b: 235 });
+  const out = await stampInstitutionalPhoto(src);
+  const meta = await sharp(out).metadata();
+  assert.ok((meta.height || 0) > (meta.width || 0));
+  const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true });
+  const y = info.height - 20;
+  let light = 0;
+  for (let x = 8; x < info.width - 8; x += 2) {
+    const i = (y * info.width + x) * info.channels;
+    if (data[i] > 150 && data[i + 1] > 150 && data[i + 2] > 150) light++;
+  }
+  assert.ok(light > 12, `o rodapé não desenhou glifos claros: ${light}`);
+  const edge = ((y * info.width) + 2) * info.channels;
+  assert.ok(data[edge] < 80, "a barra não cobre a largura");
+  const mid = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * info.channels;
+  assert.ok(data[mid] > 200, "o miolo da foto vertical foi coberto");
 });

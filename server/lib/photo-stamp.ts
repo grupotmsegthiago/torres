@@ -1,16 +1,23 @@
+import { createRequire } from "node:module";
+import { existsSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import sharp from "sharp";
 import { WM_LOGO_WHITE_B64 } from "./watermark-assets.js";
+import { ROBOTO_REGULAR_B64 } from "./stamp-font.js";
+import type TextToSVG from "text-to-svg";
 
 /**
  * Carimbo institucional das fotos de campo (ronda, posto, ocorrência, abastecimento).
  * O bitmap gravado no storage já sai com logótipo e rodapé — o painel copia esse ficheiro.
  * Não altera a marca d'água do WhatsApp (photo-watermark.ts).
+ * O rodapé é curva vetorial (Roboto embutida): o Linux da Vercel não tem Arial.
  * Fail-open: se o sharp falhar, a foto original segue.
  */
 
-const SITE = "www.grupotmseg.com.br";
+const SITE = "www.torresseguranca.com.br";
 const PHONE = "(11) 96369-6699";
-const INSTAGRAM = "@grupotmseg";
+const INSTAGRAM = "@grupotorres.seguranca";
 
 export const INSTITUTIONAL_FOOTER =
   `${SITE}  |  ${PHONE}  |  Instagram: ${INSTAGRAM}`;
@@ -20,14 +27,57 @@ const LOGO_WIDTH_RATIO = 0.135;
 const PAD = 24;
 const LOGO_BUF = Buffer.from(WM_LOGO_WHITE_B64, "base64");
 
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const require = createRequire(import.meta.url);
+const textToSvgModule = require("text-to-svg") as { default?: typeof TextToSVG; loadSync?: typeof TextToSVG.loadSync };
+
+let textRenderer: TextToSVG | null = null;
+
+function renderer(): TextToSVG {
+  if (textRenderer) return textRenderer;
+  const ctor = textToSvgModule.default ?? (textToSvgModule as unknown as typeof TextToSVG);
+  const fontPath = join(tmpdir(), `torres-roboto-regular-${ROBOTO_REGULAR_B64.length}.ttf`);
+  if (!existsSync(fontPath)) {
+    writeFileSync(fontPath, Buffer.from(ROBOTO_REGULAR_B64, "base64"));
+  }
+  textRenderer = ctor.loadSync(fontPath);
+  return textRenderer;
 }
 
 function footerHeight(width: number): number {
   if (width >= 1400) return 56;
   if (width >= 800) return 48;
   return 40;
+}
+
+/** Barra preta com o texto da Torres em curvas. Não usa <text> nem fonte do sistema. */
+export function institutionalFooterSvg(width: number, barH: number): Buffer {
+  const padX = Math.max(6, Math.round(width * 0.02));
+  const maxW = Math.max(1, width - padX * 2);
+  const draw = renderer();
+  let fontSize = Math.max(8, Math.min(22, Math.floor(barH * 0.46)));
+  let metrics = draw.getMetrics(INSTITUTIONAL_FOOTER, { fontSize, anchor: "left top" });
+  while (metrics.width > maxW && fontSize > 6) {
+    fontSize = Math.round((fontSize - 0.5) * 10) / 10;
+    metrics = draw.getMetrics(INSTITUTIONAL_FOOTER, { fontSize, anchor: "left top" });
+  }
+  const scale = metrics.width > maxW ? maxW / metrics.width : 1;
+  const drawW = metrics.width * scale;
+  const drawH = metrics.height * scale;
+  const x = (width - drawW) / 2;
+  const y = Math.max(0, (barH - drawH) / 2);
+  const path = draw.getPath(INSTITUTIONAL_FOOTER, {
+    x: 0,
+    y: 0,
+    fontSize,
+    anchor: "left top",
+    attributes: { fill: "#ffffff" },
+  });
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${barH}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="${width}" height="${barH}" fill="#000" fill-opacity="0.9"/>
+  <g transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${scale.toFixed(4)})">${path}</g>
+</svg>`;
+  return Buffer.from(svg, "utf-8");
 }
 
 export async function stampInstitutionalPhoto(input: Buffer): Promise<Buffer> {
@@ -65,26 +115,17 @@ export async function stampInstitutionalPhoto(input: Buffer): Promise<Buffer> {
     logoW = logoMeta.width || logoW;
     logoH = logoMeta.height || logoH;
   }
-  const font = Math.max(11, Math.min(22, Math.floor((W - 32) / (INSTITUTIONAL_FOOTER.length * 0.56))));
-  const textY = Math.round(barH / 2 + font * 0.35);
 
   const plate = `
   <svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
     <rect x="${Math.max(0, pad - 8)}" y="${Math.max(0, pad - 8)}" width="${Math.min(logoW + 16, W)}" height="${Math.min(logoH + 16, H)}" rx="8" fill="#000" fill-opacity="0.45"/>
   </svg>`;
 
-  const footer = `
-  <svg width="${W}" height="${barH}" xmlns="http://www.w3.org/2000/svg">
-    <rect width="${W}" height="${barH}" fill="#000" fill-opacity="0.9"/>
-    <text x="${Math.round(W / 2)}" y="${textY}" text-anchor="middle"
-      font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="${font}" fill="#ffffff">${esc(INSTITUTIONAL_FOOTER)}</text>
-  </svg>`;
-
   return sharp(base)
     .composite([
-      { input: Buffer.from(plate), top: 0, left: 0 },
+      { input: Buffer.from(plate, "utf-8"), top: 0, left: 0 },
       { input: logoBuf, top: pad, left: pad },
-      { input: Buffer.from(footer), top: H - barH, left: 0 },
+      { input: institutionalFooterSvg(W, barH), top: H - barH, left: 0 },
     ])
     .jpeg({ quality: 86 })
     .toBuffer();
