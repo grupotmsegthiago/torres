@@ -31,7 +31,7 @@ interface SystemTx {
 interface MatchEntry {
   ticketlog: TicketLogTx;
   system: SystemTx;
-  diffs: { valor: number; liters: number; km: number | null; fuelMatches: boolean };
+  diffs: { valor: number; liters: number; km: number | null; fuelMatches: boolean; dateOffsetDays?: number | null };
 }
 interface Report {
   cutoff: string;
@@ -152,6 +152,7 @@ export default function ConciliacaoTicketlogPage() {
                 Envie o PDF do Relatório de Faturas Cartão Veículo (RFCV) ou a planilha
                 Excel (RFCVTITULO .xls / .xlsx) gerada pela TicketLog. O sistema vai cruzar
                 cada transação com os abastecimentos cadastrados, identificar divergências e placas não cadastradas.
+                Se não houver lançamento na mesma data, aceita a mesma placa com até 1 dia de diferença, primeiro com o mesmo valor.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                 <div>
@@ -206,7 +207,7 @@ export default function ConciliacaoTicketlogPage() {
               <Card className="p-4">
                 <div className="text-xs text-neutral-500">Sistema (vehicle_fueling)</div>
                 <div className="text-2xl font-bold mt-1" data-testid="text-sys-total">{brl(report.summary.system_total)}</div>
-                <div className="text-xs text-neutral-500 mt-1">{report.summary.system_count} abastecimentos no mesmo período</div>
+                <div className="text-xs text-neutral-500 mt-1">{report.summary.system_count} abastecimentos na conta (período e margem de 1 dia já pareada)</div>
               </Card>
               <Card className="p-4">
                 <div className="text-xs text-neutral-500">Diferença (Sistema − TicketLog)</div>
@@ -333,6 +334,11 @@ function ComparisonTable({ rows, mode }: { rows: MatchEntry[]; mode: "match" | "
                 <td className="px-3 py-2 whitespace-nowrap">
                   {tl.date}
                   <div className="text-xs text-neutral-500">{tl.time}</div>
+                  {r.diffs.dateOffsetDays ? (
+                    <div className="text-xs text-amber-700" title="Abastecimento do sistema em outra data, dentro da tolerância de 1 dia">
+                      sistema {fmtDate(sys.date)} ({r.diffs.dateOffsetDays > 0 ? "+" : ""}{r.diffs.dateOffsetDays}d)
+                    </div>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2 font-mono">{tl.plate}</td>
                 <td className="px-3 py-2">

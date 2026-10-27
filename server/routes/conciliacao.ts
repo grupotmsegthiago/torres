@@ -10,7 +10,7 @@ import { createAutoTransaction } from "./_helpers";
 import { rodarAuditoriaPedagiosCsv } from "../lib/auditoria-pedagios-ticketlog";
 import { isPeriodoQuinzena, resolverCustoTicketlog } from "../lib/pedagio-ticketlog-custo";
 
-interface TicketLogTx {
+export interface TicketLogTx {
   code: string;
   date: string | null;
   time: string | null;
@@ -281,6 +281,226 @@ function normalizeFuel(f: string | null | undefined): string {
   return u;
 }
 
+/** Margem de calendário quando não há abastecimento na data exata da TicketLog. */
+export const CONCILIACAO_DAY_TOLERANCE = 1;
+/** Abaixo deste valor absoluto o par vai para "Bate". R$ 5 ou mais vai para "Diverge". */
+const VALOR_BATE_MAX = 5;
+
+export interface FuelingMatchRow {
+  id: number;
+  date: string;
+  vehicle_id: number;
+  driver_id?: number | null;
+  total_cost?: number | string | null;
+  liters?: number | string | null;
+  fuel_type?: string | null;
+  station?: string | null;
+  ticketlog_autorizacao?: string | null;
+  km?: number | null;
+}
+
+/** Dias de calendário de `fromIso` até `toIso`. Positivo quando o sistema é depois da TicketLog. */
+export function calendarDaysBetween(fromIso: string, toIso: string): number | null {
+  const a = fromIso.slice(0, 10);
+  const b = toIso.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return null;
+  const da = Date.parse(`${a}T00:00:00Z`);
+  const db = Date.parse(`${b}T00:00:00Z`);
+  if (!Number.isFinite(da) || !Number.isFinite(db)) return null;
+  return Math.round((db - da) / 86400000);
+}
+
+/** Soma dias numa data YYYY-MM-DD sem depender do fuso do processo. */
+export function shiftIsoDate(iso: string, days: number): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.slice(0, 10));
+  if (!m) return null;
+  const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Janela estrita do arquivo (e do corte). "Falta na TicketLog" usa só isto.
+ * A consulta no banco traz ±1 dia só para achar par.
+ */
+export function fuelingInConciliacaoPeriod(
+  date: string | null | undefined,
+  periodMin: string,
+  periodMax: string,
+  cutoff: string,
+): boolean {
+  const d = String(date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  return d >= cutoff && d >= periodMin && d <= periodMax;
+}
+
+/**
+ * Total do Sistema:
+ * - dentro da janela do arquivo: entra, tenha formado par ou não;
+ * - na margem de ±1 dia: entra só se fechou par (Bate ou Diverge).
+ * Margem sem par fica de fora do total e de "Falta na TicketLog".
+ */
+export function fuelingCountsInSystemTotal(
+  date: string | null | undefined,
+  id: number,
+  periodMin: string,
+  periodMax: string,
+  cutoff: string,
+  pairedIds: ReadonlySet<number>,
+): boolean {
+  if (fuelingInConciliacaoPeriod(date, periodMin, periodMax, cutoff)) return true;
+  return pairedIds.has(id);
+}
+
+function pickFuelingWithinDayTolerance(
+  vf: FuelingMatchRow[],
+  plateByVehicleId: Map<number, string>,
+  usedSysIds: Set<number>,
+  plate: string,
+  isoDate: string,
+  valor: number,
+  toleranceDays: number,
+): FuelingMatchRow | null {
+  const wanted = new Set<string>();
+  for (let d = 1; d <= toleranceDays; d++) {
+    const prev = shiftIsoDate(isoDate, -d);
+    const next = shiftIsoDate(isoDate, d);
+    if (prev) wanted.add(prev);
+    if (next) wanted.add(next);
+  }
+  const nearby = vf.filter((f) =>
+    plateByVehicleId.get(f.vehicle_id) === plate &&
+    wanted.has(String(f.date).slice(0, 10)) &&
+    !usedSysIds.has(f.id),
+  );
+  if (!nearby.length) return null;
+  const key = valor.toFixed(2);
+  const exact = nearby.filter((f) => Number(f.total_cost).toFixed(2) === key);
+  const pool = exact.length ? exact : nearby;
+  return [...pool].sort((a, b) => {
+    const va = Math.abs(Number(a.total_cost) - valor);
+    const vb = Math.abs(Number(b.total_cost) - valor);
+    if (va !== vb) return va - vb;
+    const da = Math.abs(calendarDaysBetween(isoDate, String(a.date)) || 99);
+    const db = Math.abs(calendarDaysBetween(isoDate, String(b.date)) || 99);
+    if (da !== db) return da - db;
+    return a.id - b.id;
+  })[0];
+}
+
+/**
+ * Cruza transações TicketLog com abastecimentos.
+ * Primeiro esgota placa+data (valor exato, depois o mais próximo).
+ * O que sobrar tenta a mesma placa com até ±1 dia: valor igual, senão o mais próximo.
+ * `vehicle_fueling.date` é data de calendário, não timestamp — não há conversão de fuso.
+ */
+export function matchAbastecimentoTicketlog(opts: {
+  transactions: TicketLogTx[];
+  fuelings: FuelingMatchRow[];
+  plateByVehicleId: Map<number, string>;
+  driverNameById: Map<number, string>;
+  registeredPlates: Set<string>;
+}) {
+  const { transactions: tl, fuelings: vf, plateByVehicleId: vById, driverNameById: eById, registeredPlates: allPlates } = opts;
+
+  const sysByCode = new Map<string, FuelingMatchRow>();
+  for (const f of vf) {
+    if (f.ticketlog_autorizacao) sysByCode.set(String(f.ticketlog_autorizacao), f);
+  }
+  const sysByPDV = new Map<string, FuelingMatchRow[]>();
+  for (const f of vf) {
+    const plate = vById.get(f.vehicle_id) || "?";
+    const k = `${plate}|${String(f.date).slice(0, 10)}|${Number(f.total_cost).toFixed(2)}`;
+    if (!sysByPDV.has(k)) sysByPDV.set(k, []);
+    sysByPDV.get(k)!.push(f);
+  }
+
+  const matched: any[] = [];
+  const valueMismatch: any[] = [];
+  const missingInSystem: any[] = [];
+  const unregisteredPlates: any[] = [];
+  const usedSysIds = new Set<number>();
+  const pendingDate: TicketLogTx[] = [];
+
+  const classify = (t: TicketLogTx, sys: FuelingMatchRow) => {
+    const isoDate = dmyToIso(t.date);
+    const sysDate = String(sys.date).slice(0, 10);
+    usedSysIds.add(sys.id);
+    const enriched = {
+      ticketlog: t,
+      system: {
+        id: sys.id,
+        date: sysDate,
+        plate: vById.get(sys.vehicle_id) || null,
+        driver: sys.driver_id ? eById.get(sys.driver_id) || null : null,
+        total_cost: Number(sys.total_cost),
+        liters: Number(sys.liters || 0),
+        fuel_type: sys.fuel_type,
+        station: sys.station,
+        km: sys.km,
+        ticketlog_autorizacao: sys.ticketlog_autorizacao ?? null,
+      },
+      diffs: {
+        valor: Math.abs(Number(sys.total_cost) - (t.valor || 0)),
+        liters: Math.abs(Number(sys.liters || 0) - (t.liters || 0)),
+        km: t.km && sys.km ? Math.abs(Number(sys.km) - t.km) : null,
+        fuelMatches: normalizeFuel(t.fuelType) === normalizeFuel(sys.fuel_type),
+        dateOffsetDays: isoDate ? calendarDaysBetween(isoDate, sysDate) : null,
+      },
+    };
+    if (enriched.diffs.valor < VALOR_BATE_MAX) matched.push(enriched);
+    else valueMismatch.push(enriched);
+  };
+
+  for (const t of tl) {
+    const isoDate = dmyToIso(t.date);
+    if (!allPlates.has(t.plate)) {
+      unregisteredPlates.push({ ticketlog: t });
+      continue;
+    }
+
+    let sys = sysByCode.get(t.code);
+    if (!sys && isoDate) {
+      const k = `${t.plate}|${isoDate}|${(t.valor || 0).toFixed(2)}`;
+      const candidates = (sysByPDV.get(k) || []).filter((c) => !usedSysIds.has(c.id));
+      if (candidates.length) sys = candidates[0];
+    }
+    if (!sys && isoDate) {
+      const sameDay = vf.filter(
+        (f) => vById.get(f.vehicle_id) === t.plate && String(f.date).slice(0, 10) === isoDate && !usedSysIds.has(f.id),
+      );
+      if (sameDay.length === 1) sys = sameDay[0];
+      else if (sameDay.length > 1) {
+        sys = [...sameDay].sort(
+          (a, b) =>
+            Math.abs(Number(a.total_cost) - (t.valor || 0)) -
+            Math.abs(Number(b.total_cost) - (t.valor || 0)),
+        )[0];
+      }
+    }
+
+    if (!sys) {
+      pendingDate.push(t);
+      continue;
+    }
+    classify(t, sys);
+  }
+
+  for (const t of pendingDate) {
+    const isoDate = dmyToIso(t.date);
+    const sys = isoDate
+      ? pickFuelingWithinDayTolerance(vf, vById, usedSysIds, t.plate, isoDate, t.valor || 0, CONCILIACAO_DAY_TOLERANCE)
+      : null;
+    if (!sys) {
+      missingInSystem.push({ ticketlog: t });
+      continue;
+    }
+    classify(t, sys);
+  }
+
+  return { matched, valueMismatch, missingInSystem, unregisteredPlates, usedSysIds };
+}
+
 // Conciliação manual de Abastecimento × TicketLog REATIVADA (2026-06-02) a
 // pedido do dono: é upload manual on-demand (PDF RFCV / Excel RFCVTITULO), sem
 // cron nem polling — não tem o problema que motivou a desativação automática.
@@ -367,13 +587,19 @@ export function registerConciliacaoRoutes(app: Express) {
       const minDate = isoDates.length ? isoDates.sort()[0] : cutoff;
       const maxDateIso = isoDates.length ? isoDates.sort().slice(-1)[0] : new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
+      // ±1 dia em volta do arquivo: o par pode estar no dia do lançamento, não no dia do posto.
+      // "Falta na TicketLog" fica só nas datas do arquivo. O total do sistema também soma
+      // a margem quando aquele abastecimento fechou par.
+      const queryFrom = shiftIsoDate(minDate, -CONCILIACAO_DAY_TOLERANCE) || minDate;
+      const queryTo = shiftIsoDate(maxDateIso, CONCILIACAO_DAY_TOLERANCE) || maxDateIso;
+
       const { data: vfRaw } = await supabaseAdmin
         .from("vehicle_fueling")
         .select(
           "id,date,vehicle_id,driver_id,total_cost,liters,fuel_type,station,ticketlog_autorizacao,km,latitude,longitude,created_at",
         )
-        .gte("date", minDate)
-        .lte("date", maxDateIso)
+        .gte("date", queryFrom)
+        .lte("date", queryTo)
         .range(0, 5000);
       const vf = vfRaw || [];
 
@@ -383,101 +609,31 @@ export function registerConciliacaoRoutes(app: Express) {
       const eById = new Map<number, string>((empsRaw || []).map((e: any) => [e.id, e.name]));
       const allPlates = new Set<string>((vehiclesRaw || []).map((v: any) => v.plate));
 
-      // Index sistema
-      const sysByCode = new Map<string, any>();
-      for (const f of vf) {
-        if (f.ticketlog_autorizacao) sysByCode.set(String(f.ticketlog_autorizacao), f);
-      }
-      const sysByPDV = new Map<string, any[]>();
-      for (const f of vf) {
-        const plate = vById.get(f.vehicle_id) || "?";
-        const k = `${plate}|${f.date}|${Number(f.total_cost).toFixed(2)}`;
-        if (!sysByPDV.has(k)) sysByPDV.set(k, []);
-        sysByPDV.get(k)!.push(f);
-      }
+      const { matched, valueMismatch, missingInSystem, unregisteredPlates, usedSysIds } = matchAbastecimentoTicketlog({
+        transactions: tl,
+        fuelings: vf,
+        plateByVehicleId: vById,
+        driverNameById: eById,
+        registeredPlates: allPlates,
+      });
 
-      const matched: any[] = [];
-      const valueMismatch: any[] = [];
-      const missingInSystem: any[] = [];
-      const unregisteredPlates: any[] = [];
-      const usedSysIds = new Set<number>();
+      const inPeriod = (f: { date: string }) => fuelingInConciliacaoPeriod(f.date, minDate, maxDateIso, cutoff);
+      const pairedIds = new Set<number>([
+        ...matched.map((m) => m.system.id as number),
+        ...valueMismatch.map((m) => m.system.id as number),
+      ]);
+      const countsInTotal = (f: { id: number; date: string }) =>
+        fuelingCountsInSystemTotal(f.date, f.id, minDate, maxDateIso, cutoff, pairedIds);
 
-      for (const t of tl) {
-        const isoDate = dmyToIso(t.date);
-        const enrich = (sys: any) => ({
-          ticketlog: t,
-          system: {
-            id: sys.id,
-            date: sys.date,
-            plate: vById.get(sys.vehicle_id) || null,
-            driver: sys.driver_id ? eById.get(sys.driver_id) || null : null,
-            total_cost: Number(sys.total_cost),
-            liters: Number(sys.liters || 0),
-            fuel_type: sys.fuel_type,
-            station: sys.station,
-            km: sys.km,
-            ticketlog_autorizacao: sys.ticketlog_autorizacao,
-          },
-          diffs: {
-            valor: Math.abs(Number(sys.total_cost) - (t.valor || 0)),
-            liters: Math.abs(Number(sys.liters || 0) - (t.liters || 0)),
-            km: t.km && sys.km ? Math.abs(Number(sys.km) - t.km) : null,
-            fuelMatches: normalizeFuel(t.fuelType) === normalizeFuel(sys.fuel_type),
-          },
-        });
-
-        // 1. Placa não cadastrada
-        if (!allPlates.has(t.plate)) {
-          unregisteredPlates.push({ ticketlog: t });
-          continue;
-        }
-
-        // 2. Match por código TL
-        let sys = sysByCode.get(t.code);
-        if (!sys) {
-          // 3. Fallback: placa+data+valor exato
-          const k = `${t.plate}|${isoDate}|${(t.valor || 0).toFixed(2)}`;
-          const candidates = (sysByPDV.get(k) || []).filter((c) => !usedSysIds.has(c.id));
-          if (candidates.length) sys = candidates[0];
-        }
-        if (!sys) {
-          // 4. Fallback: placa+data (qualquer valor próximo)
-          const sameDay = vf.filter(
-            (f) => vById.get(f.vehicle_id) === t.plate && f.date === isoDate && !usedSysIds.has(f.id),
-          );
-          if (sameDay.length === 1) sys = sameDay[0];
-          else if (sameDay.length > 1) {
-            // pega o mais próximo em valor
-            sys = sameDay.sort(
-              (a, b) =>
-                Math.abs(Number(a.total_cost) - (t.valor || 0)) -
-                Math.abs(Number(b.total_cost) - (t.valor || 0)),
-            )[0];
-          }
-        }
-
-        if (!sys) {
-          missingInSystem.push({ ticketlog: t });
-          continue;
-        }
-        usedSysIds.add(sys.id);
-        const enriched = enrich(sys);
-        if (enriched.diffs.valor < 5.0) {
-          matched.push(enriched);
-        } else {
-          valueMismatch.push(enriched);
-        }
-      }
-
-      // Sistema sem TL correspondente
+      // Sistema sem TL correspondente — só o período do arquivo, não a margem de ±1 dia.
       const missingInTicketlog: any[] = [];
       for (const f of vf) {
         if (usedSysIds.has(f.id)) continue;
-        if (f.date < cutoff) continue;
+        if (!inPeriod(f)) continue;
         missingInTicketlog.push({
           system: {
             id: f.id,
-            date: f.date,
+            date: String(f.date).slice(0, 10),
             plate: vById.get(f.vehicle_id) || null,
             driver: f.driver_id ? eById.get(f.driver_id) || null : null,
             total_cost: Number(f.total_cost),
@@ -492,7 +648,7 @@ export function registerConciliacaoRoutes(app: Express) {
 
       const sumTL = tl.reduce((s, t) => s + (t.valor || 0), 0);
       const sumSys = vf
-        .filter((f) => f.date >= cutoff)
+        .filter(countsInTotal)
         .reduce((s, f) => s + Number(f.total_cost || 0), 0);
 
       res.json({
@@ -501,7 +657,7 @@ export function registerConciliacaoRoutes(app: Express) {
         summary: {
           ticketlog_count: tl.length,
           ticketlog_total: sumTL,
-          system_count: vf.filter((f) => f.date >= cutoff).length,
+          system_count: vf.filter(countsInTotal).length,
           system_total: sumSys,
           diff_total: sumSys - sumTL,
           matched: matched.length,
