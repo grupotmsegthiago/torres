@@ -18,6 +18,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Respon
 import type { Employee } from "@shared/schema";
 import { getPayrollPeriod as getPayrollPeriodFolha } from "@shared/payroll-period";
 import { downloadDiariasExcel, downloadDiariasPdf, fetchDiariasGrade } from "@/lib/diarias-ponto-report";
+import { calendarDiariasRange, formatPeriodoBR, rangeFitsDiarias, type DiariasPreset } from "@shared/diarias-periodo";
 import { isBoundaryPunchTime } from "@shared/punch-time";
 
 const formatBRT = (ymd: string) => {
@@ -1637,13 +1638,39 @@ function FolhaTab() {
   const [batchOpen, setBatchOpen] = useState(false);
   const [addDayOpen, setAddDayOpen] = useState(false);
   const [exportingDiarias, setExportingDiarias] = useState<"pdf" | "xlsx" | null>(null);
+  const [diariasExport, setDiariasExport] = useState<null | {
+    kind: "pdf" | "xlsx";
+    choice: DiariasPreset | "custom";
+    from: string;
+    to: string;
+  }>(null);
 
-  async function baixarControleDiarias(kind: "pdf" | "xlsx") {
+  function abrirDiarias(kind: "pdf" | "xlsx") {
+    const [y, m] = month.split("-").map(Number);
+    const range = calendarDiariasRange(y, m, "q1");
+    setDiariasExport({ kind, choice: "q1", from: range.from, to: range.to });
+  }
+
+  function escolherDiarias(choice: DiariasPreset | "custom") {
+    if (!diariasExport) return;
+    if (choice === "custom") {
+      const [y, m] = month.split("-").map(Number);
+      const range = calendarDiariasRange(y, m, "mes");
+      setDiariasExport({ ...diariasExport, choice, from: range.from, to: range.to });
+      return;
+    }
+    const [y, m] = month.split("-").map(Number);
+    const range = calendarDiariasRange(y, m, choice);
+    setDiariasExport({ ...diariasExport, choice, from: range.from, to: range.to });
+  }
+
+  async function baixarControleDiarias(kind: "pdf" | "xlsx", from: string, to: string) {
     setExportingDiarias(kind);
     try {
-      const grade = await fetchDiariasGrade(month);
+      const grade = await fetchDiariasGrade(month, { from, to });
       if (kind === "pdf") await downloadDiariasPdf(grade);
       else await downloadDiariasExcel(grade);
+      setDiariasExport(null);
     } catch (err) {
       toast({ title: "Não foi possível gerar o controle de diárias", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally {
@@ -1732,10 +1759,10 @@ function FolhaTab() {
             </Button>
           </>
         )}
-        <Button variant="outline" size="sm" onClick={() => baixarControleDiarias("pdf")} disabled={!!exportingDiarias} className="h-9 ml-auto border-emerald-300 text-emerald-800 hover:bg-emerald-50" data-testid="button-diarias-pdf">
+        <Button variant="outline" size="sm" onClick={() => abrirDiarias("pdf")} disabled={!!exportingDiarias} className="h-9 ml-auto border-emerald-300 text-emerald-800 hover:bg-emerald-50" data-testid="button-diarias-pdf">
           {exportingDiarias === "pdf" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileText className="w-3.5 h-3.5 mr-1" />} PDF diárias
         </Button>
-        <Button variant="outline" size="sm" onClick={() => baixarControleDiarias("xlsx")} disabled={!!exportingDiarias} className="h-9 border-emerald-300 text-emerald-800 hover:bg-emerald-50" data-testid="button-diarias-excel">
+        <Button variant="outline" size="sm" onClick={() => abrirDiarias("xlsx")} disabled={!!exportingDiarias} className="h-9 border-emerald-300 text-emerald-800 hover:bg-emerald-50" data-testid="button-diarias-excel">
           {exportingDiarias === "xlsx" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />} Excel diárias
         </Button>
         <Button variant="outline" size="sm" onClick={() => setBatchOpen(true)} className="h-9" data-testid="button-print-batch">
@@ -2206,6 +2233,57 @@ function FolhaTab() {
       {espelhoOpen && employeeId && (
         <EspelhoRhidDialog employeeId={Number(employeeId)} month={month} onClose={() => setEspelhoOpen(false)} />
       )}
+      <Dialog open={!!diariasExport} onOpenChange={(open) => { if (!open && !exportingDiarias) setDiariasExport(null); }}>
+        <DialogContent className="max-w-md" data-testid="dialog-diarias-periodo">
+          <DialogHeader>
+            <DialogTitle>Controle de diárias</DialogTitle>
+          </DialogHeader>
+          {diariasExport && (
+            <div className="space-y-2">
+              <p className="text-xs text-neutral-500">O PDF e o Excel saem só com as diárias do intervalo escolhido no mês selecionado.</p>
+              {([
+                ["q1", "1ª Quinzena (dia 01 ao 15)"],
+                ["q2", "2ª Quinzena (dia 16 ao fim do mês)"],
+                ["mes", "Mês completo"],
+                ["custom", "Intervalo personalizado"],
+              ] as const).map(([id, label]) => (
+                <Button
+                  key={id}
+                  type="button"
+                  variant={diariasExport.choice === id ? "default" : "outline"}
+                  className="w-full justify-start h-9"
+                  onClick={() => escolherDiarias(id)}
+                  data-testid={`button-diarias-${id}`}
+                >
+                  {label}
+                </Button>
+              ))}
+              {diariasExport.choice === "custom" && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <DateInputBR value={diariasExport.from} onChange={(e) => setDiariasExport({ ...diariasExport, from: e.target.value })} data-testid="input-diarias-from" />
+                  <DateInputBR value={diariasExport.to} onChange={(e) => setDiariasExport({ ...diariasExport, to: e.target.value })} data-testid="input-diarias-to" />
+                </div>
+              )}
+              <p className="text-sm font-medium text-slate-800" data-testid="text-diarias-periodo">
+                {rangeFitsDiarias(diariasExport.from, diariasExport.to)
+                  ? formatPeriodoBR(diariasExport.from, diariasExport.to)
+                  : "Informe um intervalo válido de até 62 dias."}
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiariasExport(null)} disabled={!!exportingDiarias} data-testid="button-diarias-cancel">Cancelar</Button>
+            <Button
+              onClick={() => diariasExport && baixarControleDiarias(diariasExport.kind, diariasExport.from, diariasExport.to)}
+              disabled={!diariasExport || !!exportingDiarias || !rangeFitsDiarias(diariasExport.from, diariasExport.to)}
+              data-testid="button-diarias-confirm"
+            >
+              {exportingDiarias ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+              Gerar {diariasExport?.kind === "xlsx" ? "Excel" : "PDF"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

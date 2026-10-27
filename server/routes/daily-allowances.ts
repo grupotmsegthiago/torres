@@ -5,6 +5,7 @@ import { z } from "zod";
 import { buildFolhaPonto } from "../control-id";
 import { monthToFechamento } from "../lib/control-id-parsers";
 import { getPayrollPeriod } from "@shared/payroll-period";
+import { daysInclusive, formatPeriodoBR, rangeFitsDiarias } from "@shared/diarias-periodo";
 import {
   DIARIA_LONG_SHIFT_VALOR,
   DIARIA_PONTO_DESCRICAO,
@@ -192,13 +193,26 @@ export function registerDailyAllowancesRoutes(app: Express) {
     const month = String(req.query.month || "");
     if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ message: "Mês inválido" });
     const [year, mm] = month.split("-").map(Number);
-    const period = getPayrollPeriod(year, mm);
-    const days: string[] = [];
-    const cursor = new Date(period.startDate + "T12:00:00Z");
-    const end = new Date(period.endDate + "T12:00:00Z");
-    while (cursor.getTime() <= end.getTime()) {
-      days.push(cursor.toISOString().slice(0, 10));
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    const fromQ = String(req.query.from || "");
+    const toQ = String(req.query.to || "");
+    let startDate: string;
+    let endDate: string;
+    let label: string;
+    let days: string[];
+    if (fromQ || toQ) {
+      if (!rangeFitsDiarias(fromQ, toQ)) {
+        return res.status(400).json({ message: "Intervalo inválido. Use no máximo 62 dias, com a data inicial até a final." });
+      }
+      startDate = fromQ;
+      endDate = toQ;
+      label = formatPeriodoBR(fromQ, toQ);
+      days = daysInclusive(fromQ, toQ);
+    } else {
+      const period = getPayrollPeriod(year, mm);
+      startDate = period.startDate;
+      endDate = period.endDate;
+      label = period.label;
+      days = daysInclusive(startDate, endDate);
     }
 
     const [{ data: emps, error: empErr }, { data: flags, error: flagErr }] = await Promise.all([
@@ -207,8 +221,8 @@ export function registerDailyAllowancesRoutes(app: Express) {
         .from("agent_daily_allowances")
         .select("employee_id, date, amount")
         .eq("description", DIARIA_PONTO_DESCRICAO)
-        .gte("date", period.startDate)
-        .lte("date", period.endDate),
+        .gte("date", startDate)
+        .lte("date", endDate),
     ]);
     if (empErr) return res.status(500).json({ message: empErr.message });
     if (flagErr) return res.status(500).json({ message: flagErr.message });
@@ -241,9 +255,9 @@ export function registerDailyAllowancesRoutes(app: Express) {
     const totalGeral = Math.round(rows.reduce((s, r) => s + r.total, 0) * 100) / 100;
     res.json({
       month,
-      from: period.startDate,
-      to: period.endDate,
-      label: period.label,
+      from: startDate,
+      to: endDate,
+      label,
       valorUnitario: DIARIA_LONG_SHIFT_VALOR,
       days,
       rows,

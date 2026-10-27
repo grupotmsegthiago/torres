@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import ExcelJS from "exceljs";
 import { authFetch } from "@/lib/queryClient";
 import logoUrl from "@assets/WhatsApp_Image_2026-03-02_at_14.32.24_(1)_1772473398910.jpeg";
+import { formatPeriodoBR } from "@shared/diarias-periodo";
 
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
@@ -48,8 +49,13 @@ async function loadLogo(): Promise<{ dataUrl: string; buffer: ArrayBuffer } | nu
   }
 }
 
-export async function fetchDiariasGrade(month: string): Promise<DiariasGrade> {
-  const r = await authFetch(`/api/daily-allowances/ponto-grade?month=${encodeURIComponent(month)}`);
+export async function fetchDiariasGrade(month: string, range?: { from: string; to: string }): Promise<DiariasGrade> {
+  const qs = new URLSearchParams({ month });
+  if (range?.from && range?.to) {
+    qs.set("from", range.from);
+    qs.set("to", range.to);
+  }
+  const r = await authFetch(`/api/daily-allowances/ponto-grade?${qs.toString()}`);
   if (!r.ok) {
     const body = await r.json().catch(() => null);
     throw new Error(body?.message || "Não foi possível montar o controle de diárias");
@@ -81,7 +87,7 @@ export async function downloadDiariasPdf(grade: DiariasGrade) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(212, 212, 212);
-  doc.text(`Ciclo ${grade.label}   ·   ${brl(grade.valorUnitario)} por dia marcado`, m + 18, m + 12);
+  doc.text(`${formatPeriodoBR(grade.from, grade.to)}   ·   ${brl(grade.valorUnitario)} por dia marcado`, m + 18, m + 12);
 
   const tableTop = m + 20;
   const tableLeft = m + 3;
@@ -123,7 +129,7 @@ export async function downloadDiariasPdf(grade: DiariasGrade) {
     doc.setTextColor(113, 113, 122);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.text("Nenhuma diária marcada neste ciclo.", tableLeft + 2, bodyTop + 8);
+    doc.text("Nenhuma diária marcada neste período.", tableLeft + 2, bodyTop + 8);
   }
 
   grade.rows.forEach((row, ri) => {
@@ -167,7 +173,7 @@ export async function downloadDiariasPdf(grade: DiariasGrade) {
   doc.setTextColor(113, 113, 122);
   doc.text("Torres Vigilância Patrimonial", m + 3, pageH - m - 1.2);
 
-  doc.save(`Controle_Diarias_${grade.month}.pdf`);
+  doc.save(`Controle_Diarias_${grade.from}_${grade.to}.pdf`);
 }
 
 export async function downloadDiariasExcel(grade: DiariasGrade) {
@@ -213,7 +219,7 @@ export async function downloadDiariasExcel(grade: DiariasGrade) {
   const sub = ws.addRow([null]);
   ws.mergeCells(2, 1, 2, colCount);
   sub.height = 16;
-  sub.getCell(1).value = `Ciclo ${grade.label}   ·   ${brl(grade.valorUnitario)} por dia marcado`;
+  sub.getCell(1).value = `${formatPeriodoBR(grade.from, grade.to)}   ·   ${brl(grade.valorUnitario)} por dia marcado`;
   sub.getCell(1).font = { name: "Calibri", size: 10, color: { argb: "FFE4E4E7" } };
   sub.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
   for (let c = 1; c <= colCount; c++) sub.getCell(c).fill = dark;
@@ -289,7 +295,7 @@ export async function downloadDiariasExcel(grade: DiariasGrade) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Controle_Diarias_${grade.month}.xlsx`;
+  a.download = `Controle_Diarias_${grade.from}_${grade.to}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }
