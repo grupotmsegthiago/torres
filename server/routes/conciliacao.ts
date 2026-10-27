@@ -388,10 +388,78 @@ function pickFuelingWithinDayTolerance(
   })[0];
 }
 
+function kmGap(tlKm: number | null | undefined, fuelKm: number | null | undefined): number {
+  const a = tlKm == null ? NaN : Number(tlKm);
+  const b = fuelKm == null ? NaN : Number(fuelKm);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.POSITIVE_INFINITY;
+  return Math.abs(a - b);
+}
+
+/**
+ * Empate de placa + data + valor: o abastecimento fica com a transação de KM mais próximo.
+ * A ordem das linhas do arquivo não consome o único lançamento do dia.
+ */
+export function assignFuelingsByKm<T extends { code: string; km: number | null }, F extends { id: number; km?: number | null }>(
+  transactions: T[],
+  fuelings: F[],
+): Map<string, F> {
+  const pairs: { code: string; fuel: F; dist: number; order: number }[] = [];
+  transactions.forEach((t, order) => {
+    for (const fuel of fuelings) {
+      pairs.push({ code: t.code, fuel, dist: kmGap(t.km, fuel.km ?? null), order });
+    }
+  });
+  pairs.sort((a, b) => a.dist - b.dist || a.order - b.order || a.fuel.id - b.fuel.id);
+  const usedCodes = new Set<string>();
+  const usedIds = new Set<number>();
+  const assigned = new Map<string, F>();
+  for (const p of pairs) {
+    if (usedCodes.has(p.code) || usedIds.has(p.fuel.id)) continue;
+    usedCodes.add(p.code);
+    usedIds.add(p.fuel.id);
+    assigned.set(p.code, p.fuel);
+  }
+  return assigned;
+}
+
+/**
+ * No mesmo dia, o abastecimento fica com a transação de valor mais próximo.
+ * KM só desempata. Assim a sobra de um valor repetido não toma o lançamento de outro valor.
+ */
+export function assignFuelingsByValueThenKm<
+  T extends { code: string; km: number | null; valor: number | null },
+  F extends { id: number; km?: number | null; total_cost?: number | string | null },
+>(transactions: T[], fuelings: F[]): Map<string, F> {
+  const pairs: { code: string; fuel: F; valorDist: number; kmDist: number; order: number }[] = [];
+  transactions.forEach((t, order) => {
+    for (const fuel of fuelings) {
+      const valorDist = Math.abs(Number(fuel.total_cost) - (t.valor || 0));
+      pairs.push({
+        code: t.code,
+        fuel,
+        valorDist: Number.isFinite(valorDist) ? valorDist : Number.POSITIVE_INFINITY,
+        kmDist: kmGap(t.km, fuel.km ?? null),
+        order,
+      });
+    }
+  });
+  pairs.sort((a, b) => a.valorDist - b.valorDist || a.kmDist - b.kmDist || a.order - b.order || a.fuel.id - b.fuel.id);
+  const usedCodes = new Set<string>();
+  const usedIds = new Set<number>();
+  const assigned = new Map<string, F>();
+  for (const p of pairs) {
+    if (usedCodes.has(p.code) || usedIds.has(p.fuel.id)) continue;
+    usedCodes.add(p.code);
+    usedIds.add(p.fuel.id);
+    assigned.set(p.code, p.fuel);
+  }
+  return assigned;
+}
+
 /**
  * Cruza transações TicketLog com abastecimentos.
- * Primeiro esgota placa+data (valor exato, depois o mais próximo).
- * O que sobrar tenta a mesma placa com até ±1 dia: valor igual, senão o mais próximo.
+ * Primeiro esgota código e placa+data+valor (desempate por KM).
+ * Depois o valor mais próximo no mesmo dia. O que sobrar tenta ±1 dia.
  * `vehicle_fueling.date` é data de calendário, não timestamp — não há conversão de fuso.
  */
 export function matchAbastecimentoTicketlog(opts: {
@@ -421,6 +489,7 @@ export function matchAbastecimentoTicketlog(opts: {
   const unregisteredPlates: any[] = [];
   const usedSysIds = new Set<number>();
   const pendingDate: TicketLogTx[] = [];
+  const pendingExact: TicketLogTx[] = [];
 
   const classify = (t: TicketLogTx, sys: FuelingMatchRow) => {
     const isoDate = dmyToIso(t.date);
@@ -453,37 +522,65 @@ export function matchAbastecimentoTicketlog(opts: {
   };
 
   for (const t of tl) {
-    const isoDate = dmyToIso(t.date);
     if (!allPlates.has(t.plate)) {
       unregisteredPlates.push({ ticketlog: t });
       continue;
     }
 
-    let sys = sysByCode.get(t.code);
-    if (!sys && isoDate) {
-      const k = `${t.plate}|${isoDate}|${(t.valor || 0).toFixed(2)}`;
-      const candidates = (sysByPDV.get(k) || []).filter((c) => !usedSysIds.has(c.id));
-      if (candidates.length) sys = candidates[0];
+    const byCode = sysByCode.get(t.code);
+    if (byCode && !usedSysIds.has(byCode.id)) {
+      classify(t, byCode);
+      continue;
     }
-    if (!sys && isoDate) {
-      const sameDay = vf.filter(
-        (f) => vById.get(f.vehicle_id) === t.plate && String(f.date).slice(0, 10) === isoDate && !usedSysIds.has(f.id),
-      );
-      if (sameDay.length === 1) sys = sameDay[0];
-      else if (sameDay.length > 1) {
-        sys = [...sameDay].sort(
-          (a, b) =>
-            Math.abs(Number(a.total_cost) - (t.valor || 0)) -
-            Math.abs(Number(b.total_cost) - (t.valor || 0)),
-        )[0];
-      }
-    }
+    pendingExact.push(t);
+  }
 
-    if (!sys) {
+  const exactGroups = new Map<string, TicketLogTx[]>();
+  const pendingSameDay: TicketLogTx[] = [];
+  for (const t of pendingExact) {
+    const isoDate = dmyToIso(t.date);
+    if (!isoDate) {
+      pendingSameDay.push(t);
+      continue;
+    }
+    const k = `${t.plate}|${isoDate}|${(t.valor || 0).toFixed(2)}`;
+    if (!exactGroups.has(k)) exactGroups.set(k, []);
+    exactGroups.get(k)!.push(t);
+  }
+  for (const [k, group] of exactGroups) {
+    const candidates = (sysByPDV.get(k) || []).filter((c) => !usedSysIds.has(c.id));
+    const assigned = assignFuelingsByKm(group, candidates);
+    for (const t of group) {
+      const sys = assigned.get(t.code);
+      if (sys) classify(t, sys);
+      else pendingSameDay.push(t);
+    }
+  }
+
+  const sameDayGroups = new Map<string, TicketLogTx[]>();
+  for (const t of pendingSameDay) {
+    const isoDate = dmyToIso(t.date);
+    if (!isoDate) {
       pendingDate.push(t);
       continue;
     }
-    classify(t, sys);
+    const k = `${t.plate}|${isoDate}`;
+    if (!sameDayGroups.has(k)) sameDayGroups.set(k, []);
+    sameDayGroups.get(k)!.push(t);
+  }
+  for (const [k, group] of sameDayGroups) {
+    const sep = k.indexOf("|");
+    const plate = k.slice(0, sep);
+    const isoDate = k.slice(sep + 1);
+    const sameDay = vf.filter(
+      (f) => vById.get(f.vehicle_id) === plate && String(f.date).slice(0, 10) === isoDate && !usedSysIds.has(f.id),
+    );
+    const assigned = assignFuelingsByValueThenKm(group, sameDay);
+    for (const t of group) {
+      const sys = assigned.get(t.code);
+      if (sys) classify(t, sys);
+      else pendingDate.push(t);
+    }
   }
 
   for (const t of pendingDate) {

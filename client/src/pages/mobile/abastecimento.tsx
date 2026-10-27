@@ -62,6 +62,7 @@ export default function MobileAbastecimentoPage() {
   const [geoAddress, setGeoAddress] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
   const [searchPlate, setSearchPlate] = useState("");
+  const [saltoAlert, setSaltoAlert] = useState<{ message: string } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -166,7 +167,7 @@ export default function MobileAbastecimentoPage() {
   }, [toast]);
 
   const submitMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (confirmSaltoKm: boolean) => {
       const coords = await requestFreshGeo();
       const parsedBase = parseBRL(costPerLiter) || 0;
       const parsedExtra = teveAcrescimo ? (parseBRL(acrescimo) || 0) : 0;
@@ -190,11 +191,17 @@ export default function MobileAbastecimentoPage() {
           ethanolPrice: ePrice || undefined,
           fuelRecommendation: recommendation,
           recommendationFollowed: recommendation ? fuelType === recommendation : undefined,
+          confirm_salto_km: confirmSaltoKm,
         }),
       });
       const text = await res.text();
       let data: any;
       try { data = JSON.parse(text); } catch { data = { message: text }; }
+      if (res.status === 422 && data?.code === "salto_km") {
+        const err: any = new Error(data.message || "Confirme o salto de KM");
+        err.code = "salto_km";
+        throw err;
+      }
       if (!res.ok) throw new Error(data.message || "Erro ao registrar abastecimento");
       return data;
     },
@@ -210,7 +217,13 @@ export default function MobileAbastecimentoPage() {
       toast({ title: "Abastecimento registrado!" });
       // Integração automática TicketLog descontinuada — conferência manual no admin.
     },
-    onError: (err: Error) => toast({ title: "Erro ao registrar", description: err.message, variant: "destructive" }),
+    onError: (err: any) => {
+      if (err?.code === "salto_km") {
+        setSaltoAlert({ message: err.message });
+        return;
+      }
+      toast({ title: "Erro ao registrar", description: err.message, variant: "destructive" });
+    },
   });
 
   if (captureMode) {
@@ -671,7 +684,7 @@ export default function MobileAbastecimentoPage() {
                         <CheckCircle size={16} className="text-emerald-600" />
                         <p className="text-xs font-bold text-emerald-700">Placa confirmada!</p>
                       </div>
-                      <button onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}
+                      <button onClick={() => submitMutation.mutate(false)} disabled={submitMutation.isPending}
                         data-testid="button-submit-fueling"
                         className="w-full py-4 bg-emerald-600 text-white rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
                         {submitMutation.isPending ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
@@ -686,6 +699,41 @@ export default function MobileAbastecimentoPage() {
         )}
 
       </div>
+      {saltoAlert && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" data-testid="modal-salto-km">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-md space-y-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="text-amber-600 shrink-0" size={22} />
+              <div>
+                <p className="font-black text-neutral-900 uppercase text-sm">Confirme o hodômetro</p>
+                <p className="text-sm text-neutral-700 mt-2">{saltoAlert.message}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSaltoAlert(null)}
+                className="py-3 border border-neutral-200 rounded-xl text-xs font-black uppercase"
+                data-testid="button-salto-cancel"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={submitMutation.isPending}
+                onClick={() => {
+                  setSaltoAlert(null);
+                  submitMutation.mutate(true);
+                }}
+                className="py-3 bg-amber-600 text-white rounded-xl text-xs font-black uppercase disabled:opacity-50"
+                data-testid="button-salto-confirm"
+              >
+                Confirmo, não houve outro abastecimento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </MobileLayout>
   );
 }

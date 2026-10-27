@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { processIdleAlert, processIgnitionOff, getActiveIdleAlerts, processSpeedAlert } from "./truckscontrol";
+import { considerFuelingTrackerReminder } from "./lib/fueling-tracker-reminder";
 import type { InsertTelemetryEvent } from "@shared/schema";
 
 const SPEED_LIMIT = 120;
@@ -23,6 +24,8 @@ interface VehicleTelemetryData {
   ignitionOnSince?: string | null;
   driverName?: string | null;
   truckscontrolId?: number | null;
+  vehicleKm?: number | null;
+  activeOsId?: number | null;
 }
 
 export function processTelemetry(vehicles: VehicleTelemetryData[]): void {
@@ -31,6 +34,16 @@ export function processTelemetry(vehicles: VehicleTelemetryData[]): void {
   for (const v of vehicles) {
     checkSpeedViolation(v, now);
     checkIdleViolation(v, now);
+    considerFuelingTrackerReminder({
+      vehicleId: v.vehicleId,
+      vehicleKm: v.vehicleKm,
+      truckscontrolId: v.truckscontrolId,
+      activeOsId: v.activeOsId,
+      latitude: v.latitude,
+      longitude: v.longitude,
+    }).catch((err) => {
+      console.error(`[fueling-reminder] ${v.plate}:`, err?.message || err);
+    });
   }
 
   if (speedAlertCooldown.size > TELEMETRY_MAP_MAX) {

@@ -3,11 +3,13 @@ import type { Express } from "express";
   import { supabaseAdmin } from "../supabase";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertReferencePointSchema } from "@shared/schema";
-  import { haversineDist, createAutoTransaction } from "./_helpers";
+  import { haversineDist, createAutoTransaction, logFinancialAudit } from "./_helpers";
   import { uploadMissionPhoto } from "../lib/mission-photos";
   import { persistFuelingPhotoBlob } from "../lib/fueling-photo-storage";
   import { alertFuelingLimitRejected } from "../notifications";
   import { fuelingLimitUserMessage, fuelingLimitViolation } from "@shared/fueling-limits";
+  import { fuelingKmSaltoAlert, FUELING_KM_SALTO_ALERTA, FUELING_REMINDER_MESSAGE, shouldShowFuelingReminder } from "@shared/fueling-km-salto";
+  import { validateFuelingKm } from "./fleet";
 
   const HQ_FALLBACK_LAT = -23.4890;
   const HQ_FALLBACK_LNG = -46.7234;
@@ -260,6 +262,53 @@ import type { Express } from "express";
     }
   });
 
+  app.get("/api/mobile/abastecimento/lembrete", requireAuth, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employeeId;
+      if (!employeeId) return res.json({ show: false, message: FUELING_REMINDER_MESSAGE });
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: orders, error } = await supabaseAdmin
+        .from("service_orders")
+        .select("id, vehicle_id, status, completed_date, mission_started_at, scheduled_date")
+        .or(`assigned_employee_id.eq.${employeeId},assigned_employee_2_id.eq.${employeeId}`)
+        .order("id", { ascending: false })
+        .limit(30);
+      if (error) return res.status(500).json({ message: error.message });
+      const activeStatuses = new Set(["em_andamento", "ativa", "em andamento", "em_transito"]);
+      const doneStatuses = new Set(["concluida", "concluída", "finalizada", "encerrada"]);
+      const relevant = (orders || []).filter((o: any) => {
+        const status = String(o.status || "").toLowerCase();
+        if (activeStatuses.has(status)) return true;
+        if (!doneStatuses.has(status) || !o.completed_date) return false;
+        return String(o.completed_date) >= since.slice(0, 10);
+      });
+      let show = false;
+      for (const os of relevant) {
+        if (!os.vehicle_id) continue;
+        const missionDate = String(os.mission_started_at || os.scheduled_date || os.completed_date || "").slice(0, 10);
+        const { data: last } = await supabaseAdmin
+          .from("vehicle_fueling")
+          .select("date")
+          .eq("vehicle_id", os.vehicle_id)
+          .order("date", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (shouldShowFuelingReminder({
+          hasRecentMission: true,
+          missionDate: missionDate || null,
+          lastFuelingDate: last?.date || null,
+        })) {
+          show = true;
+          break;
+        }
+      }
+      res.json({ show, message: FUELING_REMINDER_MESSAGE });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/mobile/abastecimento", requireAuth, async (req: any, res) => {
     try {
       const employeeId = req.user?.employeeId;
@@ -274,15 +323,10 @@ import type { Express } from "express";
       if (!vehicleRows || !vehicleRows.length) return res.status(404).json({ message: "Veículo não encontrado" });
       const vehicle = vehicleRows;
       const currentKm = vehicle[0]?.km || 0;
-      if (vehicle[0] && km < currentKm) {
-        return res.status(400).json({ message: `KM informado (${km}) é menor que o KM atual (${currentKm})` });
-      }
-      if (currentKm > 0) {
-        const kmDiff = km - currentKm;
-        if (kmDiff > 1500) {
-          return res.status(400).json({ message: `KM informado (${km}) é ${kmDiff} km a mais que o atual (${currentKm}). Diferença muito grande — verifique o hodômetro.` });
-        }
-      }
+      const kmError = validateFuelingKm(Number(km), currentKm, false);
+      if (kmError) return res.status(400).json({ message: kmError.message, code: kmError.reason });
+      const salto = fuelingKmSaltoAlert(Number(km), currentKm, req.body?.confirm_salto_km === true);
+      if (salto) return res.status(422).json(salto);
 
       const derivedPreview = Number(totalCost) > 0 ? Number(totalCost) : (Number(liters || 0) * Number(costPerLiter || 0));
       const limit = fuelingLimitViolation(derivedPreview, liters);
@@ -329,6 +373,21 @@ import type { Express } from "express";
       }).select().single();
 
       await supabaseAdmin.from("vehicles").update({ km, last_km_update: new Date().toISOString() }).eq("id", vehicleId);
+
+      if (fueling && req.body?.confirm_salto_km === true) {
+        const delta = Number(km) - Number(currentKm);
+        if (delta > FUELING_KM_SALTO_ALERTA) {
+          await logFinancialAudit(
+            "vehicle_fueling",
+            String(fueling.id),
+            "INSERT",
+            [{ field: "km_salto_confirmado", old: currentKm, new_val: km }],
+            req.user?.name || "Condutor",
+            req.user?.id,
+            `Salto de ${delta} km confirmado pelo condutor`,
+          );
+        }
+      }
 
       const derivedTotal = Number(totalCost) > 0 ? Number(totalCost) : (Number(liters || 0) * Number(costPerLiter || 0));
       if (fueling && derivedTotal > 0) {

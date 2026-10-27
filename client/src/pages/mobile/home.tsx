@@ -13,6 +13,11 @@ export default function MobileHomePage() {
     refetchInterval: 2 * 60 * 1000,
   });
 
+  const { data: fuelReminder } = useQuery<{ show: boolean; message: string }>({
+    queryKey: ["/api/mobile/abastecimento/lembrete"],
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   const firstName = user?.name?.split(" ")[0] || "Agente";
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Bom dia" : now.getHours() < 18 ? "Boa tarde" : "Boa noite";
@@ -29,6 +34,17 @@ export default function MobileHomePage() {
             {now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
+
+        {fuelReminder?.show && (
+          <Link href="/mobile/abastecimento">
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4" data-testid="banner-lembrete-abastecimento">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-sm font-semibold text-amber-900">{fuelReminder.message}</p>
+              </div>
+            </div>
+          </Link>
+        )}
 
         {isLoading ? (
           <div className="bg-white rounded-2xl border border-neutral-200 p-6 text-center">

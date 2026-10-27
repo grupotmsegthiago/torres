@@ -1362,6 +1362,8 @@ import type { Express } from "express";
           ignitionOnSince: t.tracker!.ignitionOnSince,
           driverName: t.activeOs?.employee1?.name || null,
           truckscontrolId: t.truckscontrolIdentifier ? parseInt(t.truckscontrolIdentifier) : null,
+          vehicleKm: t.km ?? null,
+          activeOsId: t.activeOs?.status === "em_andamento" ? t.activeOs.id : null,
         }));
       if (telemetryData.length > 0) {
         processTelemetry(telemetryData);

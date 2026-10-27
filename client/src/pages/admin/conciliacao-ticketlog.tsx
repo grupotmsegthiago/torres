@@ -1,4 +1,4 @@
-import { useState, useMemo, createContext, useContext } from "react";
+import { useState, useMemo, createContext, useContext, useEffect } from "react";
 import { DateInputBR } from "@/components/date-input-br";
 import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/layout";
@@ -9,9 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Upload, FileText, CheckCircle2, AlertTriangle, XCircle, Loader2,
-  Fuel, TrendingDown, TrendingUp, RefreshCw, Calendar, Car, AlertCircle, Eye,
+  Fuel, TrendingDown, TrendingUp, RefreshCw, Calendar, Car, AlertCircle, Eye, Plus,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { authFetch } from "@/lib/queryClient";
+import { compressImageFile } from "@/lib/image-compress";
 import { useToast } from "@/hooks/use-toast";
 import { DetailModal } from "./relatorio-abastecimento";
 import type { VehicleFueling, Vehicle, Employee } from "@shared/schema";
@@ -66,6 +68,7 @@ export default function ConciliacaoTicketlogPage() {
 
   const [detailId, setDetailId] = useState<number | null>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
+  const [createTx, setCreateTx] = useState<TicketLogTx | null>(null);
 
   const { data: fuelings = [] } = useQuery<VehicleFueling[]>({
     queryKey: ["/api/fueling"],
@@ -74,7 +77,7 @@ export default function ConciliacaoTicketlogPage() {
   });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ["/api/vehicles"],
-    enabled: detailId !== null,
+    enabled: detailId !== null || report !== null,
   });
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
@@ -257,7 +260,11 @@ export default function ConciliacaoTicketlogPage() {
                 <ComparisonTable rows={report.valueMismatch} mode="mismatch" />
               </TabsContent>
               <TabsContent value="missing-sys" className="mt-4">
-                <TicketLogOnlyTable rows={report.missingInSystem} title="No PDF da TicketLog mas não há abastecimento equivalente cadastrado no sistema" />
+                <TicketLogOnlyTable
+                  rows={report.missingInSystem}
+                  title="No PDF da TicketLog mas não há abastecimento equivalente cadastrado no sistema"
+                  onCreate={setCreateTx}
+                />
               </TabsContent>
               <TabsContent value="missing-tl" className="mt-4">
                 <SystemOnlyTable rows={report.missingInTicketlog} />
@@ -277,6 +284,17 @@ export default function ConciliacaoTicketlogPage() {
         )}
       </div>
       </DetailCtx.Provider>
+
+      <CreateFuelingDialog
+        tx={createTx}
+        vehicles={vehicles}
+        onClose={() => setCreateTx(null)}
+        onCreated={(tx, created) => {
+          setReport((prev) => prev ? moveCreatedToMatch(prev, tx, created) : prev);
+          setCreateTx(null);
+          toast({ title: "Abastecimento criado", description: `${tx.plate} entrou na conciliação sem novo upload.` });
+        }}
+      />
 
       {detailFueling && (
         <DetailModal
@@ -377,7 +395,7 @@ function ComparisonTable({ rows, mode }: { rows: MatchEntry[]; mode: "match" | "
   );
 }
 
-function TicketLogOnlyTable({ rows, title, warn }: { rows: { ticketlog: TicketLogTx }[]; title: string; warn?: boolean }) {
+function TicketLogOnlyTable({ rows, title, warn, onCreate }: { rows: { ticketlog: TicketLogTx }[]; title: string; warn?: boolean; onCreate?: (tx: TicketLogTx) => void }) {
   if (!rows.length) {
     return (
       <Card className="p-8 text-center text-neutral-500">
@@ -407,6 +425,7 @@ function TicketLogOnlyTable({ rows, title, warn }: { rows: { ticketlog: TicketLo
             <th className="px-3 py-2 text-left">Motorista</th>
             <th className="px-3 py-2 text-left">Posto / Cidade</th>
             <th className="px-3 py-2 text-left">Cód. TL</th>
+            {onCreate ? <th className="px-3 py-2 text-left">Ações</th> : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -424,6 +443,14 @@ function TicketLogOnlyTable({ rows, title, warn }: { rows: { ticketlog: TicketLo
                 <td className="px-3 py-2 text-xs">{t.driver}</td>
                 <td className="px-3 py-2 text-xs">{t.station} {t.city ? `· ${t.city}/${t.uf}` : ""}</td>
                 <td className="px-3 py-2 font-mono text-xs">{t.code}</td>
+                {onCreate ? (
+                  <td className="px-3 py-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => onCreate(t)} data-testid={`button-criar-abastecimento-${t.code}`}>
+                      <Plus className="h-3 w-3 mr-1" />
+                      Criar Abastecimento
+                    </Button>
+                  </td>
+                ) : null}
               </tr>
             );
           })}
@@ -496,5 +523,214 @@ function SystemOnlyTable({ rows }: { rows: { system: SystemTx }[] }) {
         </tbody>
       </table>
     </Card>
+  );
+}
+
+function plateKey(plate: string): string {
+  return plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function ticketDateToIso(date: string | null): string {
+  if (!date) return "";
+  const m = date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : "";
+}
+
+function systemFuelType(raw: string | null): string {
+  const u = (raw || "").toUpperCase();
+  if (u.includes("ETANOL")) return "etanol";
+  if (u.includes("DIESEL")) return "diesel";
+  return "gasolina";
+}
+
+function moveCreatedToMatch(
+  report: Report,
+  tx: TicketLogTx,
+  created: { id: number; totalCost: number; liters: number; fuelType: string; km: number; station: string; date: string },
+): Report {
+  const valorDiff = Math.abs(created.totalCost - (tx.valor || 0));
+  const bate = valorDiff < 5;
+  const entry: MatchEntry = {
+    ticketlog: tx,
+    system: {
+      id: created.id,
+      date: created.date,
+      plate: tx.plate,
+      driver: null,
+      total_cost: created.totalCost,
+      liters: created.liters,
+      fuel_type: created.fuelType,
+      station: created.station,
+      km: created.km,
+      ticketlog_autorizacao: tx.code,
+    },
+    diffs: {
+      valor: valorDiff,
+      liters: Math.abs(created.liters - (tx.liters || 0)),
+      km: tx.km != null ? Math.abs(created.km - tx.km) : null,
+      fuelMatches: true,
+      dateOffsetDays: 0,
+    },
+  };
+  const systemTotal = report.summary.system_total + created.totalCost;
+  return {
+    ...report,
+    summary: {
+      ...report.summary,
+      system_count: report.summary.system_count + 1,
+      system_total: systemTotal,
+      diff_total: systemTotal - report.summary.ticketlog_total,
+      matched: report.summary.matched + (bate ? 1 : 0),
+      value_mismatch: report.summary.value_mismatch + (bate ? 0 : 1),
+      missing_in_system: Math.max(0, report.summary.missing_in_system - 1),
+    },
+    missingInSystem: report.missingInSystem.filter((r) => r.ticketlog.code !== tx.code),
+    matched: bate ? [...report.matched, entry] : report.matched,
+    valueMismatch: bate ? report.valueMismatch : [...report.valueMismatch, entry],
+  };
+}
+
+function CreateFuelingDialog({
+  tx,
+  vehicles,
+  onClose,
+  onCreated,
+}: {
+  tx: TicketLogTx | null;
+  vehicles: Vehicle[];
+  onClose: () => void;
+  onCreated: (tx: TicketLogTx, created: { id: number; totalCost: number; liters: number; fuelType: string; km: number; station: string; date: string }) => void;
+}) {
+  const { toast } = useToast();
+  const [receiptPhoto, setReceiptPhoto] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setReceiptPhoto("");
+  }, [tx?.code]);
+
+  const vehicle = tx ? vehicles.find((v) => plateKey(v.plate) === plateKey(tx.plate)) : undefined;
+  const date = ticketDateToIso(tx?.date || null);
+  const liters = Number(tx?.liters) || 0;
+  const total = Number(tx?.valor) || 0;
+  const km = tx?.km ?? null;
+  const fuelType = systemFuelType(tx?.fuelType || null);
+  const station = [tx?.station, tx?.city, tx?.uf].filter(Boolean).join(" / ");
+  const ready = !!tx && !!vehicle && !!date && liters > 0 && total > 0 && km != null && km > 0;
+
+  const confirm = async () => {
+    if (!tx || !vehicle || !ready) return;
+    setSaving(true);
+    try {
+      const res = await authFetch("/api/fueling", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicleId: vehicle.id,
+          date,
+          liters: String(liters),
+          costPerLiter: String((total / liters).toFixed(3)),
+          totalCost: String(total.toFixed(2)),
+          km,
+          fuelType,
+          fullTank: true,
+          station: tx.station || station,
+          notes: `TicketLog ${tx.code}${tx.time ? ` ${tx.time}` : ""}. ${station}`.trim(),
+          receiptPhoto: receiptPhoto || null,
+          ticketlogAutorizacao: tx.code,
+          allowKmOverride: true,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || "Falha ao criar abastecimento");
+      onCreated(tx, {
+        id: Number(body.id),
+        totalCost: total,
+        liters,
+        fuelType,
+        km,
+        station: tx.station || station,
+        date,
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao criar abastecimento", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!tx} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-lg" data-testid="dialog-criar-abastecimento">
+        <DialogHeader>
+          <DialogTitle>Criar abastecimento</DialogTitle>
+          <DialogDescription>
+            Conferir os dados da TicketLog e confirmar. O lançamento entra no sistema e sai de “Falta no sistema”.
+          </DialogDescription>
+        </DialogHeader>
+        {tx && (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-xs text-neutral-500">Placa</div>
+              <div className="font-mono font-semibold">{tx.plate}</div>
+              <div className="text-xs text-neutral-500">{vehicle ? vehicle.model : "Viatura não encontrada"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Data</div>
+              <div>{tx.date || "—"} {tx.time || ""}</div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Valor</div>
+              <div className="font-semibold">{brl(total)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Litros</div>
+              <div>{liters ? liters.toFixed(3) : "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">Combustível</div>
+              <div className="capitalize">{fuelType}</div>
+            </div>
+            <div>
+              <div className="text-xs text-neutral-500">KM</div>
+              <div>{km != null ? km.toLocaleString("pt-BR") : "—"}</div>
+            </div>
+            <div className="col-span-2">
+              <div className="text-xs text-neutral-500">Posto</div>
+              <div>{station || "—"}</div>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-neutral-500" htmlFor="receipt-ticketlog">Comprovante (opcional)</label>
+              <Input
+                id="receipt-ticketlog"
+                type="file"
+                accept="image/*"
+                className="mt-1"
+                data-testid="input-comprovante-ticketlog"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const { dataUrl } = await compressImageFile(file);
+                    setReceiptPhoto(dataUrl);
+                  } catch {
+                    toast({ title: "Não foi possível ler a foto", variant: "destructive" });
+                  }
+                }}
+              />
+              {receiptPhoto ? <p className="text-xs text-emerald-700 mt-1">Foto anexada</p> : null}
+            </div>
+            {!vehicle ? <p className="col-span-2 text-sm text-rose-700">A placa não está ligada a uma viatura cadastrada.</p> : null}
+          </div>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button type="button" onClick={confirm} disabled={!ready || saving} data-testid="button-confirmar-criar-abastecimento">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar cadastro"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

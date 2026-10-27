@@ -167,6 +167,40 @@ test("placa fora do cadastro não vira falta no sistema", () => {
   assert.equal(r.matched.length, 0);
 });
 
+test("mesmo valor no dia casa com o KM mais próximo e deixa a outra cobrança sem par", () => {
+  const r = run(
+    [
+      tx({ code: "1103631449", date: "05/10/2026", valor: 96.5, km: 18744 }),
+      tx({ code: "1103919045", date: "05/10/2026", valor: 96.5, km: 19585 }),
+    ],
+    [fuel({ id: 10, date: "2026-10-05", total_cost: 96.5, km: 19585 })],
+  );
+  assert.equal(r.matched.length, 1);
+  assert.equal(r.matched[0].ticketlog.code, "1103919045");
+  assert.equal(r.matched[0].system.id, 10);
+  assert.equal(r.missingInSystem.length, 1);
+  assert.equal(r.missingInSystem[0].ticketlog.code, "1103631449");
+});
+
+test("sobra do mesmo valor não toma o abastecimento de outro valor no mesmo dia", () => {
+  const r = run(
+    [
+      tx({ code: "1103631449", date: "05/10/2026", valor: 96.5, km: 18744 }),
+      tx({ code: "1103804233", date: "05/10/2026", valor: 174, km: 19247 }),
+      tx({ code: "1103919045", date: "05/10/2026", valor: 96.5, km: 19585 }),
+    ],
+    [
+      fuel({ id: 10, date: "2026-10-05", total_cost: 96.5, km: 19585 }),
+      fuel({ id: 11, date: "2026-10-05", total_cost: 174.01, km: 19247 }),
+    ],
+  );
+  assert.equal(r.matched.find((m) => m.ticketlog.code === "1103919045")?.system.id, 10);
+  assert.equal(r.matched.find((m) => m.ticketlog.code === "1103804233")?.system.id, 11);
+  assert.equal(r.valueMismatch.length, 0);
+  assert.equal(r.missingInSystem.length, 1);
+  assert.equal(r.missingInSystem[0].ticketlog.code, "1103631449");
+});
+
 test("código TicketLog antigo ainda casa antes da data", () => {
   const r = run(
     [tx({ code: "999", date: "30/09/2026", valor: 10 })],
