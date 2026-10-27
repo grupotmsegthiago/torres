@@ -39,6 +39,9 @@ import type { Express } from "express";
           municipio: d.municipio || null,
           uf: d.uf || null,
           cep: d.cep || null,
+          codigo_ibge: String(d.codigo_municipio_ibge || "").replace(/\D/g, "").length === 7
+            ? String(d.codigo_municipio_ibge).replace(/\D/g, "")
+            : null,
           atividade: d.cnae_fiscal_descricao || null,
           natureza_juridica: d.natureza_juridica || null,
           capital_social: d.capital_social ? Number(d.capital_social) : null,
@@ -71,6 +74,7 @@ import type { Express } from "express";
             municipio: d.municipio || null,
             uf: d.uf || null,
             cep: d.cep || null,
+            codigo_ibge: null,
             atividade: d.atividade_principal?.[0]?.text || null,
             natureza_juridica: d.natureza_juridica || null,
             capital_social: d.capital_social ? Number(String(d.capital_social).replace(/\D/g, "")) : null,

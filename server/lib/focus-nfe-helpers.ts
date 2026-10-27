@@ -18,6 +18,9 @@ import {
 } from "./asaas-helpers";
 import { isFinalNfNumber, isFocusNfseRef, isNfOkStatus } from "../../shared/nfse-status";
 import { parseEmailList } from "../../shared/client-emails";
+import { isValidCnpj, sanitizeComplement } from "../../shared/nfse-tomador";
+
+export { isValidCnpj, sanitizeComplement };
 
 /** Paulistana: item da lista municipal (Focus SP usa 7870; Torres homologou 07870). LC 116 11.02 não é aceito como 1102. */
 export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
@@ -405,7 +408,7 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     endereco: {
       logradouro: String(opts.tomador.address || "").trim().slice(0, 125),
       numero: extractStreetNumber(opts.tomador.address, opts.tomador.addressNumber) || "S/N",
-      complemento: String(opts.tomador.complement || "").trim().slice(0, 60) || undefined,
+      complemento: sanitizeComplement(opts.tomador.complement),
       bairro: String(opts.tomador.bairro || "Centro").trim().slice(0, 60),
       codigo_municipio: ibgeTomador,
       uf: String(opts.tomador.state || "").trim().toUpperCase().slice(0, 2),

@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { isValidCnpj, sanitizeComplement } from "@shared/nfse-tomador";
 import { authFetch, queryClient, invalidateRelatedQueries, kickNfRetry } from "@/lib/queryClient";
 import { exportFormattedExcel } from "@/lib/excel-export";
 import { formatDateOnlyBR } from "@/lib/utils";
@@ -36,6 +38,7 @@ type RelatorioRow = {
   clientFantasia: string | null;
   clientCpfCnpj: string | null;
   clientEmail: string | null;
+  clientAddressComplement?: string | null;
   description: string | null;
   value: number;
   liquidValue?: number | null;
@@ -221,6 +224,55 @@ function FocusNfStatusBadge({ r, testId }: { r: RelatorioRow; testId: string }) 
   );
 }
 
+type TomadorForm = {
+  cnpj: string;
+  razaoSocial: string;
+  inscricaoMunicipal: string;
+  email: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cep: string;
+  codigoIbge: string;
+  uf: string;
+};
+
+const emptyTomador = (): TomadorForm => ({
+  cnpj: "",
+  razaoSocial: "",
+  inscricaoMunicipal: "",
+  email: "",
+  logradouro: "",
+  numero: "",
+  complemento: "",
+  bairro: "",
+  cep: "",
+  codigoIbge: "",
+  uf: "",
+});
+
+const clip = (value: unknown, max: number) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+
+function tomadorPronto(t: TomadorForm): boolean {
+  const cnpj = t.cnpj.replace(/\D/g, "");
+  const cep = t.cep.replace(/\D/g, "");
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t.email.trim());
+  return isValidCnpj(cnpj)
+    && t.razaoSocial.trim().length >= 3
+    && emailOk
+    && t.logradouro.trim().length >= 2
+    && t.logradouro.trim().length <= 50
+    && t.numero.trim().length >= 1
+    && t.numero.trim().length <= 10
+    && t.complemento.trim().length <= 30
+    && t.bairro.trim().length >= 2
+    && t.bairro.trim().length <= 30
+    && cep.length === 8
+    && /^\d{7}$/.test(t.codigoIbge.trim())
+    && t.uf.trim().length === 2;
+}
+
 export default function RelatorioNFPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -231,7 +283,17 @@ export default function RelatorioNFPage() {
   const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE" | "BILLING_AVULSO"; sourceId: number | string; clientName: string; value: number; description: string; reason: string } | null>(null);
   const [emitModal, setEmitModal] = useState<{ invoiceId: number; clientName: string; value: number; nfNumber: string; note: string } | null>(null);
   const [emitirFaturaModal, setEmitirFaturaModal] = useState<{ invoiceId: number; clientName: string; value: number; dueDate: string; billingType: string } | null>(null);
-  const [resolverModal, setResolverModal] = useState<{ invoiceId: number; clientName: string; email: string; errorMsg: string | null } | null>(null);
+  const [resolverModal, setResolverModal] = useState<{
+    invoiceId: number;
+    clientName: string;
+    email: string;
+    errorMsg: string | null;
+    complemento: string;
+    complementoDirty: boolean;
+    outroCnpj: boolean;
+    tomador: TomadorForm;
+    lookingUp: boolean;
+  } | null>(null);
   const [osModal, setOsModal] = useState<{ clientName: string; nfNumber: string | null; total: number; osList: Array<{ id: number; osNumber: string; value?: number }> } | null>(null);
   const [traceModal, setTraceModal] = useState<{ invoiceId: number; clientName: string; value: number; netValue: number | null; status: string | null; paymentDate: string | null; dueDate: string | null; launchedAt: string | null; createdByName: string | null } | null>(null);
   useEffect(() => {
@@ -564,10 +626,30 @@ export default function RelatorioNFPage() {
   });
 
   const resolverMutation = useMutation({
-    mutationFn: async (payload: { invoiceId: number; email: string }) => {
+    mutationFn: async (payload: {
+      invoiceId: number;
+      email?: string;
+      complemento?: string;
+      outroCnpj?: boolean;
+      tomador?: TomadorForm;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (payload.outroCnpj && payload.tomador) {
+        body.outroCnpj = true;
+        body.tomador = {
+          ...payload.tomador,
+          cnpj: payload.tomador.cnpj.replace(/\D/g, ""),
+          cep: payload.tomador.cep.replace(/\D/g, ""),
+          codigoIbge: payload.tomador.codigoIbge.replace(/\D/g, ""),
+          uf: payload.tomador.uf.trim().toUpperCase(),
+        };
+      } else {
+        body.email = payload.email;
+        if (payload.complemento !== undefined) body.complemento = payload.complemento;
+      }
       const r = await authFetch(`/api/invoices/${payload.invoiceId}/resolver-nf-erro`, {
         method: "POST",
-        body: JSON.stringify({ email: payload.email }),
+        body: JSON.stringify(body),
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
@@ -580,6 +662,85 @@ export default function RelatorioNFPage() {
     },
     onError: (e: any) => toast({ title: "Não foi possível resolver", description: e?.message, variant: "destructive" }),
   });
+
+  const buscarOutroCnpj = async () => {
+    if (!resolverModal) return;
+    const cnpj = resolverModal.tomador.cnpj.replace(/\D/g, "");
+    if (!isValidCnpj(cnpj)) {
+      toast({ title: "CNPJ inválido", description: "Informe os 14 dígitos do CNPJ.", variant: "destructive" });
+      return;
+    }
+    setResolverModal({ ...resolverModal, lookingUp: true });
+    try {
+      const r = await authFetch(`/api/cnpj/${cnpj}`);
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      const cep = String(json.cep || "").replace(/\D/g, "");
+      let ibge = String(json.codigo_ibge || "").replace(/\D/g, "");
+      let logradouro = clip(json.logradouro, 50);
+      let bairro = clip(json.bairro, 30);
+      let uf = clip(json.uf, 2).toUpperCase();
+      if (cep.length === 8 && ibge.length !== 7) {
+        const rc = await authFetch(`/api/cep/${cep}`);
+        const cj = await rc.json().catch(() => ({}));
+        if (rc.ok) {
+          ibge = String(cj.ibge || "").replace(/\D/g, "");
+          if (!logradouro) logradouro = clip(cj.address, 50);
+          if (!bairro) bairro = clip(cj.bairro, 30);
+          if (!uf) uf = clip(cj.state, 2).toUpperCase();
+        }
+      }
+      setResolverModal((cur) => cur ? {
+        ...cur,
+        lookingUp: false,
+        tomador: {
+          ...cur.tomador,
+          cnpj,
+          razaoSocial: clip(json.razao_social, 115),
+          email: cur.tomador.email || String(json.email || "").trim(),
+          logradouro,
+          numero: clip(json.numero, 10) || "S/N",
+          complemento: sanitizeComplement(json.complemento) || "",
+          bairro,
+          cep,
+          codigoIbge: ibge.length === 7 ? ibge : "",
+          uf,
+        },
+      } : cur);
+    } catch (e: any) {
+      setResolverModal((cur) => cur ? { ...cur, lookingUp: false } : cur);
+      toast({ title: "Consulta de CNPJ", description: e?.message || "Não foi possível consultar.", variant: "destructive" });
+    }
+  };
+
+  const buscarCepTomador = async () => {
+    if (!resolverModal) return;
+    const cep = resolverModal.tomador.cep.replace(/\D/g, "");
+    if (cep.length !== 8) return;
+    setResolverModal({ ...resolverModal, lookingUp: true });
+    try {
+      const r = await authFetch(`/api/cep/${cep}`);
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      setResolverModal((cur) => cur ? {
+        ...cur,
+        lookingUp: false,
+        tomador: {
+          ...cur.tomador,
+          cep,
+          logradouro: cur.tomador.logradouro || clip(json.address, 50),
+          bairro: cur.tomador.bairro || clip(json.bairro, 30),
+          uf: cur.tomador.uf || clip(json.state, 2).toUpperCase(),
+          codigoIbge: String(json.ibge || "").replace(/\D/g, "").length === 7
+            ? String(json.ibge).replace(/\D/g, "")
+            : cur.tomador.codigoIbge,
+        },
+      } : cur);
+    } catch (e: any) {
+      setResolverModal((cur) => cur ? { ...cur, lookingUp: false } : cur);
+      toast({ title: "Consulta de CEP", description: e?.message || "Não foi possível consultar.", variant: "destructive" });
+    }
+  };
 
   const [syncingInvoiceId, setSyncingInvoiceId] = useState<number | null>(null);
   const syncInvoiceMutation = useMutation({
@@ -1200,7 +1361,17 @@ export default function RelatorioNFPage() {
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm"
-                              onClick={() => setResolverModal({ invoiceId: r.invoiceId!, clientName: r.clientFantasia || r.clientName, email: r.clientEmail || "", errorMsg: r.nfseErrorMessage })}
+                              onClick={() => setResolverModal({
+                                invoiceId: r.invoiceId!,
+                                clientName: r.clientFantasia || r.clientName,
+                                email: r.clientEmail || "",
+                                errorMsg: r.nfseErrorMessage,
+                                complemento: sanitizeComplement(r.clientAddressComplement) || "",
+                                complementoDirty: false,
+                                outroCnpj: false,
+                                tomador: emptyTomador(),
+                                lookingUp: false,
+                              })}
                               data-testid={`button-resolver-nf-${r.id}`}
                             >
                               <Wrench className="h-2.5 w-2.5" /> Resolver agora
@@ -2243,16 +2414,16 @@ export default function RelatorioNFPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: resolver NF com erro (corrige e-mail + re-emite) */}
+      {/* Modal: resolver NF com erro (e-mail, complemento ou outro CNPJ) */}
       <Dialog open={!!resolverModal} onOpenChange={open => { if (!open && !resolverMutation.isPending) setResolverModal(null); }}>
-        <DialogContent className="max-w-md" aria-describedby={undefined}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle className="text-base flex items-center gap-2">
               <Wrench className="h-4 w-4 text-red-600" />
               Resolver NF com erro
             </DialogTitle>
             <DialogDescription className="text-xs">
-              A maioria dos erros de NF é por e-mail do cliente inválido ou ausente. Informe o e-mail correto: ele será salvo no cadastro e a nota será re-emitida automaticamente.
+              Corrija o e-mail ou o complemento do cadastro, ou emita esta fatura para outro CNPJ sem alterar o cliente do contrato.
             </DialogDescription>
           </DialogHeader>
           {resolverModal && (
@@ -2265,25 +2436,101 @@ export default function RelatorioNFPage() {
                   <span className="font-semibold">Erro atual:</span> {resolverModal.errorMsg}
                 </div>
               )}
-              <div>
-                <label className="text-xs font-medium text-slate-700 mb-1 block">E-mail do cliente <span className="text-rose-600">*</span></label>
-                <Input
-                  type="email"
-                  value={resolverModal.email}
-                  onChange={e => setResolverModal({ ...resolverModal, email: e.target.value })}
-                  placeholder="financeiro@cliente.com.br"
-                  data-testid="input-resolver-email"
+              <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2">
+                <label htmlFor="outro-cnpj" className="text-sm font-medium text-slate-800">Faturar para outro CNPJ</label>
+                <Switch
+                  id="outro-cnpj"
+                  checked={resolverModal.outroCnpj}
+                  onCheckedChange={(checked) => setResolverModal({ ...resolverModal, outroCnpj: checked })}
+                  data-testid="switch-outro-cnpj"
                 />
-                <p className="text-xs text-slate-500 mt-1">Para mais de um e-mail, separe por vírgula. O primeiro vira o e-mail principal.</p>
               </div>
+              {!resolverModal.outroCnpj && (
+                <>
+                  <div>
+                    <label className="text-xs font-medium text-slate-700 mb-1 block">E-mail do cliente <span className="text-rose-600">*</span></label>
+                    <Input
+                      type="email"
+                      value={resolverModal.email}
+                      onChange={e => setResolverModal({ ...resolverModal, email: e.target.value })}
+                      placeholder="financeiro@cliente.com.br"
+                      data-testid="input-resolver-email"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Para mais de um e-mail, separe por vírgula. O primeiro vira o e-mail principal.</p>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-slate-700">Complemento do endereço</label>
+                      <span className={`text-[11px] tabular-nums ${resolverModal.complemento.length > 30 ? "text-rose-600" : "text-slate-500"}`}>{resolverModal.complemento.length}/30</span>
+                    </div>
+                    <Input
+                      value={resolverModal.complemento}
+                      maxLength={30}
+                      onChange={e => setResolverModal({ ...resolverModal, complemento: e.target.value, complementoDirty: true })}
+                      data-testid="input-resolver-complemento"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">A prefeitura aceita 30 caracteres. O texto longo do cadastro só é gravado se você editar este campo.</p>
+                  </div>
+                </>
+              )}
+              {resolverModal.outroCnpj && (
+                <div className="space-y-2 rounded-md border border-slate-200 p-3">
+                  <div className="flex gap-2">
+                    <Input
+                      value={resolverModal.tomador.cnpj}
+                      onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, cnpj: e.target.value } })}
+                      placeholder="CNPJ"
+                      data-testid="input-tomador-cnpj"
+                    />
+                    <Button type="button" variant="outline" onClick={buscarOutroCnpj} disabled={resolverModal.lookingUp} data-testid="button-buscar-cnpj">
+                      {resolverModal.lookingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : "Buscar"}
+                    </Button>
+                  </div>
+                  <Input value={resolverModal.tomador.razaoSocial} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, razaoSocial: e.target.value } })} placeholder="Razão social" maxLength={115} data-testid="input-tomador-razao" />
+                  <Input value={resolverModal.tomador.email} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, email: e.target.value } })} placeholder="E-mail da NF" type="email" data-testid="input-tomador-email" />
+                  <Input value={resolverModal.tomador.inscricaoMunicipal} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, inscricaoMunicipal: e.target.value } })} placeholder="Inscrição municipal" maxLength={20} data-testid="input-tomador-im" />
+                  <p className="text-[11px] text-slate-500">Obrigatória só se o tomador for de São Paulo (IBGE 3550308) e contribuinte de ISS. Se não for, deixe em branco.</p>
+                  <Input value={resolverModal.tomador.logradouro} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, logradouro: e.target.value } })} placeholder="Logradouro" maxLength={50} data-testid="input-tomador-logradouro" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input value={resolverModal.tomador.numero} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, numero: e.target.value } })} placeholder="Número" maxLength={10} data-testid="input-tomador-numero" />
+                    <div>
+                      <Input value={resolverModal.tomador.complemento} maxLength={30} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, complemento: e.target.value } })} placeholder="Complemento" data-testid="input-tomador-complemento" />
+                      <span className={`text-[11px] tabular-nums ${resolverModal.tomador.complemento.length > 30 ? "text-rose-600" : "text-slate-500"}`}>{resolverModal.tomador.complemento.length}/30</span>
+                    </div>
+                  </div>
+                  <Input value={resolverModal.tomador.bairro} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, bairro: e.target.value } })} placeholder="Bairro" maxLength={30} data-testid="input-tomador-bairro" />
+                  <div className="grid grid-cols-[1fr_auto_5rem] gap-2">
+                    <Input value={resolverModal.tomador.cep} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, cep: e.target.value } })} onBlur={buscarCepTomador} placeholder="CEP" data-testid="input-tomador-cep" />
+                    <Input value={resolverModal.tomador.codigoIbge} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, codigoIbge: e.target.value.replace(/\D/g, "").slice(0, 7) } })} placeholder="IBGE" maxLength={7} data-testid="input-tomador-ibge" />
+                    <Input value={resolverModal.tomador.uf} onChange={e => setResolverModal({ ...resolverModal, tomador: { ...resolverModal.tomador, uf: e.target.value.toUpperCase().slice(0, 2) } })} placeholder="UF" maxLength={2} data-testid="input-tomador-uf" />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setResolverModal(null)} disabled={resolverMutation.isPending} data-testid="button-cancel-resolver">Cancelar</Button>
             <Button
               className="bg-red-600 hover:bg-red-700"
-              onClick={() => resolverModal && resolverMutation.mutate({ invoiceId: resolverModal.invoiceId, email: resolverModal.email.trim() })}
-              disabled={resolverMutation.isPending || !resolverModal?.email.trim()}
+              onClick={() => {
+                if (!resolverModal) return;
+                if (resolverModal.outroCnpj) {
+                  resolverMutation.mutate({ invoiceId: resolverModal.invoiceId, outroCnpj: true, tomador: resolverModal.tomador });
+                  return;
+                }
+                resolverMutation.mutate({
+                  invoiceId: resolverModal.invoiceId,
+                  email: resolverModal.email.trim(),
+                  complemento: resolverModal.complementoDirty ? resolverModal.complemento : undefined,
+                });
+              }}
+              disabled={
+                resolverMutation.isPending
+                || resolverModal?.lookingUp
+                || (resolverModal?.outroCnpj
+                  ? !resolverModal || !tomadorPronto(resolverModal.tomador)
+                  : !resolverModal?.email.trim() || (resolverModal?.complemento.length || 0) > 30)
+              }
               data-testid="button-confirm-resolver"
             >
               {resolverMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Reprocessando…</> : <><Wrench className="h-4 w-4 mr-1" /> Salvar e re-emitir</>}

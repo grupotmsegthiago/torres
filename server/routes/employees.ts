@@ -151,6 +151,17 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
   app.get("/api/cep/:cep", requireAuth, async (req, res) => {
     const cep = String(req.params.cep || "").replace(/\D/g, "");
     if (cep.length !== 8) return res.status(400).json({ message: "CEP inválido" });
+    const ibgeViaCep = async () => {
+      try {
+        const r2 = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        if (!r2.ok) return "";
+        const d: any = await r2.json();
+        const ibge = String(d?.ibge || "").replace(/\D/g, "");
+        return ibge.length === 7 ? ibge : "";
+      } catch {
+        return "";
+      }
+    };
     const token = process.env.BRASILAPI_TOKEN;
     try {
       const headers: Record<string, string> = { Accept: "application/json" };
@@ -158,12 +169,14 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
       const r = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`, { headers });
       if (r.ok) {
         const d = await r.json();
+        const ibge = await ibgeViaCep();
         return res.json({
           cep: d.cep,
           address: d.street || "",
           bairro: d.neighborhood || "",
           city: d.city || "",
           state: d.state || "",
+          ibge: ibge || null,
           lat: d.location?.coordinates?.latitude ? Number(d.location.coordinates.latitude) : null,
           lng: d.location?.coordinates?.longitude ? Number(d.location.coordinates.longitude) : null,
           source: "brasilapi",
@@ -177,12 +190,14 @@ async function runEmployeeOpenAI(messages: OpenAI.Chat.ChatCompletionCreateParam
       if (r2.ok) {
         const d: any = await r2.json();
         if (d.erro) return res.status(404).json({ message: "CEP não encontrado" });
+        const ibge = String(d.ibge || "").replace(/\D/g, "");
         return res.json({
           cep: d.cep,
           address: d.logradouro || "",
           bairro: d.bairro || "",
           city: d.localidade || "",
           state: d.uf || "",
+          ibge: ibge.length === 7 ? ibge : null,
           lat: null,
           lng: null,
           source: "viacep",

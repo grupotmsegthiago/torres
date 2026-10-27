@@ -133,6 +133,8 @@ export async function ibgeFromCep(cep: string): Promise<string | null> {
 }
 
 async function resolveTomadorIbge(client: FocusTomadorInput): Promise<string> {
+  const given = String(client.codigoMunicipioIbge || "").replace(/\D/g, "");
+  if (given.length === 7) return given;
   const fromCep = await ibgeFromCep(client.zip || "");
   if (fromCep) return fromCep;
   const fromCity = ibgeMunicipioFromCityUf(client.city, client.state);
@@ -272,6 +274,24 @@ async function loadClientForNf(invoice: any): Promise<any | null> {
 }
 
 function tomadorFrom(invoice: any, client: any, emailOverride?: string): FocusTomadorInput {
+  const billingCnpj = String(invoice?.billing_cnpj || "").replace(/\D/g, "");
+  if (billingCnpj.length === 14) {
+    return {
+      name: invoice.billing_razao_social,
+      cpfCnpj: billingCnpj,
+      email: focusTomadorEmail(invoice.billing_email),
+      phone: null,
+      inscricaoMunicipal: invoice.billing_inscricao_municipal,
+      address: invoice.billing_logradouro,
+      addressNumber: invoice.billing_numero,
+      complement: invoice.billing_complemento,
+      bairro: invoice.billing_bairro,
+      city: null,
+      state: invoice.billing_uf,
+      zip: invoice.billing_cep,
+      codigoMunicipioIbge: invoice.billing_codigo_ibge,
+    };
+  }
   return {
     name: client?.name || invoice.client_name,
     cpfCnpj: client?.cnpj || client?.cpf || invoice.client_cpf_cnpj,
@@ -309,18 +329,25 @@ export async function emitFocusNfseForInvoice(
   const emiteNf = client ? client.emite_nf === true : true;
   if (!emiteNf) return { ok: false, message: "Cliente isento de NFS-e" };
 
-  const clientEmail = opts?.clientEmail !== undefined
-    ? (focusTomadorEmail(opts.clientEmail) || nfseTomadorEmail(client))
-    : nfseTomadorEmail(client);
+  const billingEmail = String(invoice.billing_cnpj || "").replace(/\D/g, "").length === 14
+    ? focusTomadorEmail(invoice.billing_email)
+    : "";
+  const clientEmail = billingEmail
+    || (opts?.clientEmail !== undefined
+      ? (focusTomadorEmail(opts.clientEmail) || nfseTomadorEmail(client))
+      : nfseTomadorEmail(client));
   if (shouldBlockNfEmission(clientEmail)) {
     await persistFocusNfse(id, { status: "erro_autorizacao", mensagem: MISSING_EMAIL_NF_MSG }, focusNfseRef(id), invoice);
     return { ok: false, message: MISSING_EMAIL_NF_MSG };
   }
 
-  const fiscalErr = assertFiscalAddressForNf(client, true);
-  if (fiscalErr) {
-    await persistFocusNfse(id, { status: "erro_autorizacao", mensagem: fiscalErr }, focusNfseRef(id), invoice);
-    return { ok: false, message: fiscalErr };
+  const hasBillingTomador = String(invoice.billing_cnpj || "").replace(/\D/g, "").length === 14;
+  if (!hasBillingTomador) {
+    const fiscalErr = assertFiscalAddressForNf(client, true);
+    if (fiscalErr) {
+      await persistFocusNfse(id, { status: "erro_autorizacao", mensagem: fiscalErr }, focusNfseRef(id), invoice);
+      return { ok: false, message: fiscalErr };
+    }
   }
 
   const prestadorImRaw = String(process.env.FOCUS_PRESTADOR_IM || process.env.FOCUS_IM || "").trim();

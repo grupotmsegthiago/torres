@@ -103,14 +103,14 @@ import { notifyNfseIntegrationError } from "./lib/nfse-error-alert";
 import { resolveActorName, INTEGRATION_ACTOR, NF_AWAITING_CORRECTION } from "../shared/perfis-acesso";
 import {
   cancelFocusNfse,
-  emitFocusNfseForInvoice,
-  hasFocusApiToken,
+  emitFocusNfseForInvoice,  hasFocusApiToken,
   loadFocusNfsePdf,
   persistFocusNfse,
   syncFocusNfseForInvoice,
   syncFocusNfsesForInvoices,
 } from "./lib/focus-nfe";
-import { isFocusManagedInvoice, shouldEmitNfseViaFocus } from "./lib/focus-nfe-helpers";
+import { isFocusManagedInvoice, sanitizeComplement, shouldEmitNfseViaFocus } from "./lib/focus-nfe-helpers";
+import { BILLING_OVERRIDE_CLEAR, billingOverrideFromTomador, parseResolverNfBody } from "./lib/resolver-nf";
 
 const ASAAS_REQUEST_TIMEOUT_MS = 20_000;
 const ASAAS_INVOICE_TIMEOUT_MS = 45_000;
@@ -2328,12 +2328,11 @@ export function registerAsaasRoutes(app: Express) {
       }
 
       const id = parseInt(req.params.id);
-      const emailRaw = String((req.body as any)?.email || "").trim();
+      const parsedBody = parseResolverNfBody(req.body);
+      if (!parsedBody.ok) return res.status(400).json({ message: parsedBody.message });
+      const outroCnpj = parsedBody.data.outroCnpj === true && !!parsedBody.data.tomador;
+      const emailRaw = String(parsedBody.data.email || "").trim();
       const emails = emailRaw.split(/[;,]\s*/).map((e) => e.trim()).filter(Boolean);
-      const emailValido = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-      if (emails.length === 0 || !emails.every(emailValido)) {
-        return res.status(400).json({ message: "Informe um e-mail válido (separe vários por vírgula)." });
-      }
 
       const { data: invoice } = await supabaseAdmin.from("invoices").select("*").eq("id", id).single();
       if (!invoice) return res.status(404).json({ message: "Fatura não encontrada." });
@@ -2345,45 +2344,83 @@ export function registerAsaasRoutes(app: Express) {
         return res.status(409).json({ message: "Esta fatura já tem NF emitida com número. Não reemitimos para evitar duplicidade." });
       }
 
-      const cpfCnpj = String(invoice.client_cpf_cnpj || "").replace(/[^\d]/g, "");
-      if (!cpfCnpj) {
-        return res.status(400).json({ message: "CPF/CNPJ do cliente não informado. Atualize o cadastro do cliente." });
-      }
-
-      if (invoice.client_id) {
-        const { error: updErr } = await supabaseAdmin
-          .from("clients")
-          .update({ email_financeiro: emails[0] })
-          .eq("id", invoice.client_id);
-        if (updErr) console.error(`[resolver-nf-erro #${id}] erro ao salvar e-mail no cliente ${invoice.client_id}: ${updErr.message}`);
-      }
-
-      try {
-        const search = await asaasRequest("GET", `/customers?cpfCnpj=${cpfCnpj}`);
-        if (search?.data?.length > 0) {
-          const customerId = search.data[0].id;
-          const putPayload: any = { email: emails[0] };
-          const extra = emails.slice(1).join(",");
-          if (extra) putPayload.additionalEmails = extra;
-          await asaasRequest("PUT", `/customers/${customerId}`, putPayload);
+      if (outroCnpj && parsedBody.data.tomador) {
+        const { error: billingErr } = await supabaseAdmin
+          .from("invoices")
+          .update(billingOverrideFromTomador(parsedBody.data.tomador))
+          .eq("id", id);
+        if (billingErr) {
+          return res.status(500).json({ message: `Não foi possível gravar o tomador desta fatura: ${billingErr.message}` });
         }
-      } catch (e: any) {
-        console.error(`[resolver-nf-erro #${id}] falha ao atualizar customer Asaas: ${e.message}`);
+      } else {
+        const cpfCnpj = String(invoice.client_cpf_cnpj || "").replace(/[^\d]/g, "");
+        if (!cpfCnpj) {
+          return res.status(400).json({ message: "CPF/CNPJ do cliente não informado. Atualize o cadastro do cliente." });
+        }
+
+        if (invoice.client_id) {
+          const clientPatch: Record<string, string | null> = { email_financeiro: emails[0] };
+          if (typeof parsedBody.data.complemento === "string") {
+            clientPatch.address_complement = sanitizeComplement(parsedBody.data.complemento) || null;
+          }
+          const { error: updErr } = await supabaseAdmin
+            .from("clients")
+            .update(clientPatch)
+            .eq("id", invoice.client_id);
+          if (updErr) console.error(`[resolver-nf-erro #${id}] erro ao salvar cadastro do cliente ${invoice.client_id}: ${updErr.message}`);
+        }
+
+        const { error: clearErr } = await supabaseAdmin
+          .from("invoices")
+          .update({ ...BILLING_OVERRIDE_CLEAR, updated_at: new Date().toISOString() })
+          .eq("id", id);
+        if (clearErr) {
+          return res.status(500).json({ message: `Não foi possível limpar o tomador alternativo da fatura: ${clearErr.message}` });
+        }
+
+        try {
+          const search = await asaasRequest("GET", `/customers?cpfCnpj=${cpfCnpj}`);
+          if (search?.data?.length > 0) {
+            const customerId = search.data[0].id;
+            const putPayload: any = { email: emails[0] };
+            const extra = emails.slice(1).join(",");
+            if (extra) putPayload.additionalEmails = extra;
+            await asaasRequest("PUT", `/customers/${customerId}`, putPayload);
+          }
+        } catch (e: any) {
+          console.error(`[resolver-nf-erro #${id}] falha ao atualizar customer Asaas: ${e.message}`);
+        }
       }
 
-      const r = await emitFocusNfseForInvoice(id, { source: "resolver-nf-erro", clientEmail: emails[0] });
+      const r = await emitFocusNfseForInvoice(
+        id,
+        outroCnpj
+          ? { source: "resolver-nf-erro" }
+          : { source: "resolver-nf-erro", clientEmail: emails[0] },
+      );
       const { data } = await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle();
       if (!r.ok) {
-        return res.status(502).json({ message: `E-mail atualizado, mas a re-emissão falhou: ${r.message}`, invoice: data });
+        const prefix = outroCnpj
+          ? "Tomador da fatura atualizado, mas a re-emissão falhou"
+          : "E-mail atualizado, mas a re-emissão falhou";
+        return res.status(502).json({ message: `${prefix}: ${r.message}`, invoice: data });
       }
-      if (r.ok) await maybeSendInvoiceReadyEmail(id);
+      await maybeSendInvoiceReadyEmail(id);
+      const auditDetail = outroCnpj
+        ? `NF com erro resolvida via Focus: tomador alternativo ${parsedBody.data.tomador?.cnpj} na fatura #${id}, sem alterar o cliente do contrato. ${r.message}`
+        : `NF com erro resolvida via Focus: e-mail "${emailRaw}" fatura #${id}. ${r.message}`;
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "RESOLVER_NF_ERRO", targetId: String(id), targetType: "invoice",
-        details: `NF com erro resolvida via Focus: e-mail "${emailRaw}" fatura #${id}. ${r.message}`,
+        details: auditDetail,
         ipAddress: (req as any).ip,
       });
-      return res.json({ ...data, message: "E-mail atualizado e NFS-e re-emitida na Focus." });
+      return res.json({
+        ...data,
+        message: outroCnpj
+          ? "NFS-e re-emitida na Focus para o CNPJ informado nesta fatura."
+          : "E-mail atualizado e NFS-e re-emitida na Focus.",
+      });
     } catch (err: any) {
       console.error("[resolver-nf-erro] erro:", err.message);
       res.status(500).json({ message: err.message });
@@ -3916,11 +3953,11 @@ export function registerAsaasRoutes(app: Express) {
           ...openInvClientIds,
           ...mapClientIds,
         ])) as number[];
-        const clientMap = new Map<number, { name: string; fantasia: string | null; cpfCnpj: string | null; emiteNf: boolean; retemInss: boolean; inssAliquota?: number; email: string | null }>();
+        const clientMap = new Map<number, { name: string; fantasia: string | null; cpfCnpj: string | null; emiteNf: boolean; retemInss: boolean; inssAliquota?: number; email: string | null; addressComplement: string | null }>();
         if (allClientIds.length > 0) {
           const { data: clientsData } = await supabaseAdmin
             .from("clients")
-            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, email_financeiro, email, email_contratual, email_operacional")
+            .select("id, name, nome_fantasia, cnpj, cpf, emite_nf, retem_inss, inss_aliquota, email_financeiro, email, email_contratual, email_operacional, address_complement")
             .in("id", allClientIds);
           for (const c of (clientsData || [])) {
             clientMap.set(c.id, {
@@ -3931,6 +3968,7 @@ export function registerAsaasRoutes(app: Express) {
               retemInss: c.retem_inss === true,
               inssAliquota: c.inss_aliquota != null ? Number(c.inss_aliquota) : undefined,
               email: asaasTomadorEmail(c) || null,
+              addressComplement: c.address_complement || null,
             });
           }
         }
@@ -4014,6 +4052,7 @@ export function registerAsaasRoutes(app: Express) {
             clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
             clientEmail: cli?.email || null,
+            clientAddressComplement: cli?.addressComplement || null,
             description: inv.description,
             value: nfAmt.gross,
             liquidValue: nfAmt.liquid,
@@ -4158,6 +4197,7 @@ export function registerAsaasRoutes(app: Express) {
             clientFantasia: cli?.fantasia || null,
             clientCpfCnpj: cli?.cpfCnpj || inv.client_cpf_cnpj,
             clientEmail: cli?.email || null,
+            clientAddressComplement: cli?.addressComplement || null,
             description: inv.description,
             value: nfAmt.gross,
             liquidValue: nfAmt.liquid,

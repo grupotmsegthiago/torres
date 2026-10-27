@@ -14,6 +14,7 @@ import {
   FOCUS_API_HOMOLOG_URL,
   FOCUS_API_PRODUCTION_URL,
   buildFocusNfsePayload,
+  sanitizeComplement,
   extractFocusErrorMessage,
   focusCancelJustification,
   focusMunicipalNumber,
@@ -288,5 +289,29 @@ test("focusPdfUrl prefere DANFSe e ignora HTML da prefeitura", () => {
   assert.equal(focusPdfUrl({
     url: "https://nfe.prefeitura.sp.gov.br/contribuinte/notaprint.aspx?nf=325",
   }), null);
+});
+
+test("sanitizeComplement corta no último espaço antes de 30", () => {
+  assert.equal(
+    sanitizeComplement("COND PROLOGIS CCP PARK IIQUADRAAREA REMANESCENTE BLOCO PREDIO 100"),
+    "COND PROLOGIS CCP PARK",
+  );
+  assert.equal(sanitizeComplement("SALA 2"), "SALA 2");
+  assert.equal(sanitizeComplement("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"), "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234");
+  assert.equal(sanitizeComplement("   "), undefined);
+});
+
+test("buildFocusNfsePayload: complemento da nota tem no máximo 30", () => {
+  const p = buildFocusNfsePayload({
+    value: 1000,
+    description: "Referente aos serviços de Escolta Armada",
+    prestadorIm: "12345",
+    tomador: {
+      ...tomadorOk,
+      complement: "COND PROLOGIS CCP PARK IIQUADRAAREA REMANESCENTE BLOCO PREDIO 100",
+    },
+  });
+  assert.equal(p.tomador.endereco.complemento, "COND PROLOGIS CCP PARK");
+  assert.ok(p.tomador.endereco.complemento.length <= 30);
 });
 

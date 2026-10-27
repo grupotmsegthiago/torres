@@ -1407,6 +1407,17 @@ export async function ensureDbSchema() {
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_codigo_verificacao TEXT`).catch(() => {});
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_xml_path TEXT`).catch(() => {});
     await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nfse_provider TEXT`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_cnpj VARCHAR(14)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_razao_social VARCHAR(255)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_inscricao_municipal VARCHAR(20)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_email VARCHAR(255)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_logradouro VARCHAR(100)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_numero VARCHAR(20)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_complemento VARCHAR(30)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_bairro VARCHAR(60)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_cep VARCHAR(8)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_codigo_ibge VARCHAR(7)`).catch(() => {});
+    await execSql(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billing_uf VARCHAR(2)`).catch(() => {});
     await execSql(`CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_nfse_ref ON invoices (nfse_ref) WHERE nfse_ref IS NOT NULL`).catch(() => {});
     await execSql(`NOTIFY pgrst, 'reload schema'`).catch(() => {});
     await execSql(`ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS km_gps_calculado REAL`).catch(() => {});

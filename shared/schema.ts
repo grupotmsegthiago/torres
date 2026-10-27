@@ -1240,6 +1240,17 @@ export const invoices = pgTable("invoices", {
   nfseCodigoVerificacao: text("nfse_codigo_verificacao"),
   nfseXmlPath: text("nfse_xml_path"),
   nfseProvider: text("nfse_provider"),
+  billingCnpj: varchar("billing_cnpj", { length: 14 }),
+  billingRazaoSocial: text("billing_razao_social"),
+  billingInscricaoMunicipal: varchar("billing_inscricao_municipal", { length: 20 }),
+  billingEmail: text("billing_email"),
+  billingLogradouro: varchar("billing_logradouro", { length: 100 }),
+  billingNumero: varchar("billing_numero", { length: 20 }),
+  billingComplemento: varchar("billing_complemento", { length: 30 }),
+  billingBairro: varchar("billing_bairro", { length: 60 }),
+  billingCep: varchar("billing_cep", { length: 8 }),
+  billingCodigoIbge: varchar("billing_codigo_ibge", { length: 7 }),
+  billingUf: varchar("billing_uf", { length: 2 }),
   // Gateway de cobrança: 'asaas' (legado) | 'inter' (novo)
   gateway: text("gateway").notNull().default("asaas"),
   // ID único da cobrança no Banco Inter (codigoSolicitacao)
