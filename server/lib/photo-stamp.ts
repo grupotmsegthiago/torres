@@ -1,11 +1,11 @@
-import { createRequire } from "node:module";
 import { existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
+import textToSvgModule from "text-to-svg";
+import type TextToSVG from "text-to-svg";
 import { ROBOTO_REGULAR_B64 } from "./stamp-font.js";
 import { LOGO_VIEW_H, LOGO_VIEW_W, logoMarkPng } from "./logo-torres-white.js";
-import type TextToSVG from "text-to-svg";
 
 /**
  * Carimbo institucional das fotos de campo (ronda, posto, ocorrência, abastecimento).
@@ -40,14 +40,18 @@ export async function frameForChatPreview(input: Buffer): Promise<Buffer> {
   return sharp(input).extract({ left: 0, top, width: W, height }).jpeg({ quality: 90 }).toBuffer();
 }
 
-const require = createRequire(import.meta.url);
-const textToSvgModule = require("text-to-svg") as { default?: typeof TextToSVG; loadSync?: typeof TextToSVG.loadSync };
-
 let textRenderer: TextToSVG | null = null;
+
+function textToSvgCtor(): typeof TextToSVG {
+  const mod = textToSvgModule as unknown as { default?: typeof TextToSVG; loadSync?: typeof TextToSVG.loadSync };
+  if (typeof mod.loadSync === "function") return mod as unknown as typeof TextToSVG;
+  if (mod.default && typeof mod.default.loadSync === "function") return mod.default;
+  throw new Error("text-to-svg sem loadSync");
+}
 
 function renderer(): TextToSVG {
   if (textRenderer) return textRenderer;
-  const ctor = textToSvgModule.default ?? (textToSvgModule as unknown as typeof TextToSVG);
+  const ctor = textToSvgCtor();
   const fontPath = join(tmpdir(), `torres-roboto-regular-${ROBOTO_REGULAR_B64.length}.ttf`);
   if (!existsSync(fontPath)) {
     writeFileSync(fontPath, Buffer.from(ROBOTO_REGULAR_B64, "base64"));
