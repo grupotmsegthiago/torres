@@ -2,6 +2,7 @@ import type { Express } from "express";
   import { storage, toCamelObj, toCamelArray } from "../storage";
   import { supabaseAdmin } from "../supabase";
   import { uploadMissionPhoto, resolvePhotoForView, downloadMissionPhotoDataUri, persistMissionPhotoBlob } from "../lib/mission-photos";
+  import { stampInstitutionalDataUri } from "../lib/photo-stamp";
   import { requireAuth, requireAdminRole, requireDiretoria } from "../auth";
   import { insertGerenciadoraSchema } from "@shared/schema";
   import * as truckscontrol from "../truckscontrol";
@@ -1143,16 +1144,13 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
     let validatedPhotoUrl: string | null = null;
     if (photoUrl && typeof photoUrl === "string" && photoUrl.startsWith("data:image/") && photoUrl.length <= 10 * 1024 * 1024) {
-      // Foto sobe pro storage (bucket privado); no banco fica só o caminho.
+      // Carimbo no bitmap antes do storage. A inspeção por IA, quando houver, continua na foto crua.
+      const stampedPhoto = await stampInstitutionalDataUri(photoUrl);
       try {
-        validatedPhotoUrl = await uploadMissionPhoto(serviceOrderId, photoUrl);
+        validatedPhotoUrl = await uploadMissionPhoto(serviceOrderId, stampedPhoto);
       } catch (e: any) {
-        // Fail-safe: se o upload pro storage falhar (storage instável, bucket
-        // ainda não criado no boot, etc.) NÃO perdemos a foto — grava o base64
-        // inline como antes. Os readers tratam base64 legado e o sweep da
-        // migração move pro storage depois (idempotente).
         console.error("[mission-update] upload foto falhou, fallback base64:", e?.message);
-        validatedPhotoUrl = photoUrl;
+        validatedPhotoUrl = stampedPhoto;
       }
     }
 
@@ -1612,8 +1610,9 @@ Responda APENAS com JSON: {"km_lido": number}`;
       return res.status(400).json({ message: "Valor de KM obrigatório para esta etapa" });
     }
 
-    // Upload único → Storage; coluna photo_data guarda caminho (dual-read legado).
-    const storedPhoto = await persistMissionPhotoBlob(serviceOrderId, photoData);
+    // Bitmap gravado já leva logótipo e rodapé. A IA lê a foto crua (hodômetro/placa).
+    const stampedPhoto = await stampInstitutionalDataUri(photoData);
+    const storedPhoto = await persistMissionPhotoBlob(serviceOrderId, stampedPhoto);
 
     let photo;
     try {

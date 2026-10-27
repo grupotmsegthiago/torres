@@ -6,6 +6,7 @@ import type { Express } from "express";
   import { haversineDist, createAutoTransaction, logFinancialAudit } from "./_helpers";
   import { uploadMissionPhoto } from "../lib/mission-photos";
   import { persistFuelingPhotoBlob } from "../lib/fueling-photo-storage";
+  import { stampInstitutionalDataUri } from "../lib/photo-stamp";
   import { alertFuelingLimitRejected } from "../notifications";
   import { fuelingLimitUserMessage, fuelingLimitViolation } from "@shared/fueling-limits";
   import { fuelingKmSaltoAlert, FUELING_KM_SALTO_ALERTA, FUELING_REMINDER_MESSAGE, shouldShowFuelingReminder } from "@shared/fueling-km-salto";
@@ -352,12 +353,17 @@ import type { Express } from "express";
         return res.status(409).json({ message: "Abastecimento já registrado — registro duplicado detectado." });
       }
 
-      // Persiste fotos no Storage (caminho curto no Postgres). Fail-safe mantém base64.
+      const [receiptStamped, pumpStamped, odoStamped, plateStamped] = await Promise.all([
+        stampInstitutionalDataUri(receiptPhoto),
+        stampInstitutionalDataUri(pumpPhoto),
+        stampInstitutionalDataUri(odometerPhoto),
+        platePhoto ? stampInstitutionalDataUri(platePhoto) : Promise.resolve(platePhoto),
+      ]);
       const [storedReceipt, storedPump, storedOdo, storedPlate] = await Promise.all([
-        persistFuelingPhotoBlob(null, "receipt", receiptPhoto),
-        persistFuelingPhotoBlob(null, "pump", pumpPhoto),
-        persistFuelingPhotoBlob(null, "odometer", odometerPhoto),
-        platePhoto ? persistFuelingPhotoBlob(null, "plate", platePhoto) : Promise.resolve(platePhoto),
+        persistFuelingPhotoBlob(null, "receipt", receiptStamped),
+        persistFuelingPhotoBlob(null, "pump", pumpStamped),
+        persistFuelingPhotoBlob(null, "odometer", odoStamped),
+        plateStamped ? persistFuelingPhotoBlob(null, "plate", plateStamped) : Promise.resolve(plateStamped),
       ]);
 
       const { data: fueling } = await supabaseAdmin.from("vehicle_fueling").insert({
@@ -686,9 +692,10 @@ import type { Express } from "express";
       const validTypes = ["acidente", "quebra", "avaria", "manutencao", "seguranca", "outro"];
       if (!validTypes.includes(type)) return res.status(400).json({ message: "Tipo inválido" });
       const validPhotos = (photos || []).filter((p: any) => typeof p === "string" && p.startsWith("data:image/")).slice(0, 5);
+      const stampedPhotos = await Promise.all(validPhotos.map((p: string) => stampInstitutionalDataUri(p)));
       const { data: record } = await supabaseAdmin.from("employee_occurrences").insert({
         employee_id: employeeId, vehicle_id: vehicleId || null, type, description: description.substring(0, 2000),
-        photos: validPhotos, latitude, longitude,
+        photos: stampedPhotos, latitude, longitude,
       }).select().single();
       res.status(201).json(toCamelObj(record));
     } catch (err: any) {
