@@ -28,12 +28,22 @@ test("carimbo limita a largura a 1920 e escurece o rodapé", async () => {
   assert.ok(middle.r > 150, "o miolo da foto foi coberto");
 });
 
-test("logótipo branco fica sobre placa escura no canto superior esquerdo", async () => {
-  const src = await solidJpeg(1000, 700, { r: 240, g: 240, b: 240 });
+test("logótipo branco fica vazado sobre a foto, sem placa", async () => {
+  const src = await solidJpeg(1000, 700, { r: 30, g: 70, b: 160 });
   const out = await stampInstitutionalPhoto(src);
   const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true });
-  const i = (40 * info.width + 40) * info.channels;
-  assert.ok(data[i] < 180, "canto superior esquerdo continuou claro demais para o logótipo branco");
+  const corner = (2 * info.width + 2) * info.channels;
+  assert.ok(data[corner + 2] > 120, "o canto ganhou uma placa escura");
+  let white = 0;
+  for (let y = 0; y < 220; y++) {
+    for (let x = 0; x < 200; x++) {
+      const p = (y * info.width + x) * info.channels;
+      if (data[p] > 200 && data[p + 1] > 200 && data[p + 2] > 200) white++;
+    }
+  }
+  assert.ok(white > 40, `o traço branco do logotipo não apareceu: ${white}`);
+  const hole = (96 * info.width + 92) * info.channels;
+  assert.ok(data[hole + 2] > 120, "o miolo do escudo cobriu a foto");
 });
 
 test("orientação EXIF é aplicada antes do carimbo", async () => {

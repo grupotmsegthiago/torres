@@ -3,15 +3,15 @@ import { existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
-import { WM_LOGO_WHITE_B64 } from "./watermark-assets.js";
 import { ROBOTO_REGULAR_B64 } from "./stamp-font.js";
+import { LOGO_VIEW_H, LOGO_VIEW_W, logoMarkSvg } from "./logo-torres-white.js";
 import type TextToSVG from "text-to-svg";
 
 /**
  * Carimbo institucional das fotos de campo (ronda, posto, ocorrência, abastecimento).
  * O bitmap gravado no storage já sai com logótipo e rodapé — o painel copia esse ficheiro.
  * Não altera a marca d'água do WhatsApp (photo-watermark.ts).
- * O rodapé é curva vetorial (Roboto embutida): o Linux da Vercel não tem Arial.
+ * O logotipo é SVG branco vazado, sem placa. O rodapé é curva vetorial (Roboto embutida).
  * Fail-open: se o sharp falhar, a foto original segue.
  */
 
@@ -25,7 +25,6 @@ export const INSTITUTIONAL_FOOTER =
 const MAX_WIDTH = 1920;
 const LOGO_WIDTH_RATIO = 0.135;
 const PAD = 24;
-const LOGO_BUF = Buffer.from(WM_LOGO_WHITE_B64, "base64");
 
 const require = createRequire(import.meta.url);
 const textToSvgModule = require("text-to-svg") as { default?: typeof TextToSVG; loadSync?: typeof TextToSVG.loadSync };
@@ -96,35 +95,17 @@ export async function stampInstitutionalPhoto(input: Buffer): Promise<Buffer> {
   const logoRoomH = Math.max(1, H - barH - pad - 4);
   let logoW = Math.min(Math.round(W * LOGO_WIDTH_RATIO), Math.round(W * 0.15), logoRoomW);
   logoW = Math.max(1, logoW);
-  let logoBuf = await sharp(LOGO_BUF).resize({ width: logoW }).png().toBuffer();
-  let logoMeta = await sharp(logoBuf).metadata();
-  let logoH = logoMeta.height || Math.round(logoW * 0.6);
+  let logoH = Math.max(1, Math.round(logoW * LOGO_VIEW_H / LOGO_VIEW_W));
   if (logoH > logoRoomH) {
-    logoBuf = await sharp(LOGO_BUF).resize({ height: Math.max(1, logoRoomH) }).png().toBuffer();
-    logoMeta = await sharp(logoBuf).metadata();
-    logoH = logoMeta.height || logoRoomH;
-    logoW = logoMeta.width || logoW;
+    logoH = Math.max(1, logoRoomH);
+    logoW = Math.max(1, Math.min(logoRoomW, Math.round(logoH * LOGO_VIEW_W / LOGO_VIEW_H)));
   }
-  if (logoW > W - pad || logoH > H - pad) {
-    logoBuf = await sharp(logoBuf).resize({
-      width: Math.max(1, W - pad),
-      height: Math.max(1, H - barH - pad),
-      fit: "inside",
-    }).png().toBuffer();
-    logoMeta = await sharp(logoBuf).metadata();
-    logoW = logoMeta.width || logoW;
-    logoH = logoMeta.height || logoH;
-  }
-
-  const plate = `
-  <svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <rect x="${Math.max(0, pad - 8)}" y="${Math.max(0, pad - 8)}" width="${Math.min(logoW + 16, W)}" height="${Math.min(logoH + 16, H)}" rx="8" fill="#000" fill-opacity="0.45"/>
-  </svg>`;
+  if (logoW > W - pad) logoW = Math.max(1, W - pad);
+  if (logoH > H - pad) logoH = Math.max(1, H - pad);
 
   return sharp(base)
     .composite([
-      { input: Buffer.from(plate, "utf-8"), top: 0, left: 0 },
-      { input: logoBuf, top: pad, left: pad },
+      { input: logoMarkSvg(logoW, logoH), top: pad, left: pad },
       { input: institutionalFooterSvg(W, barH), top: H - barH, left: 0 },
     ])
     .jpeg({ quality: 86 })
