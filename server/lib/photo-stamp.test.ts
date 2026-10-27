@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import sharp from "sharp";
+import { logoMarkPng } from "./logo-torres-white";
 import { INSTITUTIONAL_FOOTER, institutionalFooterSvg, stampInstitutionalDataUri, stampInstitutionalPhoto } from "./photo-stamp";
 
 async function solidJpeg(width: number, height: number, color: { r: number; g: number; b: number }) {
@@ -53,7 +54,8 @@ test("orientação EXIF é aplicada antes do carimbo", async () => {
   const sideways = await sharp(landscape).withMetadata({ orientation: 6 }).toBuffer();
   const out = await stampInstitutionalPhoto(sideways);
   const meta = await sharp(out).metadata();
-  assert.ok((meta.height || 0) > (meta.width || 0), `EXIF não virou a foto: ${meta.width}x${meta.height}`);
+  assert.equal(meta.width, 40, `EXIF não virou a foto: ${meta.width}x${meta.height}`);
+  assert.ok((meta.height || 0) < (meta.width || 0), "a foto em pé não foi enquadrada");
 });
 
 test("data URI vira JPEG carimbado e texto que não é imagem passa intacto", async () => {
@@ -82,7 +84,9 @@ test("rodapé vertical desenha o texto da Torres em curvas, sem fonte do sistema
   const src = await solidJpeg(720, 1280, { r: 235, g: 235, b: 235 });
   const out = await stampInstitutionalPhoto(src);
   const meta = await sharp(out).metadata();
-  assert.ok((meta.height || 0) > (meta.width || 0));
+  assert.equal(meta.width, 720);
+  assert.ok((meta.width || 0) > (meta.height || 0), "a foto em pé continuou vertical no balão");
+  assert.ok(Math.abs((meta.width || 1) / (meta.height || 1) - 16 / 9) < 0.05);
   const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true });
   const y = info.height - 20;
   let light = 0;
@@ -95,4 +99,13 @@ test("rodapé vertical desenha o texto da Torres em curvas, sem fonte do sistema
   assert.ok(data[edge] < 80, "a barra não cobre a largura");
   const mid = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * info.channels;
   assert.ok(data[mid] > 200, "o miolo da foto vertical foi coberto");
+  const corner = (2 * info.width + 2) * info.channels;
+  assert.ok(data[corner] > 180, "o canto do logotipo ganhou fundo preto");
+});
+
+test("o png do logotipo é vazado", async () => {
+  const png = await logoMarkPng(180, 228);
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.equal(info.channels, 4);
+  assert.ok(data[3] < 16, `canto do logotipo opaco: alpha ${data[3]}`);
 });

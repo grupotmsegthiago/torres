@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { ROBOTO_REGULAR_B64 } from "./stamp-font.js";
-import { LOGO_VIEW_H, LOGO_VIEW_W, logoMarkSvg } from "./logo-torres-white.js";
+import { LOGO_VIEW_H, LOGO_VIEW_W, logoMarkPng } from "./logo-torres-white.js";
 import type TextToSVG from "text-to-svg";
 
 /**
@@ -25,6 +25,20 @@ export const INSTITUTIONAL_FOOTER =
 const MAX_WIDTH = 1920;
 const LOGO_WIDTH_RATIO = 0.135;
 const PAD = 24;
+/** O balão do WhatsApp mostra a foto deitada inteira e corta o topo e a base da foto em pé. */
+const CHAT_PREVIEW_RATIO = 16 / 9;
+
+/** Foto em pé vira um quadro 16:9 no miolo, para o logotipo e o rodapé caberem no balão. */
+export async function frameForChatPreview(input: Buffer): Promise<Buffer> {
+  const meta = await sharp(input).metadata();
+  const W = meta.width || 1;
+  const H = meta.height || 1;
+  if (H <= W) return input;
+  const targetH = Math.max(1, Math.round(W / CHAT_PREVIEW_RATIO));
+  const top = Math.max(0, Math.floor((H - targetH) / 2));
+  const height = Math.min(targetH, H - top);
+  return sharp(input).extract({ left: 0, top, width: W, height }).jpeg({ quality: 90 }).toBuffer();
+}
 
 const require = createRequire(import.meta.url);
 const textToSvgModule = require("text-to-svg") as { default?: typeof TextToSVG; loadSync?: typeof TextToSVG.loadSync };
@@ -80,11 +94,12 @@ export function institutionalFooterSvg(width: number, barH: number): Buffer {
 }
 
 export async function stampInstitutionalPhoto(input: Buffer): Promise<Buffer> {
-  const base = await sharp(input)
+  const normalized = await sharp(input)
     .rotate()
     .resize({ width: MAX_WIDTH, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 90 })
     .toBuffer();
+  const base = await frameForChatPreview(normalized);
   const meta = await sharp(base).metadata();
   const W = meta.width || 1;
   const H = meta.height || 1;
@@ -103,9 +118,10 @@ export async function stampInstitutionalPhoto(input: Buffer): Promise<Buffer> {
   if (logoW > W - pad) logoW = Math.max(1, W - pad);
   if (logoH > H - pad) logoH = Math.max(1, H - pad);
 
+  const logoPng = await logoMarkPng(logoW, logoH);
   return sharp(base)
     .composite([
-      { input: logoMarkSvg(logoW, logoH), top: pad, left: pad },
+      { input: logoPng, top: pad, left: pad },
       { input: institutionalFooterSvg(W, barH), top: H - barH, left: 0 },
     ])
     .jpeg({ quality: 86 })

@@ -1,5 +1,7 @@
 import sharp from "sharp";
-import { WM_LOGO_WHITE_B64, WM_WHATSAPP_PATH } from "./watermark-assets.js";
+import { WM_WHATSAPP_PATH } from "./watermark-assets.js";
+import { LOGO_VIEW_H, LOGO_VIEW_W, logoMarkPng } from "./logo-torres-white.js";
+import { frameForChatPreview } from "./photo-stamp.js";
 
 // Marca d'água da Torres aplicada às fotos enviadas aos grupos de cliente.
 // Layout aprovado pelo dono (modelo em .local/preview/modelo-marca-dagua.jpg):
@@ -27,8 +29,6 @@ const MAX_DIM = 1600;
 export const MAX_SEND_DATAURL_BYTES = 7 * 1024 * 1024;
 // Teto do buffer de entrada (decodificado) — evita alocar buffers absurdos.
 const MAX_INPUT_BYTES = 9 * 1024 * 1024;
-
-const LOGO_BUF = Buffer.from(WM_LOGO_WHITE_B64, "base64");
 
 /**
  * Decodifica base64 (com ou sem prefixo `data:image/...;base64,`) em buffer,
@@ -63,11 +63,11 @@ function esc(s: string): string {
  */
 export async function applyTorresWatermark(input: Buffer): Promise<Buffer> {
   // 1. normaliza orientação + limita tamanho → buffer base com W/H conhecidos
-  const normBuf = await sharp(input)
+  const normBuf = await frameForChatPreview(await sharp(input)
     .rotate()
     .resize({ width: MAX_DIM, height: MAX_DIM, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 90 })
-    .toBuffer();
+    .toBuffer());
   const meta = await sharp(normBuf).metadata();
   const W = meta.width!;
   const H = meta.height!;
@@ -77,12 +77,11 @@ export async function applyTorresWatermark(input: Buffer): Promise<Buffer> {
   const pad = Math.round(W * 0.028);
   const cy = bandY + bandH / 2;
 
-  // logo (branco) no topo-esquerda
+  // Logotipo branco vazado, sem faixa escura por trás.
   const topPad = Math.round(H * 0.03);
-  const logoMeta = await sharp(LOGO_BUF).metadata();
-  const logoH = Math.round(H * 0.17);
-  const logoBuf = await sharp(LOGO_BUF).resize({ height: logoH }).png().toBuffer();
-  const topBandH = logoH + topPad;
+  const logoH = Math.max(1, Math.round(H * 0.17));
+  const logoW = Math.max(1, Math.round(logoH * LOGO_VIEW_W / LOGO_VIEW_H));
+  const logoBuf = await logoMarkPng(logoW, logoH);
 
   // bloco direito: 3 linhas de contato
   const rowFont = Math.round(bandH * 0.165);
@@ -145,11 +144,6 @@ export async function applyTorresWatermark(input: Buffer): Promise<Buffer> {
         <stop offset="55%" stop-color="#0c1a3a" stop-opacity="0.72"/>
         <stop offset="100%" stop-color="#0a1430" stop-opacity="0.9"/>
       </linearGradient>
-      <linearGradient id="gt" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#0a1430" stop-opacity="0.85"/>
-        <stop offset="60%" stop-color="#0c1a3a" stop-opacity="0.45"/>
-        <stop offset="100%" stop-color="#0c1a3a" stop-opacity="0"/>
-      </linearGradient>
       <radialGradient id="igGrad" cx="30%" cy="107%" r="135%">
         <stop offset="0%" stop-color="#fdf497"/>
         <stop offset="8%" stop-color="#fdf497"/>
@@ -165,7 +159,6 @@ export async function applyTorresWatermark(input: Buffer): Promise<Buffer> {
         <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#000" flood-opacity="0.55"/>
       </filter>
     </defs>
-    <rect x="0" y="0" width="${W}" height="${topBandH + Math.round(topBandH * 0.5)}" fill="url(#gt)"/>
     <rect x="0" y="${bandY - Math.round(bandH * 0.35)}" width="${W}" height="${bandH + Math.round(bandH * 0.35)}" fill="url(#g)"/>
     ${rows}
   </svg>`;
