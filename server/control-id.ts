@@ -10,6 +10,7 @@
  * Senhas guardadas com AES-256-GCM no banco (CONTROLID_ENC_KEY ou SESSION_SECRET).
  */
 import { supabaseAdmin } from "./supabase";
+import { fetchAllSupabaseRows } from "./lib/supabase-page";
 import { computeWorkedHours, ymdBRT as ymdBRTcanon } from "./lib/hours-calc";
 import { buildEspelhoPonto } from "./lib/espelho-ponto";
 import {
@@ -924,6 +925,8 @@ export async function buildSyncDiagnostic(): Promise<any> {
       .from("control_id_punches")
       .select("punch_at")
       .eq("device_id", d.id)
+      .gte("punch_at", new Date(Date.now() - 400 * 24 * 3600000).toISOString())
+      .lte("punch_at", new Date(Date.now() + 36 * 3600000).toISOString())
       .order("punch_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -1870,13 +1873,18 @@ export async function buildPainelMes(monthYear: string): Promise<any[]> {
     .in("employee_id", empIds);
   const mappedSet = new Set(((maps || []) as any[]).filter(m => m.ativo).map(m => m.employee_id));
 
-  const { data: punches } = await supabaseAdmin
-    .from("control_id_punches")
-    .select("employee_id, punch_at, source, device_id")
-    .in("employee_id", empIds)
-    .gte("punch_at", monthStart.toISOString())
-    .lt("punch_at", monthEnd.toISOString())
-    .order("punch_at", { ascending: true });
+  const punchStart = monthStart.toISOString();
+  const punchEnd = monthEnd.toISOString();
+  const punches = await fetchAllSupabaseRows<any>((from, to) =>
+    supabaseAdmin
+      .from("control_id_punches")
+      .select("employee_id, punch_at, source, device_id")
+      .in("employee_id", empIds)
+      .gte("punch_at", punchStart)
+      .lt("punch_at", punchEnd)
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 
   const byEmp = new Map<number, any[]>();
   for (const p of (punches || []) as any[]) {

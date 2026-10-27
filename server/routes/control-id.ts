@@ -5,6 +5,7 @@ import * as ctrl from "../control-id";
 import { buildReconciliation, runDailyReconciliation } from "../rhid-reconciliation";
 import { canonicalRhidPersonId } from "../lib/control-id-parsers";
 import { isAtivo } from "./fixed-costs";
+import { getPayrollPeriod, getPayrollPeriodForDate } from "@shared/payroll-period";
 
 export function registerControlIdRoutes(app: Express) {
   // ─────── DEVICES (CRUD) ───────
@@ -492,39 +493,36 @@ export function registerControlIdRoutes(app: Express) {
     }
   });
 
-  // ─────── VISÃO GERAL DA FOLHA (todos funcionários do mês) ───────
+  // ─────── VISÃO GERAL DA FOLHA ───────
+  // Não calcula buildFolhaStats de todo mundo. Esse fan-out travava a aba
+  // (dezenas de leituras de batida, salário e OS ao mesmo tempo).
+  // O custo de um funcionário continua em /folha-stats/:id, aberto sob demanda.
   app.get("/api/control-id/folha-overview", requireAuth, async (req, res) => {
     try {
-      const monthYear = String(req.query.month || new Date().toISOString().slice(0, 7));
-      const { data: employees } = await supabaseAdmin
+      const monthYear = String(req.query.month || "");
+      const period = /^\d{4}-\d{2}$/.test(monthYear)
+        ? getPayrollPeriod(Number(monthYear.slice(0, 4)), Number(monthYear.slice(5, 7)))
+        : getPayrollPeriodForDate(new Date());
+      const { data: employees, error } = await supabaseAdmin
         .from("employees")
         .select("id, name, role, matricula, status")
+        .eq("status", "ativo")
         .order("name");
-      const activeEmps = (employees || []).filter(isAtivo);
-      const rows = await Promise.all(activeEmps.map(async (e: any) => {
-        const stats = await ctrl.buildFolhaStats(e.id, monthYear);
-        return {
-          employeeId: e.id,
-          name: e.name,
-          role: e.role,
-          matricula: e.matricula,
-          hoursWorked: stats.hoursWorked,
-          hoursLimit: stats.hoursLimit,
-          horaExtra: stats.horaExtra,
-          horasRestantes: stats.horasRestantes,
-          percentUsed: stats.percentUsed,
-          daysWorked: stats.daysWorked,
-          baseSalary: stats.baseSalary,
-          custoBase: stats.custoBase,
-          custoExtra: stats.custoExtra,
-          custoTotalEstimado: stats.custoTotalEstimado,
-          custoComEncargos: stats.custoComEncargos,
-          hasSalary: stats.hasSalary,
-        };
+      if (error) return res.status(500).json({ message: error.message });
+      const rows = (employees || []).filter(isAtivo).map((e: any) => ({
+        employeeId: e.id,
+        name: e.name,
+        role: e.role,
+        matricula: e.matricula,
       }));
-      // Ordena: quem mais trabalhou primeiro
-      rows.sort((a, b) => b.hoursWorked - a.hoursWorked);
-      res.json(rows);
+      res.json({
+        mode: "lista",
+        month: `${period.year}-${String(period.month).padStart(2, "0")}`,
+        from: period.startDate,
+        to: period.endDate,
+        label: period.label,
+        rows,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

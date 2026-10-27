@@ -50,3 +50,45 @@ export function formatPeriodoBR(from: string, to: string): string {
   };
   return `Período: ${br(from)} a ${br(to)}`;
 }
+
+export const DIARIA_PONTO_UNIT = 43;
+
+export type DiariaLancamento = {
+  employeeId: number;
+  date: string;
+  amount?: number | null;
+  description?: string | null;
+};
+
+/**
+ * Uma diária de R$ 43 por agente e por dia.
+ * Linha [AUTO-Q] repete as jornadas já marcadas no ponto e não entra de novo.
+ * Duas linhas no mesmo dia contam uma vez.
+ */
+export function acumularDiariaPonto(
+  rows: DiariaLancamento[],
+  unit = DIARIA_PONTO_UNIT,
+): Map<number, { dates: string[]; total: number }> {
+  const byEmp = new Map<number, { dates: Set<string>; total: number }>();
+  for (const row of rows) {
+    const desc = String(row.description || "");
+    if (desc.startsWith("[AUTO-Q]")) continue;
+    const id = Number(row.employeeId);
+    const date = String(row.date || "").slice(0, 10);
+    if (!Number.isInteger(id) || id <= 0 || !ISO.test(date)) continue;
+    const slot = byEmp.get(id) || { dates: new Set<string>(), total: 0 };
+    if (slot.dates.has(date)) continue;
+    slot.dates.add(date);
+    const amount = Number(row.amount);
+    const credit = desc.startsWith("[PONTO]") || !Number.isFinite(amount) || amount === unit
+      ? unit
+      : Math.round(amount * 100) / 100;
+    slot.total = Math.round((slot.total + credit) * 100) / 100;
+    byEmp.set(id, slot);
+  }
+  const out = new Map<number, { dates: string[]; total: number }>();
+  for (const [id, slot] of byEmp) {
+    out.set(id, { dates: [...slot.dates].sort(), total: slot.total });
+  }
+  return out;
+}

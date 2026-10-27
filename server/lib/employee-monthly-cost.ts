@@ -8,6 +8,7 @@
  *  - Separação: realizado / provisionado / descontos empregado / encargos
  */
 import { getPayrollPeriod } from "@shared/payroll-period";
+import { acumularDiariaPonto } from "@shared/diarias-periodo";
 import { supabaseAdmin } from "../supabase";
 import { r2, type PayrollBreakdown } from "./payroll";
 
@@ -376,13 +377,17 @@ export async function sumDiariasForEmployee(
   try {
     const { data } = await supabaseAdmin
       .from("agent_daily_allowances")
-      .select("amount")
+      .select("date, amount, description")
       .eq("employee_id", employeeId)
       .gte("date", from)
       .lte("date", to);
-    for (const r of (data || []) as any[]) {
-      agentAllowances += Number(r.amount || 0);
-    }
+    const acc = acumularDiariaPonto((data || []).map((r: any) => ({
+      employeeId,
+      date: String(r.date || ""),
+      amount: Number(r.amount || 0),
+      description: r.description,
+    })));
+    agentAllowances = acc.get(employeeId)?.total || 0;
   } catch {
     /* tabela pode não existir */
   }
@@ -427,12 +432,16 @@ export async function sumDiariasForPeriodUnified(
   try {
     const { data } = await supabaseAdmin
       .from("agent_daily_allowances")
-      .select("employee_id, amount")
+      .select("employee_id, date, amount, description")
       .gte("date", from)
       .lte("date", to);
-    for (const r of (data || []) as any[]) {
-      add(Number(r.employee_id), Number(r.amount || 0));
-    }
+    const acc = acumularDiariaPonto((data || []).map((r: any) => ({
+      employeeId: Number(r.employee_id),
+      date: String(r.date || ""),
+      amount: Number(r.amount || 0),
+      description: r.description,
+    })));
+    for (const [id, slot] of acc) add(id, slot.total);
   } catch {
     /* ignore */
   }

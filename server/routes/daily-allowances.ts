@@ -4,8 +4,8 @@ import { requireAuth, requireAdminRole } from "../auth";
 import { z } from "zod";
 import { buildFolhaPonto } from "../control-id";
 import { monthToFechamento } from "../lib/control-id-parsers";
-import { getPayrollPeriod } from "@shared/payroll-period";
-import { daysInclusive, formatPeriodoBR, rangeFitsDiarias } from "@shared/diarias-periodo";
+import { getPayrollPeriod, getPayrollPeriodForDate } from "@shared/payroll-period";
+import { acumularDiariaPonto, daysInclusive, DIARIA_PONTO_UNIT, formatPeriodoBR, rangeFitsDiarias } from "@shared/diarias-periodo";
 import {
   DIARIA_LONG_SHIFT_VALOR,
   DIARIA_PONTO_DESCRICAO,
@@ -191,14 +191,13 @@ export function registerDailyAllowancesRoutes(app: Express) {
 
   app.get("/api/daily-allowances/ponto-grade", requireAuth, requireAdminRole, async (req, res) => {
     const month = String(req.query.month || "");
-    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ message: "Mês inválido" });
-    const [year, mm] = month.split("-").map(Number);
     const fromQ = String(req.query.from || "");
     const toQ = String(req.query.to || "");
     let startDate: string;
     let endDate: string;
     let label: string;
     let days: string[];
+    let monthOut = month;
     if (fromQ || toQ) {
       if (!rangeFitsDiarias(fromQ, toQ)) {
         return res.status(400).json({ message: "Intervalo inválido. Use no máximo 62 dias, com a data inicial até a final." });
@@ -207,19 +206,29 @@ export function registerDailyAllowancesRoutes(app: Express) {
       endDate = toQ;
       label = formatPeriodoBR(fromQ, toQ);
       days = daysInclusive(fromQ, toQ);
-    } else {
+      if (!/^\d{4}-\d{2}$/.test(monthOut)) monthOut = fromQ.slice(0, 7);
+    } else if (/^\d{4}-\d{2}$/.test(month)) {
+      const [year, mm] = month.split("-").map(Number);
       const period = getPayrollPeriod(year, mm);
       startDate = period.startDate;
       endDate = period.endDate;
       label = period.label;
       days = daysInclusive(startDate, endDate);
+    } else {
+      const period = getPayrollPeriodForDate(new Date());
+      startDate = period.startDate;
+      endDate = period.endDate;
+      label = period.label;
+      days = daysInclusive(startDate, endDate);
+      monthOut = `${period.year}-${String(period.month).padStart(2, "0")}`;
     }
 
+    const daySet = new Set(days);
     const [{ data: emps, error: empErr }, { data: flags, error: flagErr }] = await Promise.all([
       supabaseAdmin.from("employees").select("id, name, matricula, role, status").eq("status", "ativo").order("name"),
       supabaseAdmin
         .from("agent_daily_allowances")
-        .select("employee_id, date, amount")
+        .select("employee_id, date, amount, description")
         .eq("description", DIARIA_PONTO_DESCRICAO)
         .gte("date", startDate)
         .lte("date", endDate),
@@ -227,16 +236,17 @@ export function registerDailyAllowancesRoutes(app: Express) {
     if (empErr) return res.status(500).json({ message: empErr.message });
     if (flagErr) return res.status(500).json({ message: flagErr.message });
 
-    const byEmp = new Map<number, { dates: string[]; total: number }>();
-    for (const f of (flags || []) as any[]) {
-      const id = Number(f.employee_id);
-      const date = String(f.date).slice(0, 10);
-      if (!days.includes(date)) continue;
-      const slot = byEmp.get(id) || { dates: [], total: 0 };
-      if (!slot.dates.includes(date)) slot.dates.push(date);
-      slot.total += Number(f.amount || DIARIA_LONG_SHIFT_VALOR);
-      byEmp.set(id, slot);
-    }
+    const byEmp = acumularDiariaPonto(
+      ((flags || []) as any[])
+        .filter((f) => daySet.has(String(f.date).slice(0, 10)))
+        .map((f) => ({
+          employeeId: Number(f.employee_id),
+          date: String(f.date).slice(0, 10),
+          amount: Number(f.amount),
+          description: f.description,
+        })),
+      DIARIA_PONTO_UNIT,
+    );
 
     const rows = ((emps || []) as any[])
       .filter((e) => /vigilante|escolta/i.test(String(e.role || "")) || byEmp.has(Number(e.id)))
@@ -254,7 +264,7 @@ export function registerDailyAllowancesRoutes(app: Express) {
 
     const totalGeral = Math.round(rows.reduce((s, r) => s + r.total, 0) * 100) / 100;
     res.json({
-      month,
+      month: monthOut,
       from: startDate,
       to: endDate,
       label,
