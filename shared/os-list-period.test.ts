@@ -1,0 +1,101 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import {
+  formatOsListPeriodLabel,
+  osListCalendarMonthRange,
+  osMatchesCalendarMonth,
+} from "./os-list-period";
+
+test("outubro de 2026 cobre 01/10 até 31/10, inclusive os limites", () => {
+  assert.deepEqual(osListCalendarMonthRange("2026-10"), { from: "2026-10-01", to: "2026-10-31" });
+  assert.equal(formatOsListPeriodLabel("2026-10"), "Período: 01/10/2026 a 31/10/2026");
+
+  const inside = [
+    { scheduledDate: "2026-10-01T00:00:00-03:00" },
+    { scheduledDate: "2026-10-01" },
+    { scheduledDate: "2026-10-31T23:59:59-03:00" },
+    { scheduledDate: "2026-10-31T23:30:00" },
+    { scheduledDate: "2026-11-01T02:30:00Z" },
+  ];
+  for (const order of inside) {
+    assert.equal(osMatchesCalendarMonth(order, "2026-10"), true, JSON.stringify(order));
+  }
+
+  const outside = [
+    { scheduledDate: "2026-09-30T23:59:59-03:00" },
+    { scheduledDate: "2026-10-01T02:30:00Z" },
+    { scheduledDate: "2026-11-01T00:00:00-03:00" },
+    { scheduledDate: "2026-11-01T03:00:00Z" },
+  ];
+  for (const order of outside) {
+    assert.equal(osMatchesCalendarMonth(order, "2026-10"), false, JSON.stringify(order));
+  }
+});
+
+test("fevereiro de 2026 fecha em 28", () => {
+  assert.deepEqual(osListCalendarMonthRange("2026-02"), { from: "2026-02-01", to: "2026-02-28" });
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2026-02-01T00:00:00-03:00" }, "2026-02"), true);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2026-02-28T23:59:59-03:00" }, "2026-02"), true);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2026-02-29T12:00:00-03:00" }, "2026-02"), false);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2026-03-01T00:00:00-03:00" }, "2026-02"), false);
+});
+
+test("fevereiro de 2028 fecha em 29", () => {
+  assert.deepEqual(osListCalendarMonthRange("2028-02"), { from: "2028-02-01", to: "2028-02-29" });
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2028-02-29T00:00:00-03:00" }, "2028-02"), true);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2028-02-29T23:59:59-03:00" }, "2028-02"), true);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2028-03-01T00:00:00-03:00" }, "2028-02"), false);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2028-03-01T02:30:00Z" }, "2028-02"), true);
+});
+
+test("sem agendamento usa createdAt; agendamento vence a criação", () => {
+  assert.equal(
+    osMatchesCalendarMonth(
+      { scheduledDate: "2026-11-15T12:00:00-03:00", createdAt: "2026-10-02T12:00:00-03:00" },
+      "2026-10",
+    ),
+    false,
+  );
+  assert.equal(
+    osMatchesCalendarMonth({ scheduledDate: null, createdAt: "2026-10-31T22:00:00-03:00" }, "2026-10"),
+    true,
+  );
+  assert.equal(
+    osMatchesCalendarMonth({ scheduled_date: "", created_at: "2026-10-01T08:00:00-03:00" }, "2026-10"),
+    true,
+  );
+  assert.equal(osMatchesCalendarMonth({}, "2026-10"), false);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2026-10-10" }, "2026-13"), false);
+  assert.equal(osMatchesCalendarMonth({ scheduledDate: "2026-10-10" }, "hoje"), false);
+});
+
+test("mês combina com status, cliente, autorizador e texto antes da página", () => {
+  const orders = [
+    { osNumber: "TOR-1", status: "aberta", clientId: 1, createdByUserId: 7, scheduledDate: "2026-10-02T10:00:00-03:00" },
+    { osNumber: "TOR-2", status: "concluida", clientId: 1, createdByUserId: 7, scheduledDate: "2026-10-20T10:00:00-03:00" },
+    { osNumber: "TOR-3", status: "aberta", clientId: 2, createdByUserId: 7, scheduledDate: "2026-11-02T10:00:00-03:00" },
+    { osNumber: "TOR-4", status: "aberta", clientId: 1, createdByUserId: 9, scheduledDate: "2026-10-31T23:00:00-03:00" },
+    { osNumber: "TOR-5", status: "aberta", clientId: 1, createdByUserId: 7, scheduledDate: null, createdAt: "2026-09-30T23:00:00-03:00" },
+  ];
+  const inMonth = orders.filter((o) => osMatchesCalendarMonth(o, "2026-10"));
+  assert.deepEqual(inMonth.map((o) => o.osNumber), ["TOR-1", "TOR-2", "TOR-4"]);
+  const combined = inMonth.filter((o) => o.status === "aberta" && o.clientId === 1 && o.createdByUserId === 7 && o.osNumber.toLowerCase().includes("tor-1"));
+  assert.deepEqual(combined.map((o) => o.osNumber), ["TOR-1"]);
+  const pageSize = 1;
+  const page = inMonth.slice(0, pageSize);
+  assert.equal(page.length, pageSize);
+  assert.equal(inMonth.length, 3);
+});
+
+test("a tela troca o atalho por mês e filtra antes de paginar", () => {
+  const src = readFileSync(new URL("../client/src/pages/admin/service-orders.tsx", import.meta.url), "utf8");
+  assert.match(src, /type="month"/);
+  assert.match(src, /data-testid="filter-period"/);
+  assert.match(src, /osMatchesCalendarMonth\(o, filterPeriod\)/);
+  assert.match(src, /setFilterPeriod\(null\)/);
+  assert.doesNotMatch(src, /<option value="hoje">/);
+  const filterAt = src.indexOf("osMatchesCalendarMonth(o, filterPeriod)");
+  const pageAt = src.indexOf("displayOrders.slice((safePage - 1) * ITEMS_PER_PAGE");
+  assert.ok(filterAt > 0 && pageAt > filterAt);
+});
