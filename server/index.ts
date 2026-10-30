@@ -18,6 +18,8 @@ export { getSlowRoutes } from "./slow-routes";
     initCronJobs();
     initWhatsappForwardCron();
     initWhatsappMonitor();
+  } else if (String(process.env.DISABLE_CRONS || "").trim().toLowerCase() === "true") {
+    log("CRON desligado: DISABLE_CRONS=true");
   }
 
   const port = Number(process.env.PORT) || 5001;

@@ -17,6 +17,7 @@ import {
 import {
   isNfFullyIssued,
 } from "../../shared/nfse-status";
+import { bloqueioNfSemOs } from "../../shared/nf-os-guard";
 import {
   FOCUS_PROVIDER,
   absoluteFocusAssetUrl,
@@ -387,6 +388,21 @@ export async function emitFocusNfseForInvoice(
   const emitRef = existing && /cancel|erro/.test(existingStatus)
     ? `${focusNfseRef(id)}-r${Date.now().toString(36)}`
     : ref;
+
+  let osVinculadas = 0;
+  try {
+    const { count, error } = await supabaseAdmin
+      .from("escort_billings")
+      .select("id", { count: "exact", head: true })
+      .eq("invoice_id", id)
+      .not("service_order_id", "is", null);
+    if (error) throw new Error(error.message || "Falha ao conferir OS da fatura");
+    osVinculadas = count || 0;
+  } catch (e: any) {
+    return { ok: false, message: e?.message || "Não foi possível conferir as OS desta fatura. A NF não foi emitida." };
+  }
+  const semOs = bloqueioNfSemOs(osVinculadas);
+  if (semOs) return { ok: false, message: semOs };
 
   let result: any;
   try {

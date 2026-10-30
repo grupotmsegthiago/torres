@@ -1068,7 +1068,9 @@ export function registerLeadRoutes(app: Express) {
     console.log("[auto-prospect] CRON ativo: prospecção automática Google a cada 10min (3 queries/ciclo, ~60 leads/hora)");
     console.log("[daily-report] CRON ativo: relatório diário às 21h BRT");
   } else {
-    console.log("[leads] CRONs desativados (ambiente serverless/Vercel)");
+    console.log(String(process.env.DISABLE_CRONS || "").trim().toLowerCase() === "true"
+      ? "[leads] CRONs desativados (DISABLE_CRONS=true)"
+      : "[leads] CRONs desativados (ambiente serverless/Vercel)");
   }
 
   app.get("/api/leads/automation", requireComercial, (_req: Request, res: Response) => {

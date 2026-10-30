@@ -13,6 +13,7 @@ import { sendBillingEmail, maybeSendInvoiceReadyEmail } from "./lib/invoice-bill
 import { applyPaymentToInvoice } from "./lib/invoice-payment";
 import { settlePaidInvoiceReceivables, syncInvoiceReceivableById } from "./lib/invoice-receivable";
 import { bustBalancoCaches } from "./lib/balanco-cache";
+import { mapAsaasFinancialTx, movementKind, selectBalanceComposition } from "./lib/asaas-balance-composition";
 import { fetchBillingsByScheduledWindow } from "./lib/billing-period";
 import { notifyComissaoInvoiceEvent } from "./lib/comissao-ingest";
 import { normalizeBillingCycle, periodForDate } from "../shared/billing-cycle";
@@ -1131,6 +1132,94 @@ export async function getAsaasBalance(): Promise<{ connected: boolean; balance?:
   }
 }
 
+/** Cruza o recorte do extrato com a mesma NF do Relatório (cliente, líquido, OS). */
+async function enrichBalanceHistory(items: Array<{ id: string; value: number; type: string; date: string; description: string | null; paymentId: string | null }>) {
+  const paymentIds = Array.from(new Set(items.map((i) => i.paymentId).filter((id): id is string => !!id)));
+  const invoiceByPayment = new Map<string, any>();
+  if (paymentIds.length > 0) {
+    const { data: invoices } = await supabaseAdmin
+      .from("invoices")
+      .select("id, client_id, client_name, value, net_value, payment_date, nfse_number, asaas_payment_id, description")
+      .in("asaas_payment_id", paymentIds);
+    for (const inv of invoices || []) {
+      if (inv.asaas_payment_id) invoiceByPayment.set(String(inv.asaas_payment_id), inv);
+    }
+  }
+
+  const clientIds = Array.from(new Set(
+    Array.from(invoiceByPayment.values()).map((inv) => inv.client_id).filter(Boolean),
+  )) as number[];
+  const clientById = new Map<number, any>();
+  if (clientIds.length > 0) {
+    const { data: clients } = await supabaseAdmin
+      .from("clients")
+      .select("id, name, nome_fantasia, emite_nf, retem_inss, inss_aliquota")
+      .in("id", clientIds);
+    for (const c of clients || []) clientById.set(c.id, c);
+  }
+
+  const invoiceIds = Array.from(invoiceByPayment.values()).map((inv) => inv.id).filter(Boolean);
+  const osByInvoice = new Map<number, Array<{ id: number; osNumber: string }>>();
+  if (invoiceIds.length > 0) {
+    const { data: bills } = await supabaseAdmin
+      .from("escort_billings")
+      .select("invoice_id, service_order_id")
+      .in("invoice_id", invoiceIds)
+      .limit(5000);
+    const soIds = Array.from(new Set((bills || []).map((b: any) => b.service_order_id).filter(Boolean))) as number[];
+    const osNum = new Map<number, string>();
+    if (soIds.length > 0) {
+      const { data: sos } = await supabaseAdmin.from("service_orders").select("id, os_number").in("id", soIds);
+      for (const so of sos || []) osNum.set(so.id, so.os_number);
+    }
+    for (const b of bills || []) {
+      if (!b.invoice_id || !b.service_order_id) continue;
+      const list = osByInvoice.get(b.invoice_id) || [];
+      if (!list.some((o) => o.id === b.service_order_id)) {
+        list.push({ id: b.service_order_id, osNumber: osNum.get(b.service_order_id) || `OS-${b.service_order_id}` });
+      }
+      osByInvoice.set(b.invoice_id, list);
+    }
+  }
+
+  return items.map((item) => {
+    const inv = item.paymentId ? invoiceByPayment.get(item.paymentId) : null;
+    const cli = inv?.client_id ? clientById.get(inv.client_id) : null;
+    let invoice: any = null;
+    if (inv) {
+      const nfAmt = nfGrossAndLiquid(
+        Number(inv.value || 0),
+        cli?.emite_nf !== false,
+        cli?.retem_inss === true,
+        cli?.inss_aliquota != null ? Number(cli.inss_aliquota) : undefined,
+      );
+      invoice = {
+        id: inv.id,
+        clientName: cli?.name || inv.client_name || "Cliente",
+        fantasia: cli?.nome_fantasia || null,
+        nfseNumber: isFinalNfNumber(inv.nfse_number) ? String(inv.nfse_number) : null,
+        gross: nfAmt.gross,
+        liquid: nfAmt.liquid,
+        issValor: nfAmt.issValor,
+        inssValor: nfAmt.inssValor,
+        paymentDate: inv.payment_date || null,
+        netValue: inv.net_value != null ? Number(inv.net_value) : null,
+        osList: osByInvoice.get(inv.id) || [],
+      };
+    }
+    return {
+      id: item.id,
+      date: item.date,
+      type: item.type,
+      kind: movementKind(item.type, item.value),
+      description: item.description,
+      amount: item.value,
+      paymentId: item.paymentId,
+      invoice,
+    };
+  });
+}
+
 // DDL movida pra server/db-init.ts (a tabela `invoices` já é criada lá em
 // db-init.ts:933 e suas ALTER TABLE colunas extras também). Mantemos a
 // função como no-op pra preservar os callers existentes.
@@ -1561,6 +1650,52 @@ export function registerAsaasRoutes(app: Express) {
     } catch (err: any) {
       console.error(`[asaas-pending] erro:`, err.message);
       res.json({ pending: [], count: 0, total: 0, error: err.message });
+    }
+  });
+
+  // Histórico do saldo: extrato Asaas desde a reserva, com a NF do Relatório.
+  app.get("/api/asaas/balance-history", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      if (user?.role !== "diretoria") {
+        return res.status(403).json({ ok: false, message: "Acesso restrito à diretoria." });
+      }
+      if (!hasAsaasApiKey()) {
+        return res.json({ ok: false, message: "ASAAS_API_KEY não configurada" });
+      }
+
+      const balRes = await asaasRequest("GET", "/finance/balance");
+      const balance = Number(balRes?.balance ?? balRes?.currentBalance ?? 0);
+      const reserve = TRANSFER_RESERVE;
+      const pageSize = 100;
+      const maxPages = 6;
+      const raw: any[] = [];
+      for (let page = 0; page < maxPages; page++) {
+        const result = await asaasRequest("GET", `/financialTransactions?limit=${pageSize}&offset=${page * pageSize}`);
+        const data = Array.isArray(result?.data) ? result.data : [];
+        raw.push(...data);
+        const mapped = raw.map(mapAsaasFinancialTx).filter((tx): tx is NonNullable<typeof tx> => !!tx);
+        const slice = selectBalanceComposition(mapped, balance, reserve);
+        const hasMore = result?.hasMore === true && data.length === pageSize;
+        if (slice.covered || !hasMore) break;
+      }
+
+      const mapped = raw.map(mapAsaasFinancialTx).filter((tx): tx is NonNullable<typeof tx> => !!tx);
+      const slice = selectBalanceComposition(mapped, balance, reserve);
+      const items = await enrichBalanceHistory(slice.items);
+
+      res.json({
+        ok: true,
+        balance,
+        reserve,
+        openedFrom: slice.openedFrom,
+        covered: slice.covered,
+        reason: slice.reason,
+        items,
+      });
+    } catch (err: any) {
+      console.error("[asaas-balance-history]", err?.message || err);
+      res.json({ ok: false, message: err?.message || "Erro ao montar o histórico do saldo" });
     }
   });
 

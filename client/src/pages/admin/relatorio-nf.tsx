@@ -22,6 +22,9 @@ import { formatDateOnlyBR } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { classifyIssuedOrProcessing, isFinalNfNumber } from "@shared/nfse-status";
+import { brtTodayStr } from "@shared/financeiroPeriod";
+import { ordenarFaturas } from "@shared/relatorio-nf-ordem";
+import { NF_SEM_OS_MSG } from "@shared/nf-os-guard";
 import AdminLayout from "@/components/admin/layout";
 
 type NormalizedStatus =
@@ -122,6 +125,10 @@ function serviceLabel(r: RelatorioRow): string | null {
 
 function liquidOf(r: RelatorioRow): number {
   return r.liquidValue != null ? Number(r.liquidValue) : Number(r.value || 0);
+}
+
+function semOsVinculada(r: RelatorioRow): boolean {
+  return !(r.osList && r.osList.length > 0) && !(r.osCount > 0);
 }
 
 function nfAmountTitle(r: RelatorioRow): string {
@@ -473,6 +480,53 @@ export default function RelatorioNFPage() {
     onSettled: () => setEmittingInvoiceId(null),
   });
 
+  const [linkOsModal, setLinkOsModal] = useState<{ invoiceId: number; clientName: string; value: number } | null>(null);
+  const [selectedBillingIds, setSelectedBillingIds] = useState<number[]>([]);
+  const linkSuggest = useQuery<{
+    candidates: Array<{ id: number; osNumber: string | null; dataMissao: string | null; valor: number; status: string | null; inPeriod: boolean }>;
+    autoSuggest?: { suggestedIds?: number[] };
+  }>({
+    queryKey: ["/api/relatorio-nf/suggest-os-link", linkOsModal?.invoiceId],
+    enabled: !!linkOsModal?.invoiceId,
+    queryFn: async () => {
+      const r = await authFetch(`/api/relatorio-nf/suggest-os-link/${linkOsModal!.invoiceId}`);
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+  });
+  useEffect(() => {
+    const ids = linkSuggest.data?.autoSuggest?.suggestedIds;
+    setSelectedBillingIds(Array.isArray(ids) ? ids : []);
+  }, [linkOsModal?.invoiceId, linkSuggest.data]);
+  const linkOsMutation = useMutation({
+    mutationFn: async (payload: { invoiceId: number; billingIds: number[] }) => {
+      const r = await authFetch("/api/relatorio-nf/link-os", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
+      return json;
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: data?.linked > 0 ? "OS vinculada" : "Nenhuma OS vinculada",
+        description: data?.linked > 0 ? `${data.linked} OS ligada(s) à fatura. A emissão da NF fica liberada.` : "As OS escolhidas já tinham vínculo ou são de outro cliente.",
+      });
+      setLinkOsModal(null);
+      invalidateRelatedQueries("invoice");
+      invalidateRelatedQueries("billing");
+      queryClient.invalidateQueries({ queryKey: ["/api/relatorio-nf"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao vincular OS", description: e?.message, variant: "destructive" }),
+  });
+  const abrirVinculoOs = (r: RelatorioRow) => {
+    if (!r.invoiceId) return;
+    setSelectedBillingIds([]);
+    setLinkOsModal({ invoiceId: r.invoiceId, clientName: r.clientFantasia || r.clientName, value: Number(r.value || 0) });
+  };
+
   const markEmittedMutation = useMutation({
     mutationFn: async (payload: { invoiceId: number; nfNumber: string; note: string }) => {
       const r = await authFetch(`/api/relatorio-nf/mark-emitted`, {
@@ -789,7 +843,7 @@ export default function RelatorioNFPage() {
   const totals = data?.totals;
 
   const filtered = useMemo(() => {
-    return rows
+    const list = rows
       // TRAVA DE EXIBIÇÃO: só mostra faturas reais do Asaas (com asaas_payment_id
       // ou link de boleto/NF). Boletins em medição, billings avulsas e invoices
       // órfãs ficam ocultas — vivem na tela operacional, não na de cobrança.
@@ -823,6 +877,7 @@ export default function RelatorioNFPage() {
           return false;
         });
       });
+    return ordenarFaturas(list, brtTodayStr());
   }, [rows, statusFilter, search, onlyAsaas]);
 
   // Extrai período (datas) da descrição da fatura. Aceita variações como:
@@ -1207,12 +1262,26 @@ export default function RelatorioNFPage() {
                           ) : r.osCount > 0 ? (
                             <span className="text-slate-400">{r.osCount} OS</span>
                           ) : r.source === "INVOICE" && r.sourceId > 0 ? (
-                            <span
-                              className="alerta-piscando inline-flex items-center gap-1 text-[10px] font-bold text-white bg-red-600 border border-red-700 px-1.5 py-0.5 rounded cursor-help uppercase tracking-wide"
-                              title={r.noLinkReason || "Nenhuma OS aprovada encontrada no banco com este valor para este cliente. Confira antes de faturar."}
-                              data-testid={`text-no-os-${r.id}`}
-                            >
-                              <AlertTriangle className="h-2.5 w-2.5" /> sem OS
+                            <span className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => abrirVinculoOs(r)}
+                                className="alerta-piscando inline-flex items-center gap-1 text-[10px] font-bold text-white bg-red-600 border border-red-700 px-1.5 py-0.5 rounded uppercase tracking-wide"
+                                title={NF_SEM_OS_MSG}
+                                data-testid={`text-no-os-${r.id}`}
+                              >
+                                <AlertTriangle className="h-2.5 w-2.5" /> sem OS
+                              </button>
+                              {isFinanceiro && r.invoiceId && (
+                                <button
+                                  type="button"
+                                  onClick={() => abrirVinculoOs(r)}
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold text-red-800 bg-red-50 border border-red-300 hover:bg-red-100"
+                                  data-testid={`button-vincular-os-${r.id}`}
+                                >
+                                  Vincular OS
+                                </button>
+                              )}
                             </span>
                           ) : null}
                         </div>
@@ -1332,9 +1401,9 @@ export default function RelatorioNFPage() {
                           {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.asaasPaymentId && nfKind === "nenhuma" && (
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
-                              title="Emitir só a NFS-e na Focus. Não gera outro boleto."
-                              disabled={emitNfMutation.isPending && emittingInvoiceId === r.invoiceId}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={semOsVinculada(r) ? NF_SEM_OS_MSG : "Emitir só a NFS-e na Focus. Não gera outro boleto."}
+                              disabled={semOsVinculada(r) || (emitNfMutation.isPending && emittingInvoiceId === r.invoiceId)}
                               onClick={() => emitNfMutation.mutate(r.invoiceId!)}
                               data-testid={`button-emit-nf-col-${r.id}`}
                             >
@@ -1346,9 +1415,13 @@ export default function RelatorioNFPage() {
                           {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.asaasPaymentId && (nfKind === "emitindo" || nfKind === "erro" || nfKind === "nenhuma") && (
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50"
-                              title={nfKind === "erro" ? "Consulta a Focus e, se ainda estiver em erro, retransmite a NFS-e. Não gera outro boleto." : "Consultar NFS-e na Focus"}
-                              disabled={syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={nfKind === "erro" && semOsVinculada(r)
+                                ? NF_SEM_OS_MSG
+                                : nfKind === "erro"
+                                  ? "Consulta a Focus e, se ainda estiver em erro, retransmite a NFS-e. Não gera outro boleto."
+                                  : "Consultar NFS-e na Focus"}
+                              disabled={(nfKind === "erro" && semOsVinculada(r)) || (syncInvoiceMutation.isPending && syncingInvoiceId === r.invoiceId)}
                               onClick={() => syncInvoiceMutation.mutate(r.invoiceId!)}
                               data-testid={`button-sync-nf-${r.id}`}
                             >
@@ -2084,6 +2157,69 @@ export default function RelatorioNFPage() {
               data-testid="button-confirm-emitir"
             >
               {emitirFaturaMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Emitindo…</> : <><Send className="h-4 w-4 mr-1" /> Emitir agora</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!linkOsModal} onOpenChange={open => { if (!open && !linkOsMutation.isPending) setLinkOsModal(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Vincular OS à fatura #{linkOsModal?.invoiceId}</DialogTitle>
+            <DialogDescription>
+              {linkOsModal?.clientName}. {NF_SEM_OS_MSG} A lista mostra OS deste cliente que ainda não estão em outra fatura.
+            </DialogDescription>
+          </DialogHeader>
+          {linkSuggest.isLoading ? (
+            <div className="py-8 text-center text-slate-400"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>
+          ) : linkSuggest.isError ? (
+            <div className="text-sm text-red-700">{(linkSuggest.error as Error)?.message || "Não foi possível listar as OS."}</div>
+          ) : (linkSuggest.data?.candidates || []).length === 0 ? (
+            <div className="text-sm text-slate-600">Nenhuma OS livre deste cliente. Confira se a missão já está ligada a outra fatura.</div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto border border-slate-200 rounded">
+              <table className="min-w-full text-xs">
+                <thead className="bg-slate-50 sticky top-0">
+                  <tr className="text-slate-600">
+                    <th className="px-2 py-1.5 w-8"></th>
+                    <th className="text-left px-2 py-1.5">OS</th>
+                    <th className="text-left px-2 py-1.5">Missão</th>
+                    <th className="text-right px-2 py-1.5">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(linkSuggest.data?.candidates || []).map(c => {
+                    const checked = selectedBillingIds.includes(c.id);
+                    return (
+                      <tr key={c.id} className={c.inPeriod ? "bg-emerald-50/60" : ""}>
+                        <td className="px-2 py-1.5">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(on) => {
+                              setSelectedBillingIds(prev => on ? [...prev, c.id] : prev.filter(id => id !== c.id));
+                            }}
+                            data-testid={`check-os-${c.id}`}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 font-medium">{c.osNumber || `Billing #${c.id}`}</td>
+                        <td className="px-2 py-1.5">{c.dataMissao ? fmtDate(c.dataMissao) : "—"}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{fmtBRL(c.valor)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkOsModal(null)} disabled={linkOsMutation.isPending}>Cancelar</Button>
+            <Button
+              className="bg-red-700 hover:bg-red-800 text-white"
+              disabled={linkOsMutation.isPending || !linkOsModal || selectedBillingIds.length === 0}
+              data-testid="button-confirm-vincular-os"
+              onClick={() => linkOsModal && linkOsMutation.mutate({ invoiceId: linkOsModal.invoiceId, billingIds: selectedBillingIds })}
+            >
+              {linkOsMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Vinculando…</> : "Confirmar vínculo"}
             </Button>
           </DialogFooter>
         </DialogContent>

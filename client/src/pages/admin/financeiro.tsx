@@ -4,7 +4,7 @@ import AdminLayout from "@/components/admin/layout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, authFetch, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1152,10 +1152,165 @@ function CategoryManagerModal({ onClose, onSuccess, initialType = "EXPENSE" }: {
   );
 }
 
+type BalanceHistoryItem = {
+  id: string;
+  date: string;
+  kind: "recebimento" | "taxa" | "estorno" | "outro";
+  description: string | null;
+  amount: number;
+  invoice: {
+    id: number;
+    clientName: string;
+    fantasia: string | null;
+    nfseNumber: string | null;
+    gross: number;
+    liquid: number;
+    paymentDate: string | null;
+    osList: Array<{ id: number; osNumber: string }>;
+  } | null;
+};
+
+type BalanceHistoryResponse = {
+  ok: boolean;
+  message?: string;
+  balance?: number;
+  reserve?: number;
+  openedFrom?: number | null;
+  covered?: boolean;
+  reason?: "ok" | "so_reserva" | "sem_ancora" | "cadeia_incompleta";
+  items?: BalanceHistoryItem[];
+};
+
+function fmtIsoDateBR(value?: string | null) {
+  if (!value) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!m) return "—";
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+const HISTORY_KIND_LABEL: Record<BalanceHistoryItem["kind"], string> = {
+  recebimento: "Recebimento",
+  taxa: "Taxa Asaas",
+  estorno: "Estorno",
+  outro: "Lançamento",
+};
+
+function AsaasBalanceHistory({
+  loading,
+  error,
+  data,
+  onRetry,
+}: {
+  loading: boolean;
+  error: boolean;
+  data?: BalanceHistoryResponse;
+  onRetry: () => void;
+}) {
+  const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  if (loading) {
+    return <div className="mt-3 text-xs font-bold text-neutral-500" data-testid="asaas-history-loading">Carregando histórico do saldo...</div>;
+  }
+  if (error || !data?.ok) {
+    return (
+      <div className="mt-3 flex items-center gap-2 text-xs text-red-700" data-testid="asaas-history-error">
+        <span>{data?.message || "Não foi possível montar o histórico deste saldo."}</span>
+        <button type="button" className="font-bold underline" onClick={onRetry}>Tentar de novo</button>
+      </div>
+    );
+  }
+
+  const items = [...(data.items || [])].reverse();
+  const movimentos = (data.items || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const reserva = data.openedFrom;
+  const note = data.reason === "so_reserva"
+    ? "O saldo está só na reserva. Não há recebimento parado na conta."
+    : data.reason === "sem_ancora"
+      ? "O extrato do Asaas não fechou com o saldo atual. Atualize o saldo e abra de novo."
+      : data.reason === "cadeia_incompleta"
+        ? "Histórico parcial: o extrato consultado não chegou até a reserva de R$ 100."
+        : "Recebimentos que ainda estão na conta, desde a última transferência que deixou a reserva. Cliente, NF e líquido são os do Relatório de NFs.";
+
+  return (
+    <div className="mt-3 border-t border-emerald-100 pt-3" data-testid="asaas-balance-history">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] text-neutral-600 max-w-3xl">{note}</p>
+        <Link href="/admin/relatorio-nf" className="text-[11px] font-bold text-emerald-800 underline underline-offset-2">
+          Abrir Relatório de NFs
+        </Link>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-xs text-neutral-500 py-2">Nenhum recebimento compõe este saldo.</div>
+      ) : (
+        <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-lg border border-emerald-100">
+          <table className="min-w-full text-xs">
+            <thead className="bg-emerald-50 text-emerald-900 sticky top-0">
+              <tr>
+                <th className="text-left px-2 py-1.5 font-semibold">Data</th>
+                <th className="text-left px-2 py-1.5 font-semibold">O que entrou</th>
+                <th className="text-left px-2 py-1.5 font-semibold">NF</th>
+                <th className="text-right px-2 py-1.5 font-semibold">Líquido da NF</th>
+                <th className="text-right px-2 py-1.5 font-semibold">Na conta</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-emerald-50">
+              {items.map((item) => {
+                const inv = item.invoice;
+                const title = inv
+                  ? (inv.fantasia || inv.clientName)
+                  : (item.description || HISTORY_KIND_LABEL[item.kind]);
+                return (
+                  <tr key={item.id} data-testid={`asaas-history-row-${item.id}`}>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">{fmtIsoDateBR(item.date)}</td>
+                    <td className="px-2 py-1.5">
+                      <div className="font-medium text-slate-800">{title}</div>
+                      {inv && (
+                        <div className="text-[10px] text-slate-500">
+                          {HISTORY_KIND_LABEL[item.kind]}
+                          {inv.osList.length > 0 && (
+                            <>
+                              {" · "}
+                              {inv.osList.map((os, idx) => (
+                                <span key={os.id}>
+                                  <Link href={`/admin/service-orders?os=${os.id}`} className="text-blue-700 hover:underline">{os.osNumber}</Link>
+                                  {idx < inv.osList.length - 1 ? " · " : ""}
+                                </span>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {!inv && <div className="text-[10px] text-slate-500">{HISTORY_KIND_LABEL[item.kind]}</div>}
+                    </td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">{inv?.nfseNumber || "—"}</td>
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap text-emerald-800">
+                      {inv ? money(inv.liquid) : "—"}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right whitespace-nowrap font-semibold ${item.amount < 0 ? "text-red-700" : "text-emerald-800"}`}>
+                      {money(item.amount)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data.reason !== "sem_ancora" && (
+        <div className="mt-2 text-[11px] text-neutral-600 flex flex-wrap gap-x-3 gap-y-1" data-testid="asaas-history-totals">
+          <span>Movimentos: <strong>{money(movimentos)}</strong></span>
+          {reserva != null && <span>Já estava na conta: <strong>{money(reserva)}</strong></span>}
+          {data.balance != null && <span>Saldo: <strong>{money(data.balance)}</strong></span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AsaasBalanceCard() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const RESERVA = 100;
   const PIX_KEY = "escolta@torresseguranca.com.br";
   const isDiretoria = user?.role === "diretoria";
@@ -1180,6 +1335,12 @@ function AsaasBalanceCard() {
   });
 
   const [webhookOpen, setWebhookOpen] = useState(false);
+
+  const { data: history, isLoading: historyLoading, isError: historyError, refetch: refetchHistory } = useQuery<BalanceHistoryResponse>({
+    queryKey: ["/api/asaas/balance-history"],
+    enabled: isDiretoria && historyOpen,
+    staleTime: 60000,
+  });
 
   if (!isDiretoria) return null;
 
@@ -1247,6 +1408,16 @@ function AsaasBalanceCard() {
                 Reserva mínima: <span className="font-bold text-neutral-700">R$ {RESERVA.toFixed(2)}</span> · Transferível: <span className="font-bold text-emerald-700">{valorTransferir.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
               </div>
             )}
+            {status?.connected && (
+              <button
+                type="button"
+                onClick={() => setHistoryOpen((open) => !open)}
+                className="mt-1 text-[11px] font-bold text-emerald-800 underline underline-offset-2 hover:text-emerald-950"
+                data-testid="button-asaas-balance-history"
+              >
+                {historyOpen ? "Ocultar histórico do saldo" : "Ver do que é este saldo"}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1291,6 +1462,15 @@ function AsaasBalanceCard() {
           </Button>
         </div>
       </div>
+
+      {historyOpen && (
+        <AsaasBalanceHistory
+          loading={historyLoading}
+          error={historyError}
+          data={history}
+          onRetry={() => refetchHistory()}
+        />
+      )}
 
       <Dialog open={webhookOpen} onOpenChange={setWebhookOpen}>
         <DialogContent className="max-w-lg">
