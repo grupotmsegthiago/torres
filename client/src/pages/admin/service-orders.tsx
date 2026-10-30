@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQueries } from "@/lib/queryClient";
 import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { suggestPriceTableByRouteKm, contractFranquiaKm } from "@/lib/suggest-price-table-by-km";
-import { pickCanceladaPriceTable } from "@shared/cancelada-price-table";
+import { isCanceladaPriceTable100km3, pickCanceladaPriceTable } from "@shared/cancelada-price-table";
 import { isMultilogClient } from "@shared/multilog-refs";
 import { computeRouteTollsBrowser } from "@/lib/google-routes-tolls-browser";
 import AdminLayout from "@/components/admin/layout";
@@ -21,7 +21,7 @@ import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem,
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { isClientActive } from "@shared/client-duplicates";
 import { applyPedagioClientMarkup, osCobraMarkupPedagio, pedagioCobrancaCliente } from "@shared/pedagio-markup";
-import { currentBrtCalendarMonthYm, formatOsListPeriodLabel, osMatchesCalendarMonth } from "@shared/os-list-period";
+import { currentBrtCalendarMonthYm, formatOsListRangeLabel, osListCalendarMonthRange, osListDateRange, osMatchesDateRange } from "@shared/os-list-period";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -899,6 +899,27 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const [pedagioUserEdited, setPedagioUserEdited] = useState(false);
   /** Operador escolheu a tabela manualmente — não sobrescrever com sugestão por km. */
   const [priceTableUserPicked, setPriceTableUserPicked] = useState(!!(order as any)?.escortContractId);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelamento, setCancelamento] = useState<null | {
+    horarioInicio: string;
+    horarioFim: string;
+    kmInicial: number;
+    kmFinal: number;
+    houveDeslocamento: boolean;
+    contratoTabelaId: string;
+    valorPedagio: number;
+  }>(null);
+  const [cancelDraft, setCancelDraft] = useState({
+    motivo: "",
+    horarioInicio: "",
+    horarioFim: "",
+    kmInicial: "",
+    kmFinal: "",
+    houveDeslocamento: "" as "" | "sim" | "nao",
+    contratoTabelaId: "",
+    houvePedagio: "" as "" | "sim" | "nao",
+    valorPedagio: "",
+  });
   const routeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRouteKeyRef = useRef<string>("");
   const pedagioUserEditedRef = useRef(pedagioUserEdited);
@@ -1030,17 +1051,38 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     }
   }, [form.escortContractId, form.status]);
 
-  // Cancelada cobra a tabela ativa de 100 km / 3 h (menor acionamento). Recusada continua R$ 0.
+  const cancelamentoTabelas = escortContracts.filter(
+    (c) => c.client_id === form.clientId && c.status === "Ativo" && isCanceladaPriceTable100km3(c),
+  );
+
+  // Cancelada cobra a tabela ativa de 100 km / 3 h. Se já houver uma válida escolhida, ela permanece.
   useEffect(() => {
     if (form.status !== "cancelada" || form.clientId <= 0) return;
-    const picked = pickCanceladaPriceTable(
-      escortContracts.filter((c) => c.client_id === form.clientId && c.status === "Ativo"),
+    const validas = escortContracts.filter(
+      (c) => c.client_id === form.clientId && c.status === "Ativo" && isCanceladaPriceTable100km3(c),
     );
-    if (!picked?.id) return;
-    const est = Number(picked.valor_acionamento || 0);
-    const estLabel = est > 0 ? est.toFixed(2).replace(".", ",") : "";
+    const picked = pickCanceladaPriceTable(validas);
+    if (cancelamento) {
+      setForm((prev) => {
+        if (prev.status !== "cancelada") return prev;
+        const contractId = cancelamento.houveDeslocamento
+          ? (cancelamento.contratoTabelaId || picked?.id || "")
+          : (picked?.id || "");
+        if (prev.escortContractId === contractId) return prev;
+        return { ...prev, escortContractId: contractId };
+      });
+      return;
+    }
     setForm((prev) => {
       if (prev.status !== "cancelada") return prev;
+      const atualValida = validas.some((c) => c.id === prev.escortContractId);
+      if (atualValida) return prev;
+      if (!picked?.id) {
+        if (!prev.escortContractId && !prev.valorEstimado) return prev;
+        return { ...prev, escortContractId: "", valorEstimado: "" };
+      }
+      const est = Number(picked.valor_acionamento || 0);
+      const estLabel = est > 0 ? est.toFixed(2).replace(".", ",") : "";
       if (prev.escortContractId === picked.id && prev.valorEstimado === estLabel) return prev;
       return {
         ...prev,
@@ -1048,7 +1090,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         ...(estLabel ? { valorEstimado: estLabel } : {}),
       };
     });
-  }, [form.status, form.clientId, escortContracts]);
+  }, [form.status, form.clientId, escortContracts, cancelamento]);
 
   const handlePriorityChange = (priority: string) => {
     const updates: any = { priority };
@@ -1332,6 +1374,23 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           throw new Error(`Informe o motivo da ${novoStatus === "recusada" ? "recusa" : "cancelamento"} (mínimo 3 caracteres) antes de salvar.`);
         }
       }
+      if (novoStatus === "cancelada" && statusMudou) {
+        const fatos = data.cancelamento;
+        if (!fatos) {
+          throw new Error("Preencha horários, quilometragem, deslocamento e pedágio antes de cancelar. A OS não foi alterada.");
+        }
+        if (fatos.houveDeslocamento) {
+          const validas = escortContracts.filter(
+            (c) => c.client_id === Number(data.clientId) && c.status === "Ativo" && isCanceladaPriceTable100km3(c),
+          );
+          if (validas.length === 0) {
+            throw new Error("O cliente não possui tabela mínima (100 km / 3 h). Inclua essa rota no cadastro do cliente antes de cancelar. A OS não foi alterada.");
+          }
+          if (!validas.some((c) => c.id === fatos.contratoTabelaId)) {
+            throw new Error("Selecione a tabela mínima do cliente (100 km / 3 h). A OS não foi alterada.");
+          }
+        }
+      }
       if (order && stepAdjHandleRef.current?.hasPendingChanges()) {
         try {
           await stepAdjHandleRef.current.savePending();
@@ -1345,7 +1404,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
         const res = await authFetch(`/api/service-orders/${order.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, ...(data.cancelamento ? { cancelamento: data.cancelamento } : {}) }),
         });
         if (res.status === 409) {
           const body = await res.json();
@@ -1556,6 +1615,80 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
     );
   };
 
+  const confirmarCancelamento = () => {
+    const motivo = cancelDraft.motivo.trim();
+    if (motivo.length < 3) {
+      toast({ title: "Motivo obrigatório", description: "Informe o motivo do cancelamento (mínimo 3 caracteres).", variant: "destructive" });
+      return;
+    }
+    if (!cancelDraft.horarioInicio || !cancelDraft.horarioFim) {
+      toast({ title: "Horários obrigatórios", description: "Informe o horário de início e o horário de fim.", variant: "destructive" });
+      return;
+    }
+    if (cancelDraft.horarioFim < cancelDraft.horarioInicio) {
+      toast({ title: "Horário inválido", description: "O horário de fim não pode ser anterior ao horário de início.", variant: "destructive" });
+      return;
+    }
+    const kmInicial = Number(String(cancelDraft.kmInicial).replace(",", "."));
+    const kmFinal = Number(String(cancelDraft.kmFinal).replace(",", "."));
+    if (cancelDraft.kmInicial.trim() === "" || cancelDraft.kmFinal.trim() === "" || !Number.isFinite(kmInicial) || !Number.isFinite(kmFinal) || kmInicial < 0 || kmFinal < 0) {
+      toast({ title: "Quilometragem obrigatória", description: "Informe o KM inicial e o KM final.", variant: "destructive" });
+      return;
+    }
+    if (kmFinal < kmInicial) {
+      toast({ title: "Quilometragem inválida", description: "O KM final não pode ser menor que o KM inicial.", variant: "destructive" });
+      return;
+    }
+    if (cancelDraft.houveDeslocamento !== "sim" && cancelDraft.houveDeslocamento !== "nao") {
+      toast({ title: "Deslocamento", description: "Informe se houve deslocamento da equipe.", variant: "destructive" });
+      return;
+    }
+    const houveDeslocamento = cancelDraft.houveDeslocamento === "sim";
+    if (cancelamentoTabelas.length === 0) {
+      toast({ title: "Tabela mínima", description: "Este cliente não tem tabela de 100 km / 3 h. Inclua essa rota no cadastro antes de cancelar.", variant: "destructive" });
+      return;
+    }
+    if (houveDeslocamento && !cancelamentoTabelas.some((c) => c.id === cancelDraft.contratoTabelaId)) {
+      toast({ title: "Tabela mínima", description: "Selecione a tabela de 100 km / 3 h do cliente.", variant: "destructive" });
+      return;
+    }
+    if (cancelDraft.houvePedagio !== "sim" && cancelDraft.houvePedagio !== "nao") {
+      toast({ title: "Pedágio", description: "Informe se houve despesa com pedágio.", variant: "destructive" });
+      return;
+    }
+    const valorPedagio = cancelDraft.houvePedagio === "sim" ? parseBRL(cancelDraft.valorPedagio) : 0;
+    if (cancelDraft.houvePedagio === "sim" && !(valorPedagio > 0)) {
+      toast({ title: "Pedágio", description: "Informe o valor do pedágio.", variant: "destructive" });
+      return;
+    }
+    const contratoTabelaId = houveDeslocamento
+      ? cancelDraft.contratoTabelaId
+      : (pickCanceladaPriceTable(cancelamentoTabelas)?.id || "");
+    const tabela = cancelamentoTabelas.find((c) => c.id === contratoTabelaId);
+    const acionamento = houveDeslocamento ? Number(tabela?.valor_acionamento || 0) : 0;
+    const estimado = acionamento + valorPedagio;
+    setCancelamento({
+      horarioInicio: cancelDraft.horarioInicio,
+      horarioFim: cancelDraft.horarioFim,
+      kmInicial,
+      kmFinal,
+      houveDeslocamento,
+      contratoTabelaId,
+      valorPedagio,
+    });
+    setForm((prev) => ({
+      ...prev,
+      status: "cancelada",
+      cancellationReason: motivo,
+      missionStartedAt: cancelDraft.horarioInicio,
+      completedDate: cancelDraft.horarioFim,
+      escortContractId: contratoTabelaId,
+      pedagioEstimado: valorPedagio.toFixed(2).replace(".", ","),
+      valorEstimado: estimado.toFixed(2).replace(".", ","),
+    }));
+    setCancelModalOpen(false);
+  };
+
   return (
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white mb-6" data-testid="card-order-form">
       <div className="bg-neutral-900 px-5 py-4 flex items-center justify-between">
@@ -1587,7 +1720,8 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
       {order && (() => {
         const isConcluida = order.status === "concluida" || order.status === "concluída";
         if (!isConcluida || order.type !== "escolta") return null;
-        const bill = billings?.find((b: any) => b.service_order_id === order.id);
+        if (!billings) return null;
+        const bill = billings.find((b: any) => b.service_order_id === order.id);
         const alerts: string[] = [];
         if (!bill) { alerts.push("Faturamento não gerado para esta OS"); }
         else {
@@ -1810,7 +1944,16 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                         const id = e.target.value;
                         setPriceTableUserPicked(true);
                         setForm((prev) => {
-                          if (prev.status === "cancelada") return prev;
+                          if (prev.status === "cancelada") {
+                            const chosen = escortContracts.find((c) => c.id === id);
+                            if (!chosen || chosen.status !== "Ativo" || !isCanceladaPriceTable100km3(chosen)) return prev;
+                            const est = Number(chosen.valor_acionamento || 0);
+                            return {
+                              ...prev,
+                              escortContractId: id,
+                              ...(est > 0 ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}),
+                            };
+                          }
                           if (prev.status === "recusada") return { ...prev, escortContractId: id };
                           const est = id ? computeEstimado(id) : null;
                           return { ...prev, escortContractId: id, ...(est != null ? { valorEstimado: est.toFixed(2).replace(".", ",") } : {}) };
@@ -1821,19 +1964,22 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                       disabled={isNewOs && !routeReadyForTable}
                       data-testid="select-os-price-table"
                     >
-                      <option value="">Selecione...</option>
-                      {clientContracts.map((c) => (
+                      <option value="">{form.status === "cancelada" ? "Selecione a tabela de cancelamento..." : "Selecione..."}</option>
+                      {(form.status === "cancelada" ? cancelamentoTabelas : clientContracts).map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name || `Tabela ${c.id.slice(0, 8)}`}
                           {contractFranquiaKm(c) > 0 ? ` — ${contractFranquiaKm(c)} km` : ""}
-                          {priceTableSuggestion.suggested?.id === c.id ? " (sugerida)" : ""}
+                          {form.status !== "cancelada" && priceTableSuggestion.suggested?.id === c.id ? " (sugerida)" : ""}
                         </option>
                       ))}
                     </select>
-                    {form.status === "cancelada" && (
-                      <p className="text-[11px] text-amber-700 mt-1" data-testid="hint-os-cancelada-tabela">Cancelada usa a tabela de 100 km / 3 h, pelo menor acionamento.</p>
+                    {form.status === "cancelada" && cancelamentoTabelas.length > 0 && (
+                      <p className="text-[11px] text-amber-700 mt-1" data-testid="hint-os-cancelada-tabela">Cancelada usa a tabela de 100 km / 3 h. Escolha uma dessas rotas.</p>
                     )}
-                    {!form.escortContractId && (
+                    {form.status === "cancelada" && cancelamentoTabelas.length === 0 && (
+                      <p className="text-[11px] text-red-700 mt-1" data-testid="warn-os-cancelada-sem-tabela">Este cliente não tem tabela de cancelamento (100 km / 3 h). Inclua essa rota no cadastro do cliente antes de cancelar. A OS não será alterada.</p>
+                    )}
+                    {!form.escortContractId && form.status !== "cancelada" && (
                       <p className="text-[11px] text-amber-600 mt-1" data-testid="warn-os-price-table">Selecione uma tabela de preços para poder criar a OS.</p>
                     )}
                   </div>
@@ -2093,7 +2239,27 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
               {order && (
                 <div>
                   <FieldLabel>Status</FieldLabel>
-                  <select value={form.status} onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value }))} className={selectClass} data-testid="select-os-status">
+                  <select value={form.status} onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === "cancelada" && order && order.status !== "cancelada") {
+                      const minima = pickCanceladaPriceTable(cancelamentoTabelas);
+                      setCancelDraft({
+                        motivo: form.cancellationReason || "",
+                        horarioInicio: "",
+                        horarioFim: "",
+                        kmInicial: "",
+                        kmFinal: "",
+                        houveDeslocamento: "",
+                        contratoTabelaId: minima?.id || "",
+                        houvePedagio: "",
+                        valorPedagio: "",
+                      });
+                      setCancelModalOpen(true);
+                      return;
+                    }
+                    if (next !== "cancelada") setCancelamento(null);
+                    setForm(prev => ({ ...prev, status: next }));
+                  }} className={selectClass} data-testid="select-os-status">
                     <option value="agendada">Agendada</option>
                     <option value="aberta">Aberta</option>
                     <option value="em_andamento">Em Andamento</option>
@@ -2565,7 +2731,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   return;
                 }
                 console.log("[DEBUG-OS-SAVE] form at save click:", JSON.stringify({ dn: form.escortedDriverName, dp: form.escortedDriverPhone, vp: form.escortedVehiclePlate, step }));
-                mutation.mutate(form);
+                mutation.mutate({ ...form, cancelamento });
               }} className={saveSuccess ? "bg-green-600 hover:bg-green-600 text-white gap-1.5" : "bg-neutral-900 hover:bg-neutral-800 gap-1.5"} data-testid="button-save-order">
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saveSuccess ? <Check className="w-4 h-4" /> : null}
                 {mutation.isPending ? "Salvando..." : saveSuccess ? "Salvo!" : "Salvar OS"}
@@ -2574,6 +2740,87 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
           </div>
         </div>
       </div>
+
+      {cancelModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4" data-testid="dialog-cancelar-os">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h3 className="text-base font-bold text-neutral-900">Cancelar ordem de serviço</h3>
+              <p className="text-xs text-neutral-500 mt-1">Preencha os dados antes de gravar. A OS só muda para cancelada depois de confirmar e salvar.</p>
+            </div>
+            <div>
+              <FieldLabel>Motivo *</FieldLabel>
+              <Input value={cancelDraft.motivo} onChange={(e) => setCancelDraft((p) => ({ ...p, motivo: e.target.value }))} placeholder="Mínimo 3 caracteres" data-testid="input-cancel-motivo" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>Horário de início *</FieldLabel>
+                <Input type="datetime-local" value={cancelDraft.horarioInicio} onChange={(e) => setCancelDraft((p) => ({ ...p, horarioInicio: e.target.value }))} data-testid="input-cancel-inicio" />
+              </div>
+              <div>
+                <FieldLabel>Horário de fim *</FieldLabel>
+                <Input type="datetime-local" value={cancelDraft.horarioFim} onChange={(e) => setCancelDraft((p) => ({ ...p, horarioFim: e.target.value }))} data-testid="input-cancel-fim" />
+              </div>
+              <div>
+                <FieldLabel>KM inicial *</FieldLabel>
+                <Input inputMode="decimal" value={cancelDraft.kmInicial} onChange={(e) => setCancelDraft((p) => ({ ...p, kmInicial: e.target.value }))} data-testid="input-cancel-km-ini" />
+              </div>
+              <div>
+                <FieldLabel>KM final *</FieldLabel>
+                <Input inputMode="decimal" value={cancelDraft.kmFinal} onChange={(e) => setCancelDraft((p) => ({ ...p, kmFinal: e.target.value }))} data-testid="input-cancel-km-fim" />
+              </div>
+            </div>
+            <div>
+              <FieldLabel>Houve deslocamento da equipe/viatura? *</FieldLabel>
+              <div className="flex gap-2">
+                <Button type="button" variant={cancelDraft.houveDeslocamento === "sim" ? "default" : "outline"} onClick={() => setCancelDraft((p) => ({ ...p, houveDeslocamento: "sim" }))} data-testid="button-cancel-desloc-sim">Sim</Button>
+                <Button type="button" variant={cancelDraft.houveDeslocamento === "nao" ? "default" : "outline"} onClick={() => setCancelDraft((p) => ({ ...p, houveDeslocamento: "nao" }))} data-testid="button-cancel-desloc-nao">Não</Button>
+              </div>
+              {cancelDraft.houveDeslocamento === "nao" && (
+                <p className="text-[11px] text-neutral-500 mt-1">Sem deslocamento, a franquia não é cobrada.</p>
+              )}
+            </div>
+            {cancelDraft.houveDeslocamento === "sim" && (
+              <div>
+                <FieldLabel>Tabela mínima do cliente *</FieldLabel>
+                {cancelamentoTabelas.length === 0 ? (
+                  <p className="text-[11px] text-red-700" data-testid="warn-cancel-sem-tabela">Este cliente não tem tabela de 100 km / 3 h. Inclua essa rota no cadastro antes de cancelar.</p>
+                ) : (
+                  <select value={cancelDraft.contratoTabelaId} onChange={(e) => setCancelDraft((p) => ({ ...p, contratoTabelaId: e.target.value }))} className={selectClass} data-testid="select-cancel-tabela">
+                    <option value="">Selecione a tabela mínima...</option>
+                    {cancelamentoTabelas.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name || "Tabela"} — {contractFranquiaKm(c)} km / {Number(c.franquia_horas || 0)} h
+                        {Number(c.valor_acionamento || 0) > 0 ? ` — ${Number(c.valor_acionamento).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+            {cancelDraft.houveDeslocamento === "nao" && cancelamentoTabelas.length === 0 && (
+              <p className="text-[11px] text-red-700" data-testid="warn-cancel-sem-tabela">Este cliente não tem tabela de 100 km / 3 h. Inclua essa rota no cadastro antes de cancelar.</p>
+            )}
+            <div>
+              <FieldLabel>Houve despesa com pedágio? *</FieldLabel>
+              <div className="flex gap-2">
+                <Button type="button" variant={cancelDraft.houvePedagio === "sim" ? "default" : "outline"} onClick={() => setCancelDraft((p) => ({ ...p, houvePedagio: "sim" }))} data-testid="button-cancel-pedagio-sim">Sim</Button>
+                <Button type="button" variant={cancelDraft.houvePedagio === "nao" ? "default" : "outline"} onClick={() => setCancelDraft((p) => ({ ...p, houvePedagio: "nao", valorPedagio: "" }))} data-testid="button-cancel-pedagio-nao">Não</Button>
+              </div>
+              {cancelDraft.houvePedagio === "sim" && (
+                <Input className="mt-2 font-mono" inputMode="decimal" placeholder="0,00" value={cancelDraft.valorPedagio} onChange={(e) => setCancelDraft((p) => ({ ...p, valorPedagio: maskBRL(e.target.value) }))} data-testid="input-cancel-pedagio" />
+              )}
+              {cancelDraft.houvePedagio === "nao" && (
+                <p className="text-[11px] text-neutral-500 mt-1">Pedágio fica em R$ 0,00.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setCancelModalOpen(false)} data-testid="button-cancel-modal-fechar">Voltar</Button>
+              <Button type="button" className="bg-neutral-900 hover:bg-neutral-800" onClick={confirmarCancelamento} data-testid="button-confirmar-cancelamento">Confirmar cancelamento</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingReassignData && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4" data-testid="dialog-reassign-confirm">
@@ -2629,33 +2876,54 @@ export default function ServiceOrdersPage() {
   });
   const [filterAuthorizer, setFilterAuthorizer] = useState<number | null>(null);
   const [filterClient, setFilterClient] = useState<number | null>(null);
-  const [filterPeriod, setFilterPeriod] = useState<string>(() => currentBrtCalendarMonthYm());
+  const [defaultPeriod] = useState(() => osListCalendarMonthRange(currentBrtCalendarMonthYm()) ?? { from: "", to: "" });
+  const [filterFrom, setFilterFrom] = useState(defaultPeriod.from);
+  const [filterTo, setFilterTo] = useState(defaultPeriod.to);
+  const activeRange = osListDateRange(filterFrom, filterTo);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
-  const defaultPeriodYm = currentBrtCalendarMonthYm();
-  useEffect(() => { setCurrentPage(1); }, [filterStatus, filterClient, filterAuthorizer, filterPeriod, searchOS, filterVehicleId]);
+  useEffect(() => { setCurrentPage(1); }, [filterStatus, filterClient, filterAuthorizer, filterFrom, filterTo, searchOS, filterVehicleId]);
   const { toast } = useToast();
-  const { data: orders = [], isLoading, isFetching } = useQuery<ServiceOrder[]>({
-    queryKey: ["/api/service-orders", filterPeriod || "all"],
+  const { data: orders = [], isLoading, isFetching: ordersFetching } = useQuery<ServiceOrder[]>({
+    queryKey: ["/api/service-orders", activeRange?.from ?? "invalid", activeRange?.to ?? "invalid"],
     queryFn: async () => {
-      const qs = filterPeriod ? `?period=${encodeURIComponent(filterPeriod)}` : "";
+      if (!activeRange) return [];
+      const qs = `?from=${encodeURIComponent(activeRange.from)}&to=${encodeURIComponent(activeRange.to)}`;
       const res = await authFetch(`/api/service-orders${qs}`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
   });
-  const listLoading = isLoading || isFetching;
+  // Só bloqueia a lista na primeira carga. Refetch (realtime, foco, salvar) mantém a tabela clicável.
+  const listLoading = isLoading && orders.length === 0;
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: kits = [] } = useQuery<EnrichedKit[]>({ queryKey: ["/api/weapon-kits"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: escortContracts = [] } = useQuery<{ id: string; client_id: number | null; name: string | null; status: string | null }[]>({ queryKey: ["/api/escort/contracts"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({ queryKey: ["/api/users"], queryFn: getQueryFn({ on401: "throw" }) });
-  const { data: allBillings = [] } = useQuery<any[]>({ queryKey: ["/api/escort/billings"], queryFn: getQueryFn({ on401: "throw" }) });
+  const {
+    data: allBillings = [],
+    isFetching: billingsFetching,
+    isPlaceholderData: billingsStale,
+    isSuccess: billingsReady,
+  } = useQuery<any[]>({
+    queryKey: ["/api/escort/billings", "os-period", activeRange?.from ?? "", activeRange?.to ?? ""],
+    enabled: !!activeRange,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const qs = `?os_from=${encodeURIComponent(activeRange!.from)}&os_to=${encodeURIComponent(activeRange!.to)}`;
+      const res = await authFetch(`/api/escort/billings${qs}`);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const listRefreshing = orders.length > 0 && (ordersFetching || billingsFetching);
 
   const getBillingAlerts = (o: any): string[] => {
     const isConcluida = o.status === "concluida" || o.status === "concluída";
     if (!isConcluida || o.type !== "escolta") return [];
+    if (!billingsReady || billingsStale) return [];
     const alerts: string[] = [];
     const bill = allBillings.find((b: any) => b.service_order_id === o.id);
     if (!bill) { alerts.push("Sem faturamento"); return alerts; }
@@ -2814,7 +3082,7 @@ export default function ServiceOrdersPage() {
         </Button>
       </div>
 
-      {showForm && <FormErrorBoundary onClose={() => { setShowForm(false); setEditItem(undefined); }}><OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} billings={allBillings} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} /></FormErrorBoundary>}
+      {showForm && <FormErrorBoundary onClose={() => { setShowForm(false); setEditItem(undefined); }}><OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} billings={billingsReady && !billingsStale ? allBillings : undefined} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} /></FormErrorBoundary>}
 
       {filterVehicleId && (() => {
         const fv = vehicles.find(vv => vv.id === filterVehicleId);
@@ -2849,7 +3117,8 @@ export default function ServiceOrdersPage() {
           return [uid, { id: uid, name: u?.name || `User #${uid}` }];
         })).values()];
         const clientsInOrders = [...new Map(allOrds.map(o => [o.clientId, { id: o.clientId, name: getClientName(o.clientId) }])).values()];
-        const hasAnyFilter = !!(filterStatus || filterAuthorizer || filterClient || (filterPeriod && filterPeriod !== defaultPeriodYm));
+        const periodChanged = filterFrom !== defaultPeriod.from || filterTo !== defaultPeriod.to;
+        const hasAnyFilter = !!(filterStatus || filterAuthorizer || filterClient || periodChanged);
 
         return (
           <div className="mb-3 space-y-2" data-testid="section-filters">
@@ -2914,30 +3183,40 @@ export default function ServiceOrdersPage() {
                 {authorizers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
 
-              <label
-                className="inline-flex items-center gap-1.5 text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus-within:ring-2 focus-within:ring-black/10 max-w-full"
-                title={filterPeriod ? (formatOsListPeriodLabel(filterPeriod) || "Período") : "Período"}
+              <div
+                className="inline-flex items-center gap-1.5 text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 max-w-full"
+                data-testid="filter-period"
+                title={activeRange ? (formatOsListRangeLabel(activeRange.from, activeRange.to) || "Período") : "Período"}
               >
                 <Calendar className="w-3 h-3 text-neutral-400 shrink-0" />
-                <span className="text-neutral-500 shrink-0">Período</span>
+                <span className="text-neutral-500 shrink-0">De</span>
                 <input
-                  type="month"
-                  aria-label="Período"
-                  value={filterPeriod || ""}
-                  onChange={e => setFilterPeriod(e.target.value || defaultPeriodYm)}
-                  className="bg-transparent text-xs text-neutral-800 focus:outline-none min-w-0"
-                  data-testid="filter-period"
+                  type="date"
+                  aria-label="Data inicial"
+                  value={filterFrom}
+                  onChange={e => { if (e.target.value) setFilterFrom(e.target.value); }}
+                  className="bg-transparent text-xs text-neutral-800 focus:outline-none"
+                  data-testid="filter-period-from"
                 />
-              </label>
-              {filterPeriod && formatOsListPeriodLabel(filterPeriod) && (
+                <span className="text-neutral-500 shrink-0">Até</span>
+                <input
+                  type="date"
+                  aria-label="Data final"
+                  value={filterTo}
+                  onChange={e => { if (e.target.value) setFilterTo(e.target.value); }}
+                  className="bg-transparent text-xs text-neutral-800 focus:outline-none"
+                  data-testid="filter-period-to"
+                />
+              </div>
+              {activeRange && formatOsListRangeLabel(activeRange.from, activeRange.to) && (
                 <span className="text-[11px] text-neutral-500 whitespace-nowrap tabular-nums" data-testid="text-period-range">
-                  {formatOsListPeriodLabel(filterPeriod)!.replace(/^Período:\s*/i, "")}
+                  {formatOsListRangeLabel(activeRange.from, activeRange.to)!.replace(/^Período:\s*/i, "")}
                 </span>
               )}
 
               {hasAnyFilter && (
                 <button
-                  onClick={() => { setFilterStatus(null); setFilterAuthorizer(null); setFilterClient(null); setFilterPeriod(defaultPeriodYm); }}
+                  onClick={() => { setFilterStatus(null); setFilterAuthorizer(null); setFilterClient(null); setFilterFrom(defaultPeriod.from); setFilterTo(defaultPeriod.to); }}
                   className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 ml-1 transition-colors"
                   data-testid="button-clear-filters"
                 >
@@ -2950,6 +3229,12 @@ export default function ServiceOrdersPage() {
       })()}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
+        {listRefreshing && (
+          <div className="h-0.5 bg-neutral-100" data-testid="orders-refreshing" role="status" aria-live="polite">
+            <div className="h-full w-1/3 bg-neutral-800 animate-pulse" />
+            <span className="sr-only">Atualizando dados...</span>
+          </div>
+        )}
         {listLoading ? (
           <div className="p-8 text-center text-neutral-400 flex flex-col items-center gap-2" data-testid="orders-loading">
             <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
@@ -2957,7 +3242,7 @@ export default function ServiceOrdersPage() {
           </div>
         ) : (orders || []).length === 0 ? (
           <div className="p-8 text-center text-neutral-400" data-testid="orders-empty">
-            {filterPeriod
+            {activeRange
               ? "Nenhuma ordem de serviço encontrada para este período"
               : "Nenhuma OS registrada"}
           </div>
@@ -2984,9 +3269,9 @@ export default function ServiceOrdersPage() {
           if (filterAuthorizer && !isSearching) {
             filtered = filtered.filter(o => (o as any).createdByUserId === filterAuthorizer);
           }
-          if (filterPeriod) {
-            // Mês civil em BRT. Campo já usado neste filtro: scheduledDate, ou createdAt se não houver agendamento.
-            filtered = filtered.filter(o => osMatchesCalendarMonth(o, filterPeriod));
+          if (activeRange) {
+            // Datas inclusivas em BRT. Campo já usado neste filtro: scheduledDate, ou createdAt se não houver agendamento.
+            filtered = filtered.filter(o => osMatchesDateRange(o, activeRange.from, activeRange.to));
           }
           const displayOrders = searchOS.trim() ? filtered.filter(o => {
             const s = searchOS.toLowerCase();
@@ -3008,7 +3293,7 @@ export default function ServiceOrdersPage() {
           const paginatedOrders = displayOrders.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
           if (totalFiltered === 0) {
             const onlyPeriod =
-              !!filterPeriod &&
+              !!activeRange &&
               !searchOS.trim() &&
               !filterStatus &&
               !filterClient &&

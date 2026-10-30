@@ -17,13 +17,18 @@ import { Clock, Plus, Pencil, Trash2, RefreshCw, Wifi, WifiOff, AlertCircle, Che
 import type { Employee } from "@shared/schema";
 import { getPayrollPeriod as getPayrollPeriodFolha } from "@shared/payroll-period";
 import { downloadDiariasExcel, downloadDiariasPdf, fetchDiariasGrade } from "@/lib/diarias-ponto-report";
-import { calendarDiariasRange, formatPeriodoBR, rangeFitsDiarias, type DiariasPreset } from "@shared/diarias-periodo";
+import { calendarDiariasRange, diaElegivelDiariaFolha, formatPeriodoBR, rangeFitsDiarias, somarDiariasDaFolha, type DiariasPreset } from "@shared/diarias-periodo";
+import { Textarea } from "@/components/ui/textarea";
 import { isBoundaryPunchTime } from "@shared/punch-time";
 
 const formatBRT = (ymd: string) => {
   const [y, m, d] = ymd.split("-").map(Number);
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
 };
+
+function ordenarPorNome<T extends { name?: string | null }>(lista: T[]): T[] {
+  return [...lista].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "pt-BR"));
+}
 
 type Device = {
   id: number; nome: string; tipo: string; base_url: string; login: string; ativo: boolean; notas: string | null;
@@ -66,7 +71,7 @@ type FolhaDay = {
   date: string; clockIn: string | null; lunchOut: string | null; lunchIn: string | null;
   clockOut: string | null; totalPunches: number; sources: string[]; hoursWorked?: string;
   punches?: FolhaPunch[];
-  extraMin?: number; jornadaDiariaMin?: number; noturnoMin?: number; workedMin?: number; normaisMin?: number;
+  extraMin?: number; jornadaDiariaMin?: number; jornadaRealMin?: number; noturnoMin?: number; workedMin?: number; normaisMin?: number;
   anomalies?: FolhaDayAnomaly[];
   observation?: string | null;
   hasAlert?: boolean;
@@ -610,7 +615,7 @@ function MappingTab() {
                 <Select value={String(editing.employee_id || "")} onValueChange={v => setEditing({ ...editing, employee_id: Number(v) })}>
                   <SelectTrigger data-testid="select-employee"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+                    {ordenarPorNome(employees).map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -739,7 +744,7 @@ function PunchesTab() {
           <SelectTrigger className="w-56 h-8 text-sm" data-testid="filter-employee"><SelectValue placeholder="Todos os funcionários" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todos os funcionários</SelectItem>
-            {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+            {ordenarPorNome(employees).map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <DateInputBR  value={from} onChange={e => setFrom(e.target.value)} className="w-40 h-8 text-sm" data-testid="filter-from" />
@@ -827,7 +832,7 @@ function PunchesTab() {
               <Select value={manualEmpId} onValueChange={setManualEmpId}>
                 <SelectTrigger data-testid="select-manual-emp"><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
-                  {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+                  {ordenarPorNome(employees).map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -933,7 +938,7 @@ function AbsencesTab() {
           <SelectTrigger className="w-56 h-8 text-sm" data-testid="filter-absence-emp"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">Todos os funcionários</SelectItem>
-            {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+            {ordenarPorNome(employees).map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <span className="text-xs text-neutral-500">{absences.length} lançamento(s)</span>
@@ -994,7 +999,7 @@ function AbsencesTab() {
                 <Select value={String(editing.employee_id || "")} onValueChange={v => setEditing({ ...editing, employee_id: Number(v) })}>
                   <SelectTrigger data-testid="select-absence-emp"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+                    {ordenarPorNome(employees).map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -1248,7 +1253,7 @@ function PainelMesTab() {
                   <div className="text-neutral-400 italic">Nenhum — todos mapeados.</div>
                 ) : (
                   <ul className="space-y-0.5 max-h-48 overflow-auto pr-1">
-                    {diag.unmappedEmployees.map(e => (
+                    {ordenarPorNome(diag.unmappedEmployees).map(e => (
                       <li key={e.id} className="flex items-center justify-between border-b border-amber-200/40 py-0.5" data-testid={`diag-unmapped-${e.id}`}>
                         <span><span className="font-medium">{e.name}</span> <span className="text-neutral-400">· {e.role}</span></span>
                         <span className="text-neutral-400 text-[10px]">#{e.id}</span>
@@ -1706,7 +1711,9 @@ function FolhaTab() {
     retry: 1,
   });
 
-  const { data: diariasPonto = [] } = useQuery<{ id: number; date: string; amount: number }[]>({
+  const [diariaManual, setDiariaManual] = useState<null | { date: string; amount: string; justificativa: string }>(null);
+
+  const { data: diariasPonto = [] } = useQuery<{ id: number; date: string; amount: number; origem: "PONTO_AUTOMATICO" | "MANUAL"; justificativa: string | null; description: string | null }[]>({
     queryKey: ["/api/daily-allowances", "ponto", employeeId, month],
     queryFn: async () => {
       const r = await authFetch(`/api/daily-allowances/ponto?employeeId=${employeeId}&month=${month}`);
@@ -1717,22 +1724,27 @@ function FolhaTab() {
   });
 
   const diariaPontoMut = useMutation({
-    mutationFn: async (vars: { date: string; on: boolean }) => {
+    mutationFn: async (vars: { date: string; on: boolean; origem?: "PONTO_AUTOMATICO" | "MANUAL"; amount?: number; justificativa?: string }) => {
       const r = await apiRequest("POST", "/api/daily-allowances/ponto", {
         employeeId: Number(employeeId),
         date: vars.date,
         month,
         on: vars.on,
+        origem: vars.origem,
+        amount: vars.amount,
+        justificativa: vars.justificativa,
       });
       return r.json();
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances", "ponto", employeeId, month] });
       queryClient.invalidateQueries({ queryKey: ["/api/control-id/folha-stats", employeeId, month] });
-      toast({ title: vars.on ? "Diária de R$ 43 marcada" : "Diária retirada" });
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-allowances/ponto-grade"] });
+      setDiariaManual(null);
+      toast({ title: vars.on ? (vars.origem === "MANUAL" ? "Diária manual lançada" : "Diária de R$ 43 marcada") : "Diária retirada" });
     },
     onError: (err: Error) => {
-      toast({ title: "Não foi possível marcar a diária", description: err.message, variant: "destructive" });
+      toast({ title: "Não foi possível lançar a diária", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1758,7 +1770,7 @@ function FolhaTab() {
         <Select value={employeeId} onValueChange={setEmployeeId}>
           <SelectTrigger className="w-64 h-9 text-sm" data-testid="select-folha-employee"><SelectValue placeholder="Selecione um funcionário" /></SelectTrigger>
           <SelectContent>
-            {employees.map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
+            {ordenarPorNome(employees).map(e => <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-44 h-9 text-sm" data-testid="input-month" />
@@ -2037,7 +2049,7 @@ function FolhaTab() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-neutral-800 font-medium">Diárias</div>
-                      <div className="text-[10px] text-neutral-400 mt-0.5">Missões / escolta</div>
+                      <div className="text-[10px] text-neutral-400 mt-0.5">4 batidas e mais de 16h, ou manual justificada</div>
                     </div>
                     <span className={`font-semibold tabular-nums ${stats.diarias > 0 ? "text-neutral-800" : "text-neutral-400"}`} data-testid="text-diarias">{fmtBRL(stats.diarias)}</span>
                   </div>
@@ -2168,22 +2180,57 @@ function FolhaTab() {
                     <td className="p-2 text-center text-xs text-neutral-400">{d.totalPunches}</td>
                     <td className="p-2 text-center" data-testid={`cell-diaria-${d.date}`}>
                       {(() => {
-                        const elegivel = (Number(d.workedMin) || 0) > 16 * 60;
-                        const marcada = diariasPonto.some((f) => String(f.date).slice(0, 10) === d.date);
+                        const elegivel = diaElegivelDiariaFolha(d);
+                        const doDia = diariasPonto.filter((f) => String(f.date).slice(0, 10) === d.date);
+                        const manual = doDia.find((f) => f.origem === "MANUAL");
+                        const ponto = doDia.find((f) => f.origem !== "MANUAL");
+                        if (elegivel) {
+                          const marcada = !!ponto;
+                          return (
+                            <Button
+                              size="sm"
+                              variant={marcada ? "default" : "outline"}
+                              disabled={diariaPontoMut.isPending}
+                              className={`h-7 px-2 text-xs ${marcada ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                              title={marcada ? "Diária de R$ 43 marcada. Clique para retirar." : "Marcar diária de R$ 43 — 4 batidas e mais de 16 horas"}
+                              onClick={() => diariaPontoMut.mutate({ date: d.date, on: !marcada, origem: "PONTO_AUTOMATICO" })}
+                              data-testid={`button-diaria-${d.date}`}
+                            >
+                              {marcada ? "R$ 43" : "Marcar"}
+                            </Button>
+                          );
+                        }
+                        if (manual) {
+                          const valor = Number(manual.amount) === 43 ? "R$ 43" : fmtBRL(manual.amount);
+                          return (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              disabled={diariaPontoMut.isPending}
+                              className="h-7 px-2 text-xs bg-amber-600 hover:bg-amber-700"
+                              title={`${manual.justificativa || "Diária manual"}. Clique para retirar.`}
+                              onClick={() => diariaPontoMut.mutate({ date: d.date, on: false, origem: "MANUAL" })}
+                              data-testid={`button-diaria-manual-${d.date}`}
+                            >
+                              {valor}
+                            </Button>
+                          );
+                        }
                         return (
-                          <Button
-                            size="sm"
-                            variant={marcada ? "default" : "outline"}
-                            disabled={!elegivel || diariaPontoMut.isPending}
-                            className={`h-7 px-2 text-xs ${marcada ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
-                            title={elegivel
-                              ? (marcada ? "Diária de R$ 43 marcada. Clique para retirar." : "Marcar diária de R$ 43 — dia com mais de 16 horas")
-                              : "Só marca diária quando o dia passa de 16 horas trabalhadas"}
-                            onClick={() => diariaPontoMut.mutate({ date: d.date, on: !marcada })}
-                            data-testid={`button-diaria-${d.date}`}
-                          >
-                            {marcada ? "R$ 43" : elegivel ? "Marcar" : "—"}
-                          </Button>
+                          <span className="inline-flex items-center gap-1">
+                            <span className="text-neutral-300">—</span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={diariaPontoMut.isPending}
+                              className="h-7 px-2 text-xs"
+                              title="Inserir diária manual com justificativa"
+                              onClick={() => setDiariaManual({ date: d.date, amount: "43", justificativa: "" })}
+                              data-testid={`button-diaria-manual-abrir-${d.date}`}
+                            >
+                              Manual
+                            </Button>
+                          </span>
                         );
                       })()}
                     </td>
@@ -2218,7 +2265,23 @@ function FolhaTab() {
                         {stats.horaExtra > 0 && <span className="text-orange-600">mês: +{hhmm(Math.round(stats.horaExtra * 60))}</span>}
                       </td>
                       <td className="p-2 text-center text-xs text-emerald-700 tabular-nums" data-testid="text-total-diarias-ponto">
-                        {diariasPonto.length > 0 ? `${diariasPonto.length} × R$ 43` : "—"}
+                        {(() => {
+                          const elegiveis = new Set(folha.filter((dia) => diaElegivelDiariaFolha(dia)).map((dia) => dia.date));
+                          const soma = somarDiariasDaFolha(
+                            diariasPonto.map((f) => ({
+                              employeeId: Number(employeeId),
+                              date: f.date,
+                              amount: f.amount,
+                              description: f.origem === "MANUAL" ? `[MANUAL] ${f.justificativa || ""}` : "[PONTO] Diária jornada >16h",
+                              origem: f.origem,
+                              justificativa: f.justificativa,
+                            })),
+                            elegiveis,
+                          );
+                          if (soma.quantidade === 0) return "—";
+                          if (soma.total === soma.quantidade * 43) return `${soma.quantidade} × R$ 43`;
+                          return fmtBRL(soma.total);
+                        })()}
                       </td>
                       <td className="p-2 no-print" />
                     </tr>
@@ -2256,6 +2319,72 @@ function FolhaTab() {
       {espelhoOpen && employeeId && (
         <EspelhoRhidDialog employeeId={Number(employeeId)} month={month} onClose={() => setEspelhoOpen(false)} />
       )}
+      <Dialog open={!!diariaManual} onOpenChange={(open) => { if (!open && !diariaPontoMut.isPending) setDiariaManual(null); }}>
+        <DialogContent className="max-w-md" data-testid="dialog-diaria-manual">
+          <DialogHeader>
+            <DialogTitle>Diária manual</DialogTitle>
+          </DialogHeader>
+          {diariaManual && (
+            <div className="space-y-3 text-sm">
+              <p className="text-neutral-600">
+                {employee?.name || "Funcionário"} · {new Date(diariaManual.date + "T12:00:00").toLocaleDateString("pt-BR")}
+              </p>
+              <div>
+                <label className="text-[11px] font-bold text-neutral-600 uppercase mb-1 block">Valor</label>
+                <Input
+                  type="number"
+                  min={0.01}
+                  max={1000}
+                  step={0.01}
+                  value={diariaManual.amount}
+                  onChange={(e) => setDiariaManual({ ...diariaManual, amount: e.target.value })}
+                  className="h-9"
+                  data-testid="input-diaria-manual-valor"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-neutral-600 uppercase mb-1 block">Justificativa / motivo da inclusão</label>
+                <Textarea
+                  value={diariaManual.justificativa}
+                  onChange={(e) => setDiariaManual({ ...diariaManual, justificativa: e.target.value })}
+                  placeholder="Ex.: missão estendida sem parada de almoço registrada no relógio"
+                  className="min-h-24"
+                  data-testid="input-diaria-manual-justificativa"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiariaManual(null)} disabled={diariaPontoMut.isPending} data-testid="button-diaria-manual-cancelar">Cancelar</Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700"
+              disabled={diariaPontoMut.isPending || !diariaManual || diariaManual.justificativa.trim().length < 5 || !(Number(diariaManual?.amount) > 0)}
+              data-testid="button-diaria-manual-salvar"
+              onClick={() => {
+                if (!diariaManual) return;
+                const amount = Math.round(Number(diariaManual.amount) * 100) / 100;
+                if (!(amount > 0) || amount > 1000) {
+                  toast({ title: "Informe um valor entre R$ 0,01 e R$ 1.000,00", variant: "destructive" });
+                  return;
+                }
+                if (diariaManual.justificativa.trim().length < 5) {
+                  toast({ title: "A justificativa é obrigatória", variant: "destructive" });
+                  return;
+                }
+                diariaPontoMut.mutate({
+                  date: diariaManual.date,
+                  on: true,
+                  origem: "MANUAL",
+                  amount,
+                  justificativa: diariaManual.justificativa.trim(),
+                });
+              }}
+            >
+              {diariaPontoMut.isPending ? "Salvando..." : "Salvar diária"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!diariasExport} onOpenChange={(open) => { if (!open && !exportingDiarias) setDiariasExport(null); }}>
         <DialogContent className="max-w-md" data-testid="dialog-diarias-periodo">
           <DialogHeader>
@@ -2601,7 +2730,7 @@ function FolhaOverview({ month, onSelect }: { month: string; onSelect: (id: numb
           <h3 className="text-sm font-bold text-neutral-700">Controle de diárias · {data.label}</h3>
           <span className="text-xs text-neutral-400 ml-auto">Clique para abrir a folha da pessoa</span>
         </div>
-        <p className="px-3 py-2 text-[11px] text-neutral-500">Uma diária de R$ 43 por dia marcado. O custo de salário e hora extra abre só quando você escolhe o funcionário.</p>
+        <p className="px-3 py-2 text-[11px] text-neutral-500">Diária da jornada (4 batidas e mais de 16h) ou inclusão manual justificada. O custo de salário e hora extra abre só quando você escolhe o funcionário.</p>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-neutral-50/50 text-xs text-neutral-600">
@@ -3248,7 +3377,7 @@ function BatchPrintDialog({ month, employees, onClose }: { month: string; employ
               <Button size="sm" variant="outline" onClick={toggleAll}>{selected.size === employees.length ? "Desmarcar todos" : "Selecionar todos"}</Button>
             </div>
             <div className="border rounded max-h-80 overflow-auto">
-              {employees.map(e => (
+              {ordenarPorNome(employees).map(e => (
                 <label key={e.id} className="flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-neutral-50 cursor-pointer text-sm">
                   <input
                     type="checkbox"

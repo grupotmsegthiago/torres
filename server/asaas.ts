@@ -17,6 +17,7 @@ import { mapAsaasFinancialTx, movementKind, selectBalanceComposition } from "./l
 import { fetchBillingsByScheduledWindow } from "./lib/billing-period";
 import { notifyComissaoInvoiceEvent } from "./lib/comissao-ingest";
 import { normalizeBillingCycle, periodForDate } from "../shared/billing-cycle";
+import { faturaCanceladaNaoRecebeOs, NF_CANCELADA_SEM_VINCULO_MSG, parseLinkOsPayload } from "../shared/nf-os-guard";
 import { appendMultilogToDescription, isMultilogClient, missingMultilogRefs, multilogDiscriminacaoLines } from "../shared/multilog-refs";
 import {
   markBillingsInvoicedAtomic,
@@ -5306,20 +5307,21 @@ export function registerAsaasRoutes(app: Express) {
     app.post("/api/relatorio-nf/link-os", requireAdminRole, async (req: Request, res: Response) => {
       try {
         const user = (req as any).user;
-        const invoiceId = Number(req.body?.invoiceId);
-        const billingIds: number[] = Array.isArray(req.body?.billingIds)
-          ? req.body.billingIds.map((x: any) => Number(x)).filter((x: number) => Number.isFinite(x))
-          : [];
-        if (!Number.isFinite(invoiceId) || billingIds.length === 0) {
+        const parsed = parseLinkOsPayload(req.body);
+        if (!parsed) {
           return res.status(400).json({ message: "invoiceId e billingIds obrigatórios" });
         }
+        const { invoiceId, billingIds } = parsed;
 
         const { data: inv } = await supabaseAdmin
           .from("invoices")
-          .select("id, client_id, client_name")
+          .select("id, client_id, client_name, status, nfse_status, nfse_cancel_reason")
           .eq("id", invoiceId)
           .single();
         if (!inv) return res.status(404).json({ message: "Fatura não encontrada" });
+        if (faturaCanceladaNaoRecebeOs(inv)) {
+          return res.status(409).json({ message: NF_CANCELADA_SEM_VINCULO_MSG });
+        }
 
         // Só billings ÓRFÃS do mesmo cliente
         const { data: bills } = await supabaseAdmin

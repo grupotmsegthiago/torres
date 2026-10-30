@@ -52,6 +52,52 @@ export function formatPeriodoBR(from: string, to: string): string {
 }
 
 export const DIARIA_PONTO_UNIT = 43;
+export const DIARIA_MANUAL_PREFIX = "[MANUAL]";
+export const DIARIA_JORNADA_LIMITE_MIN = 16 * 60;
+export const DIARIA_MANUAL_JUSTIFICATIVA_MIN = 5;
+
+export type DiaFolhaDiaria = {
+  totalPunches?: number | null;
+  clockIn?: string | null;
+  lunchOut?: string | null;
+  lunchIn?: string | null;
+  clockOut?: string | null;
+  /** Soma real dos dois intervalos, sem o teto de 19:59 da coluna Trabalhado. */
+  jornadaRealMin?: number | null;
+};
+
+/**
+ * Diária da jornada na folha: exatamente 4 batidas preenchidas
+ * (entrada, saída almoço, volta e saída) e a soma dos dois intervalos acima de 16h.
+ */
+export function diaElegivelDiariaFolha(day: DiaFolhaDiaria): boolean {
+  if (Number(day.totalPunches) !== 4) return false;
+  const marcas = [day.clockIn, day.lunchOut, day.lunchIn, day.clockOut];
+  if (marcas.some((m) => !String(m || "").trim())) return false;
+  return Number(day.jornadaRealMin) > DIARIA_JORNADA_LIMITE_MIN;
+}
+
+export function descricaoDiariaManual(justificativa: string): string {
+  return `${DIARIA_MANUAL_PREFIX} Diária autorizada — ${justificativa.trim()}`;
+}
+
+export function ehDiariaManual(row: { description?: string | null; origem?: string | null }): boolean {
+  return row.origem === "MANUAL" || String(row.description || "").startsWith(DIARIA_MANUAL_PREFIX);
+}
+
+export function ehDiariaPonto(row: { description?: string | null; origem?: string | null }): boolean {
+  if (ehDiariaManual(row)) return false;
+  return row.origem === "PONTO_AUTOMATICO" || String(row.description || "").startsWith("[PONTO]");
+}
+
+export function justificativaDiariaManual(row: { description?: string | null; justificativa?: string | null }): string {
+  const campo = String(row.justificativa || "").trim();
+  if (campo) return campo;
+  const desc = String(row.description || "");
+  const sep = "—";
+  const i = desc.indexOf(sep);
+  return i >= 0 ? desc.slice(i + sep.length).trim() : "";
+}
 
 export type DiariaLancamento = {
   employeeId: number;
@@ -91,4 +137,37 @@ export function acumularDiariaPonto(
     out.set(id, { dates: [...slot.dates].sort(), total: slot.total });
   }
   return out;
+}
+
+/**
+ * Soma da folha: [PONTO] só no dia que ainda tem 4 batidas e mais de 16h,
+ * mais [MANUAL] com justificativa. Um crédito por dia. O pacote [AUTO-Q] não entra.
+ */
+export function somarDiariasDaFolha(
+  rows: Array<DiariaLancamento & { origem?: string | null; justificativa?: string | null }>,
+  datasElegiveis: ReadonlySet<string>,
+  unit = DIARIA_PONTO_UNIT,
+): { dates: string[]; total: number; quantidade: number } {
+  const byDate = new Map<string, number>();
+  for (const row of rows) {
+    const desc = String(row.description || "");
+    if (desc.startsWith("[AUTO-Q]") || desc.startsWith("[AUTO]")) continue;
+    const date = String(row.date || "").slice(0, 10);
+    if (!ISO.test(date)) continue;
+    if (ehDiariaManual(row)) {
+      if (justificativaDiariaManual(row).length < DIARIA_MANUAL_JUSTIFICATIVA_MIN) continue;
+      const amount = Number(row.amount);
+      const credit = Number.isFinite(amount) && amount > 0 && amount !== unit
+        ? Math.round(amount * 100) / 100
+        : unit;
+      byDate.set(date, credit);
+      continue;
+    }
+    if (ehDiariaPonto(row) && datasElegiveis.has(date) && !byDate.has(date)) {
+      byDate.set(date, unit);
+    }
+  }
+  const dates = [...byDate.keys()].sort();
+  const total = Math.round(dates.reduce((s, d) => s + (byDate.get(d) || 0), 0) * 100) / 100;
+  return { dates, total, quantidade: dates.length };
 }

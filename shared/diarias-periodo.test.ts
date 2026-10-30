@@ -4,8 +4,10 @@ import {
   acumularDiariaPonto,
   calendarDiariasRange,
   daysInclusive,
+  diaElegivelDiariaFolha,
   formatPeriodoBR,
   rangeFitsDiarias,
+  somarDiariasDaFolha,
 } from "./diarias-periodo";
 
 test("outubro/2026: 1ª quinzena vai de 01 a 15", () => {
@@ -43,6 +45,36 @@ test("diária do ponto conta R$ 43 uma vez por dia e ignora o pacote AUTO-Q", ()
   const row = map.get(18);
   assert.deepEqual(row?.dates, ["2026-10-15", "2026-10-16"]);
   assert.equal(row?.total, 86);
+});
+
+test("diária da jornada só com 4 batidas e mais de 16 horas", () => {
+  const base = {
+    totalPunches: 4,
+    clockIn: "09:00",
+    lunchOut: "12:09",
+    lunchIn: "13:14",
+    clockOut: "23:59",
+  };
+  assert.equal(diaElegivelDiariaFolha({ ...base, jornadaRealMin: 16 * 60 }), false);
+  assert.equal(diaElegivelDiariaFolha({ ...base, jornadaRealMin: 16 * 60 + 1 }), true);
+  assert.equal(diaElegivelDiariaFolha({ ...base, totalPunches: 3, jornadaRealMin: 19 * 60 }), false);
+  assert.equal(diaElegivelDiariaFolha({ ...base, totalPunches: 5, jornadaRealMin: 19 * 60 }), false);
+  assert.equal(diaElegivelDiariaFolha({ ...base, lunchIn: null, jornadaRealMin: 19 * 60 }), false);
+  assert.equal(diaElegivelDiariaFolha({ ...base, clockOut: "", jornadaRealMin: 19 * 60 }), false);
+});
+
+test("folha soma ponto válido e manual justificada, uma vez por dia", () => {
+  const elegiveis = new Set(["2026-10-26"]);
+  const soma = somarDiariasDaFolha([
+    { employeeId: 7, date: "2026-10-26", amount: 43, description: "[PONTO] Diária jornada >16h", origem: "PONTO_AUTOMATICO" },
+    { employeeId: 7, date: "2026-10-28", amount: 43, description: "[PONTO] Diária jornada >16h", origem: "PONTO_AUTOMATICO" },
+    { employeeId: 7, date: "2026-10-27", amount: 43, description: "[MANUAL] Diária autorizada — Missão sem almoço no relógio", origem: "MANUAL", justificativa: "Missão sem almoço no relógio" },
+    { employeeId: 7, date: "2026-10-29", amount: 50, description: "[MANUAL] Diária autorizada — abc", origem: "MANUAL", justificativa: "abc" },
+    { employeeId: 7, date: "2026-10-31", amount: 258, description: "[AUTO-Q] Diárias jornada >16h" },
+  ], elegiveis);
+  assert.deepEqual(soma.dates, ["2026-10-26", "2026-10-27"]);
+  assert.equal(soma.total, 86);
+  assert.equal(soma.quantidade, 2);
 });
 
 test("intervalo invertido ou maior que 62 dias não entra no relatório", () => {

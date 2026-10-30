@@ -25,19 +25,67 @@ export const INSTITUTIONAL_FOOTER =
 const MAX_WIDTH = 1920;
 const LOGO_WIDTH_RATIO = 0.135;
 const PAD = 24;
-/** O balão do WhatsApp mostra a foto deitada inteira e corta o topo e a base da foto em pé. */
-const CHAT_PREVIEW_RATIO = 16 / 9;
+/** Quadro único das fotos em pé. 1920×1080 cabe no balão sem cortar topo e base. */
+export const PORTRAIT_CANVAS_W = 1920;
+export const PORTRAIT_CANVAS_H = 1080;
 
-/** Foto em pé vira um quadro 16:9 no miolo, para o logotipo e o rodapé caberem no balão. */
+/**
+ * Largura da foto nítida quando a altura encosta nas bordas do quadro.
+ * A proporção original é mantida: 9:16 vira 608×1080; 3:4 vira 810×1080.
+ */
+export function portraitForegroundSize(srcW: number, srcH: number): { width: number; height: number } {
+  const width = Math.max(1, Math.round(srcW * PORTRAIT_CANVAS_H / srcH));
+  if (width <= PORTRAIT_CANVAS_W) return { width, height: PORTRAIT_CANVAS_H };
+  return {
+    width: PORTRAIT_CANVAS_W,
+    height: Math.max(1, Math.round(srcH * PORTRAIT_CANVAS_W / srcW)),
+  };
+}
+
+/** EXIF primeiro. Sem isso, uma foto em pé marcada como deitada segue o caminho errado. */
+async function uprightBuffer(input: Buffer): Promise<{ buffer: Buffer; width: number; height: number }> {
+  const buffer = await sharp(input).rotate().toBuffer();
+  const meta = await sharp(buffer).metadata();
+  return { buffer, width: meta.width || 1, height: meta.height || 1 };
+}
+
+/**
+ * Foto em pé entra inteira no centro do quadro 1920×1080.
+ * Laterais: a própria cena, desfocada e 30% mais escura. O miolo não é cortado.
+ * Duas saídas intermediárias (fundo e foto nítida) existem juntas só no composite.
+ */
+async function composePortraitCanvas(upright: Buffer): Promise<Buffer> {
+  const meta = await sharp(upright).metadata();
+  const srcW = meta.width || 1;
+  const srcH = meta.height || 1;
+  const foregroundSize = portraitForegroundSize(srcW, srcH);
+  const background = await sharp(upright)
+    .resize(PORTRAIT_CANVAS_W, PORTRAIT_CANVAS_H, { fit: "cover", position: "centre" })
+    .blur(25)
+    .modulate({ brightness: 0.7 })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  const foreground = await sharp(upright)
+    .resize({ width: foregroundSize.width, height: foregroundSize.height, fit: "fill" })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  const left = Math.max(0, Math.round((PORTRAIT_CANVAS_W - foregroundSize.width) / 2));
+  const top = Math.max(0, Math.round((PORTRAIT_CANVAS_H - foregroundSize.height) / 2));
+  const framed = await sharp(background)
+    .composite([{ input: foreground, left, top }])
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return framed;
+}
+
+/**
+ * Foto em pé vira o quadro 16:9. Foto já deitada volta em pé, sem fundo.
+ * A rotação EXIF acontece antes da comparação altura × largura.
+ */
 export async function frameForChatPreview(input: Buffer): Promise<Buffer> {
-  const meta = await sharp(input).metadata();
-  const W = meta.width || 1;
-  const H = meta.height || 1;
-  if (H <= W) return input;
-  const targetH = Math.max(1, Math.round(W / CHAT_PREVIEW_RATIO));
-  const top = Math.max(0, Math.floor((H - targetH) / 2));
-  const height = Math.min(targetH, H - top);
-  return sharp(input).extract({ left: 0, top, width: W, height }).jpeg({ quality: 90 }).toBuffer();
+  const upright = await uprightBuffer(input);
+  if (upright.height <= upright.width) return upright.buffer;
+  return composePortraitCanvas(upright.buffer);
 }
 
 let textRenderer: TextToSVG | null = null;
@@ -98,12 +146,14 @@ export function institutionalFooterSvg(width: number, barH: number): Buffer {
 }
 
 export async function stampInstitutionalPhoto(input: Buffer): Promise<Buffer> {
-  const normalized = await sharp(input)
-    .rotate()
-    .resize({ width: MAX_WIDTH, fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-  const base = await frameForChatPreview(normalized);
+  const upright = await uprightBuffer(input);
+  // Em pé: quadro 1920×1080 com a foto inteira. Deitada: só limita a 1920, sem fundo.
+  const base = upright.height > upright.width
+    ? await composePortraitCanvas(upright.buffer)
+    : await sharp(upright.buffer)
+      .resize({ width: MAX_WIDTH, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 90 })
+      .toBuffer();
   const meta = await sharp(base).metadata();
   const W = meta.width || 1;
   const H = meta.height || 1;

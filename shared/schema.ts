@@ -240,6 +240,9 @@ export const agentDailyAllowances = pgTable("agent_daily_allowances", {
   date: date("date").notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   description: text("description"),
+  origem: text("origem"),
+  justificativa: text("justificativa"),
+  usuarioAprovadorId: integer("usuario_aprovador_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 export const insertAgentDailyAllowanceSchema = createInsertSchema(agentDailyAllowances).omit({ id: true, createdAt: true });

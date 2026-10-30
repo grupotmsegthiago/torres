@@ -5,7 +5,9 @@ import { resolve } from "node:path";
 import { calcularEscolta } from "../billing-calc";
 import {
   CANCELADA_CLEAN_FINANCIAL_FIELDS,
+  aplicarFatosCancelamento,
   isCanceladaContract100km3,
+  validarCancelamentoOperador,
 } from "./cancelada-billing";
 
 // Regra do dono p/ OS CANCELADA: puxar a "tabela de 100 km" do cliente e cobrar
@@ -37,6 +39,16 @@ test("cancelada aceita somente contrato Ativo com franquia 100 km / 3 h", () => 
   assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_km: 50 }), false);
   assert.equal(isCanceladaContract100km3({ ...tabela100km, franquia_horas: 4 }), false);
   assert.equal(isCanceladaContract100km3({ ...tabela100km, status: "Inativo" }), false);
+  assert.equal(isCanceladaContract100km3({
+    ...tabela100km,
+    franquia_km: 0,
+    franquia_minima_km: 100,
+  }), true);
+  assert.equal(isCanceladaContract100km3({
+    ...tabela100km,
+    franquia_km: 0,
+    franquia_minima_km: 80,
+  }), false);
 });
 
 const base = {
@@ -124,4 +136,81 @@ test("rota calcular alinha contrato 100 km antes da RPC e restaura se a escrita 
   const writeAt = route.indexOf("billing = await writeEscortBillingAtomic");
   assert.ok(alignAt > 0 && writeAt > alignAt);
   assert.match(route, /\.update\(\{ escort_contract_id: previousContractId \}\)/);
+  const patchAt = source.indexOf("const aligned = await alignServiceOrderContractForBilling");
+  const patchWriteAt = source.indexOf('action: "WRITE_CANCELLED"', patchAt);
+  assert.ok(patchAt > 0 && patchWriteAt > patchAt);
+});
+
+test("cancelamento do operador exige horários, km e pedágio", () => {
+  const invalido = validarCancelamentoOperador({
+    horarioInicio: "2026-10-30T10:00",
+    horarioFim: "2026-10-30T08:00",
+    kmInicial: 100,
+    kmFinal: 90,
+    houveDeslocamento: true,
+    valorPedagio: 0,
+  });
+  assert.equal(invalido.ok, false);
+  const ok = validarCancelamentoOperador({
+    horarioInicio: "2026-10-30T08:00",
+    horarioFim: "2026-10-30T10:30",
+    kmInicial: 45210,
+    kmFinal: 45285,
+    houveDeslocamento: false,
+    valorPedagio: 38.5,
+  });
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.value.kmFinal, 45285);
+    assert.equal(ok.value.valorPedagio, 38.5);
+    assert.ok(ok.value.inicioIso.endsWith("Z") || ok.value.inicioIso.includes("+"));
+  }
+});
+
+test("sem deslocamento a franquia zera e o total fica só o pedágio", () => {
+  const fat = aplicarFatosCancelamento({
+    fat_acionamento: 750,
+    fat_hora_extra: 40,
+    fat_km: 20,
+    fat_adicional_noturno: 0,
+    fat_estadia: 0,
+    fat_pernoite: 0,
+    despesas_pedagio: 0,
+    fat_total: 810,
+  }, {
+    houveDeslocamento: false,
+    kmInicial: 10,
+    kmFinal: 10,
+    inicioIso: "2026-10-30T11:00:00.000Z",
+    fimIso: "2026-10-30T12:00:00.000Z",
+    valorPedagio: 38.4,
+  });
+  assert.equal(fat.fat_acionamento, 0);
+  assert.equal(fat.fat_hora_extra, 0);
+  assert.equal(fat.fat_km, 0);
+  assert.equal(fat.despesas_pedagio, 38.4);
+  assert.equal(fat.fat_total, 38.4);
+});
+
+test("com deslocamento a franquia permanece e o pedágio entra no total", () => {
+  const fat = aplicarFatosCancelamento({
+    fat_acionamento: 750,
+    fat_hora_extra: 0,
+    fat_km: 0,
+    fat_adicional_noturno: 0,
+    fat_estadia: 0,
+    fat_pernoite: 0,
+    despesas_pedagio: 0,
+    fat_total: 750,
+  }, {
+    houveDeslocamento: true,
+    kmInicial: 100,
+    kmFinal: 120,
+    inicioIso: "2026-10-30T11:00:00.000Z",
+    fimIso: "2026-10-30T13:00:00.000Z",
+    valorPedagio: 38.5,
+  });
+  assert.equal(fat.fat_acionamento, 750);
+  assert.equal(fat.despesas_pedagio, 38.5);
+  assert.equal(fat.fat_total, 788.5);
 });

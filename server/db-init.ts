@@ -2151,6 +2151,9 @@ export async function ensureCalcMissionRPC() {
     `);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_daily_allow_emp_date ON agent_daily_allowances(employee_id, date)`);
     await execSql(`CREATE INDEX IF NOT EXISTS idx_daily_allow_date ON agent_daily_allowances(date)`);
+    await execSql(`ALTER TABLE agent_daily_allowances ADD COLUMN IF NOT EXISTS origem TEXT`);
+    await execSql(`ALTER TABLE agent_daily_allowances ADD COLUMN IF NOT EXISTS justificativa TEXT`);
+    await execSql(`ALTER TABLE agent_daily_allowances ADD COLUMN IF NOT EXISTS usuario_aprovador_id INTEGER`);
     console.log("[db-init] agent_daily_allowances table ensured");
   } catch (e: any) {
     console.error("[db-init] agent_daily_allowances error:", e.message);

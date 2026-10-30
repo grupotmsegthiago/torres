@@ -5,11 +5,21 @@ import { z } from "zod";
 import { buildFolhaPonto } from "../control-id";
 import { monthToFechamento } from "../lib/control-id-parsers";
 import { getPayrollPeriod, getPayrollPeriodForDate } from "@shared/payroll-period";
-import { acumularDiariaPonto, daysInclusive, DIARIA_PONTO_UNIT, formatPeriodoBR, rangeFitsDiarias } from "@shared/diarias-periodo";
+import {
+  acumularDiariaPonto,
+  daysInclusive,
+  descricaoDiariaManual,
+  diaElegivelDiariaFolha,
+  DIARIA_MANUAL_JUSTIFICATIVA_MIN,
+  DIARIA_PONTO_UNIT,
+  ehDiariaManual,
+  ehDiariaPonto,
+  formatPeriodoBR,
+  rangeFitsDiarias,
+} from "@shared/diarias-periodo";
 import {
   DIARIA_LONG_SHIFT_VALOR,
   DIARIA_PONTO_DESCRICAO,
-  diaElegivelDiariaPonto,
 } from "../jobs/diarias-jornada-longa";
 
 const insertSchema = z.object({
@@ -108,6 +118,9 @@ export function registerDailyAllowancesRoutes(app: Express) {
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     month: z.string().regex(/^\d{4}-\d{2}$/),
     on: z.boolean(),
+    origem: z.enum(["PONTO_AUTOMATICO", "MANUAL"]).optional(),
+    justificativa: z.string().optional().nullable(),
+    amount: z.number().positive().max(1000).optional(),
   });
 
   app.get("/api/daily-allowances/ponto", requireAuth, requireAdminRole, async (req, res) => {
@@ -121,55 +134,130 @@ export function registerDailyAllowancesRoutes(app: Express) {
     const to = new Date(end.getTime() - 3 * 3600000 - 1).toISOString().slice(0, 10);
     const { data, error } = await supabaseAdmin
       .from("agent_daily_allowances")
-      .select("id, employee_id, date, amount, description")
+      .select("id, employee_id, date, amount, description, origem, justificativa")
       .eq("employee_id", employeeId)
-      .eq("description", DIARIA_PONTO_DESCRICAO)
       .gte("date", from)
       .lte("date", to);
     if (error) return res.status(500).json({ message: error.message });
-    res.json((data || []).map((r: any) => ({
-      id: r.id,
-      employeeId: r.employee_id,
-      date: String(r.date).slice(0, 10),
-      amount: Number(r.amount || 0),
-    })));
+    res.json((data || [])
+      .filter((r: any) => ehDiariaPonto(r) || ehDiariaManual(r))
+      .map((r: any) => ({
+        id: r.id,
+        employeeId: r.employee_id,
+        date: String(r.date).slice(0, 10),
+        amount: Number(r.amount || 0),
+        description: r.description,
+        origem: r.origem === "MANUAL" || ehDiariaManual(r) ? "MANUAL" : "PONTO_AUTOMATICO",
+        justificativa: r.justificativa || null,
+      })));
   });
 
   app.post("/api/daily-allowances/ponto", requireAuth, requireAdminRole, async (req, res) => {
     const parsed = pontoSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos" });
     const { employeeId, date, month, on } = parsed.data;
+    const origem = parsed.data.origem || "PONTO_AUTOMATICO";
+    const manual = origem === "MANUAL";
 
-    if (on) {
-      const folha = await buildFolhaPonto(employeeId, month);
-      const day = (folha || []).find((d: any) => String(d.date).slice(0, 10) === date);
-      if (!day || !diaElegivelDiariaPonto(Number(day.workedMin) || 0)) {
-        return res.status(400).json({ message: "Só marca diária em dia com mais de 16 horas trabalhadas" });
-      }
-    }
-
-    const { data: existing, error: findErr } = await supabaseAdmin
+    const { data: doDia, error: findErr } = await supabaseAdmin
       .from("agent_daily_allowances")
-      .select("id, date, amount")
+      .select("id, date, amount, description, origem, justificativa")
       .eq("employee_id", employeeId)
-      .eq("date", date)
-      .eq("description", DIARIA_PONTO_DESCRICAO);
+      .eq("date", date);
     if (findErr) return res.status(500).json({ message: findErr.message });
+    const linhas = (doDia || []) as any[];
+    const pontos = linhas.filter((r) => ehDiariaPonto(r));
+    const manuais = linhas.filter((r) => ehDiariaManual(r));
 
     if (!on) {
-      const ids = (existing || []).map((r: any) => r.id);
+      const ids = (manual ? manuais : pontos).map((r) => r.id);
       if (ids.length > 0) {
         const { error } = await supabaseAdmin.from("agent_daily_allowances").delete().in("id", ids);
         if (error) return res.status(500).json({ message: error.message });
       }
-      return res.json({ on: false, date, amount: 0 });
+      return res.json({ on: false, date, amount: 0, origem });
     }
 
-    if (existing && existing.length > 0) {
-      const row = existing[0] as any;
-      return res.json({ on: true, id: row.id, date, amount: Number(row.amount || DIARIA_LONG_SHIFT_VALOR) });
+    const folha = await buildFolhaPonto(employeeId, month);
+    const day = (folha || []).find((d: any) => String(d.date).slice(0, 10) === date);
+    const elegivel = !!day && diaElegivelDiariaFolha(day);
+
+    if (manual) {
+      if (elegivel) {
+        return res.status(400).json({
+          message: "Este dia já tem as 4 batidas e passa de 16 horas. Marque a diária de R$ 43 na coluna.",
+        });
+      }
+      const justificativa = String(parsed.data.justificativa || "").trim();
+      if (justificativa.length < DIARIA_MANUAL_JUSTIFICATIVA_MIN) {
+        return res.status(400).json({ message: "Informe a justificativa da diária manual." });
+      }
+      const aprovadorId = Number((req as any).user?.id);
+      if (!Number.isInteger(aprovadorId) || aprovadorId <= 0) {
+        return res.status(401).json({ message: "Operador não identificado." });
+      }
+      const amount = Math.round((parsed.data.amount ?? DIARIA_LONG_SHIFT_VALOR) * 100) / 100;
+      if (pontos.length > 0) {
+        const { error } = await supabaseAdmin.from("agent_daily_allowances").delete().in("id", pontos.map((r) => r.id));
+        if (error) return res.status(500).json({ message: error.message });
+      }
+      const payload = {
+        employee_id: employeeId,
+        date,
+        amount,
+        description: descricaoDiariaManual(justificativa),
+        origem: "MANUAL",
+        justificativa,
+        usuario_aprovador_id: aprovadorId,
+      };
+      if (manuais.length > 0) {
+        const { data, error } = await supabaseAdmin
+          .from("agent_daily_allowances")
+          .update(payload)
+          .eq("id", manuais[0].id)
+          .select("id, date, amount, origem, justificativa")
+          .single();
+        if (error) return res.status(500).json({ message: error.message });
+        return res.json({
+          on: true,
+          id: data.id,
+          date: String(data.date).slice(0, 10),
+          amount: Number(data.amount || amount),
+          origem: "MANUAL",
+          justificativa: data.justificativa,
+        });
+      }
+      const { data, error } = await supabaseAdmin
+        .from("agent_daily_allowances")
+        .insert(payload)
+        .select("id, date, amount, origem, justificativa")
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      return res.status(201).json({
+        on: true,
+        id: data.id,
+        date: String(data.date).slice(0, 10),
+        amount: Number(data.amount || amount),
+        origem: "MANUAL",
+        justificativa: data.justificativa,
+      });
     }
 
+    if (!elegivel) {
+      return res.status(400).json({
+        message: "A diária da jornada só libera com as 4 batidas (entrada, saída almoço, volta e saída) e jornada maior que 16 horas.",
+      });
+    }
+    if (manuais.length > 0) {
+      const { error } = await supabaseAdmin.from("agent_daily_allowances").delete().in("id", manuais.map((r) => r.id));
+      if (error) return res.status(500).json({ message: error.message });
+    }
+    if (pontos.length > 0) {
+      const row = pontos[0];
+      return res.json({ on: true, id: row.id, date, amount: Number(row.amount || DIARIA_LONG_SHIFT_VALOR), origem: "PONTO_AUTOMATICO" });
+    }
+
+    const aprovadorId = Number((req as any).user?.id);
     const { data, error } = await supabaseAdmin
       .from("agent_daily_allowances")
       .insert({
@@ -177,8 +265,11 @@ export function registerDailyAllowancesRoutes(app: Express) {
         date,
         amount: DIARIA_LONG_SHIFT_VALOR,
         description: DIARIA_PONTO_DESCRICAO,
+        origem: "PONTO_AUTOMATICO",
+        justificativa: null,
+        usuario_aprovador_id: Number.isInteger(aprovadorId) && aprovadorId > 0 ? aprovadorId : null,
       })
-      .select("id, date, amount")
+      .select("id, date, amount, origem")
       .single();
     if (error) return res.status(500).json({ message: error.message });
     res.status(201).json({
@@ -186,6 +277,7 @@ export function registerDailyAllowancesRoutes(app: Express) {
       id: data.id,
       date: String(data.date).slice(0, 10),
       amount: Number(data.amount || DIARIA_LONG_SHIFT_VALOR),
+      origem: "PONTO_AUTOMATICO",
     });
   });
 
@@ -228,8 +320,7 @@ export function registerDailyAllowancesRoutes(app: Express) {
       supabaseAdmin.from("employees").select("id, name, matricula, role, status").eq("status", "ativo").order("name"),
       supabaseAdmin
         .from("agent_daily_allowances")
-        .select("employee_id, date, amount, description")
-        .eq("description", DIARIA_PONTO_DESCRICAO)
+        .select("employee_id, date, amount, description, origem, justificativa")
         .gte("date", startDate)
         .lte("date", endDate),
     ]);
@@ -239,6 +330,7 @@ export function registerDailyAllowancesRoutes(app: Express) {
     const byEmp = acumularDiariaPonto(
       ((flags || []) as any[])
         .filter((f) => daySet.has(String(f.date).slice(0, 10)))
+        .filter((f) => ehDiariaPonto(f) || ehDiariaManual(f))
         .map((f) => ({
           employeeId: Number(f.employee_id),
           date: String(f.date).slice(0, 10),
@@ -260,7 +352,7 @@ export function registerDailyAllowancesRoutes(app: Express) {
           total: Math.round(slot.total * 100) / 100,
         };
       })
-      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR") || a.employeeId - b.employeeId);
 
     const totalGeral = Math.round(rows.reduce((s, r) => s + r.total, 0) * 100) / 100;
     res.json({

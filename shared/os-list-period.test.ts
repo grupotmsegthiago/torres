@@ -4,9 +4,13 @@ import { test } from "node:test";
 import {
   currentBrtCalendarMonthYm,
   formatOsListPeriodLabel,
+  formatOsListRangeLabel,
   osListCalendarMonthFetchWindow,
   osListCalendarMonthRange,
+  osListDateRange,
+  osListDateRangeFetchWindow,
   osMatchesCalendarMonth,
+  osMatchesDateRange,
 } from "./os-list-period";
 
 test("outubro de 2026 cobre 01/10 até 31/10, inclusive os limites", () => {
@@ -103,29 +107,57 @@ test("mês civil corrente em BRT é YYYY-MM estável", () => {
   assert.match(currentBrtCalendarMonthYm(), /^\d{4}-\d{2}$/);
 });
 
-test("a tela troca o atalho por mês e filtra antes de paginar", () => {
+test("intervalo livre aceita data inicial e data final, inclusive os limites", () => {
+  assert.deepEqual(osListDateRange("2026-10-19", "2026-10-21"), { from: "2026-10-19", to: "2026-10-21" });
+  assert.deepEqual(osListDateRange("2026-10-21", "2026-10-19"), { from: "2026-10-19", to: "2026-10-21" });
+  assert.equal(osListDateRange("2026-02-31", "2026-03-01"), null);
+  assert.equal(osListDateRange("2026-10-19", ""), null);
+  assert.deepEqual(osListDateRangeFetchWindow("2026-10-19", "2026-10-21"), {
+    from: "2026-10-19",
+    to: "2026-10-21",
+    fromPad: "2026-10-18",
+    toPad: "2026-10-22",
+  });
+  assert.equal(formatOsListRangeLabel("2026-10-21", "2026-10-19"), "Período: 19/10/2026 a 21/10/2026");
+  assert.equal(osMatchesDateRange({ scheduledDate: "2026-10-19T00:00:00-03:00" }, "2026-10-19", "2026-10-21"), true);
+  assert.equal(osMatchesDateRange({ scheduledDate: "2026-10-21T23:59:59-03:00" }, "2026-10-19", "2026-10-21"), true);
+  assert.equal(osMatchesDateRange({ scheduledDate: "2026-10-18T23:59:59-03:00" }, "2026-10-19", "2026-10-21"), false);
+  assert.equal(osMatchesDateRange({ scheduledDate: "2026-10-19T02:30:00Z" }, "2026-10-19", "2026-10-21"), false);
+  assert.equal(osMatchesDateRange({ scheduledDate: "2026-10-22T02:30:00Z" }, "2026-10-19", "2026-10-21"), true);
+});
+
+test("a tela pede data inicial e data final e filtra antes de paginar", () => {
   const src = readFileSync(new URL("../client/src/pages/admin/service-orders.tsx", import.meta.url), "utf8");
-  assert.match(src, /type="month"/);
-  assert.match(src, /data-testid="filter-period"/);
+  assert.match(src, /type="date"/);
+  assert.match(src, /aria-label="Data inicial"/);
+  assert.match(src, /aria-label="Data final"/);
+  assert.match(src, /data-testid="filter-period-from"/);
+  assert.match(src, /data-testid="filter-period-to"/);
   assert.match(src, /currentBrtCalendarMonthYm\(\)/);
-  assert.match(src, /osMatchesCalendarMonth\(o, filterPeriod\)/);
-  assert.match(src, /setFilterPeriod\(defaultPeriodYm\)/);
-  assert.match(src, /\?period=\$\{encodeURIComponent\(filterPeriod\)\}/);
+  assert.match(src, /osMatchesDateRange\(o, activeRange\.from, activeRange\.to\)/);
+  assert.match(src, /setFilterFrom\(defaultPeriod\.from\)/);
+  assert.match(src, /setFilterTo\(defaultPeriod\.to\)/);
+  assert.match(src, /\?from=\$\{encodeURIComponent\(activeRange\.from\)\}&to=\$\{encodeURIComponent\(activeRange\.to\)\}/);
   assert.match(src, /data-testid="text-period-range"/);
   assert.match(src, /data-testid="orders-loading"/);
   assert.match(src, /Nenhuma ordem de serviço encontrada para este período/);
   assert.doesNotMatch(src, /<option value="hoje">/);
-  const filterAt = src.indexOf("osMatchesCalendarMonth(o, filterPeriod)");
+  assert.doesNotMatch(src, /type="month"/);
+  const filterAt = src.indexOf("osMatchesDateRange(o, activeRange.from, activeRange.to)");
   const pageAt = src.indexOf("displayOrders.slice((safePage - 1) * ITEMS_PER_PAGE");
   assert.ok(filterAt > 0 && pageAt > filterAt);
 });
 
-test("a listagem API aceita period e pagina o mês além do teto 1000", () => {
+test("a listagem API aceita data inicial e final, e ainda o mês, paginando além do teto 1000", () => {
   const src = readFileSync(new URL("../server/routes/service-orders.ts", import.meta.url), "utf8");
   assert.match(src, /osListCalendarMonthFetchWindow/);
-  assert.match(src, /osMatchesCalendarMonth/);
+  assert.match(src, /osListDateRangeFetchWindow/);
+  assert.match(src, /osMatchesDateRange/);
   assert.match(src, /fetchAllSupabaseRows/);
   assert.match(src, /req\.query\.period/);
+  assert.match(src, /req\.query\.from/);
+  assert.match(src, /req\.query\.to/);
   assert.match(src, /scheduled_date\.gte\.\$\{periodWindow\.fromPad\}/);
   assert.match(src, /created_at\.gte\.\$\{periodWindow\.fromPad\}/);
+  assert.match(src, /Período inválido/);
 });

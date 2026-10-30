@@ -8,6 +8,7 @@ import type { Express } from "express";
   import { bustBalancoCaches } from "../lib/balanco-cache";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
   import { fetchBillingsByScheduledWindow } from "../lib/billing-period";
+  import { osListDateRangeFetchWindow, osMatchesDateRange } from "@shared/os-list-period";
   import { employees, vehicles, missionPhotos } from "@shared/schema";
   import { isMultilogClient, missingMultilogRefs } from "../../shared/multilog-refs";
 
@@ -1870,13 +1871,51 @@ import { syncPedagioOsComBoletim } from "../lib/os-pedagio-sync";
   app.get("/api/escort/billings", requireComercial, async (req, res) => {
     try {
       const { client_id, status, from, to } = req.query;
+      const osFrom = typeof req.query.os_from === "string" ? req.query.os_from.trim() : "";
+      const osTo = typeof req.query.os_to === "string" ? req.query.os_to.trim() : "";
       const allowed = await allowedClientIdsFromRequest(req);
       if (allowed && allowed.length === 0) return res.json([]);
       if (client_id && !clientIdAllowed(client_id, allowed)) return res.json([]);
       // Quinzena comercial = agendamento da OS (1–15 / 16–fim), não data_missao
       // do billing (cancelada lançada depois caía na quinzena errada).
       let list: any[];
-      if (client_id && from && to) {
+      if (osFrom || osTo) {
+        // Listagem de OS: só os billings das ordens do período visível.
+        // O GET sem esses parâmetros continua devolvendo a lista inteira.
+        const periodWindow = osListDateRangeFetchWindow(osFrom, osTo);
+        if (!periodWindow) {
+          return res.status(400).json({ message: "Período inválido. Informe a data inicial e a data final." });
+        }
+        const orFilter =
+          `and(scheduled_date.gte.${periodWindow.fromPad},scheduled_date.lte.${periodWindow.toPad}),` +
+          `and(created_at.gte.${periodWindow.fromPad},created_at.lte.${periodWindow.toPad})`;
+        const osRows = await fetchAllSupabaseRows((offset, limitTo) => {
+          let q = supabaseAdmin
+            .from("service_orders")
+            .select("id, scheduled_date, created_at")
+            .or(orFilter)
+            .order("created_at", { ascending: false })
+            .range(offset, limitTo);
+          if (allowed) q = q.in("client_id", allowed);
+          return q;
+        });
+        const osIds = osRows
+          .filter((o: any) => osMatchesDateRange(o, periodWindow.from, periodWindow.to))
+          .map((o: any) => Number(o.id))
+          .filter((id: number) => id > 0);
+        list = [];
+        for (let i = 0; i < osIds.length; i += 100) {
+          const chunk = osIds.slice(i, i + 100);
+          const rows = await fetchAllSupabaseRows((offset, limitTo) => {
+            let q = supabaseAdmin.from("escort_billings").select("*").in("service_order_id", chunk);
+            if (allowed) q = q.in("client_id", allowed);
+            if (status) q = q.eq("status", status as string);
+            return q.range(offset, limitTo);
+          });
+          list.push(...rows);
+        }
+        list.sort((a: any, b: any) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+      } else if (client_id && from && to) {
         list = await fetchBillingsByScheduledWindow({
           clientId: Number(client_id),
           fromIso: String(from),

@@ -481,10 +481,10 @@ export default function RelatorioNFPage() {
   });
 
   const [linkOsModal, setLinkOsModal] = useState<{ invoiceId: number; clientName: string; value: number } | null>(null);
-  const [selectedBillingIds, setSelectedBillingIds] = useState<number[]>([]);
+  const [selectedBillingIds, setSelectedBillingIds] = useState<string[]>([]);
   const linkSuggest = useQuery<{
-    candidates: Array<{ id: number; osNumber: string | null; dataMissao: string | null; valor: number; status: string | null; inPeriod: boolean }>;
-    autoSuggest?: { suggestedIds?: number[] };
+    candidates: Array<{ id: string; osNumber: string | null; dataMissao: string | null; valor: number; status: string | null; inPeriod: boolean }>;
+    autoSuggest?: { suggestedIds?: string[] };
   }>({
     queryKey: ["/api/relatorio-nf/suggest-os-link", linkOsModal?.invoiceId],
     enabled: !!linkOsModal?.invoiceId,
@@ -500,7 +500,7 @@ export default function RelatorioNFPage() {
     setSelectedBillingIds(Array.isArray(ids) ? ids : []);
   }, [linkOsModal?.invoiceId, linkSuggest.data]);
   const linkOsMutation = useMutation({
-    mutationFn: async (payload: { invoiceId: number; billingIds: number[] }) => {
+    mutationFn: async (payload: { invoiceId: number; billingIds: string[] }) => {
       const r = await authFetch("/api/relatorio-nf/link-os", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -1261,7 +1261,7 @@ export default function RelatorioNFPage() {
                             </button>
                           ) : r.osCount > 0 ? (
                             <span className="text-slate-400">{r.osCount} OS</span>
-                          ) : r.source === "INVOICE" && r.sourceId > 0 ? (
+                          ) : r.source === "INVOICE" && r.sourceId > 0 && !isCancelada ? (
                             <span className="inline-flex items-center gap-1">
                               <button
                                 type="button"

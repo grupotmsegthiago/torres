@@ -1557,15 +1557,36 @@ export async function buildFolhaStats(
   const cestaBasicaReal = isClt ? +(cestaBasica * fatorRateio).toFixed(2) : 0;
   const ajudaCustoReal = isClt ? +(ajudaCustoMensal * fatorRateio).toFixed(2) : 0;
 
-  // Diárias — só CLT. Mesma soma do custo mensal: pagamentos operacionais
-  // tipo diaria + agent_daily_allowances (inclui a marca manual da folha).
+  // Diárias da folha — só CLT. [PONTO] entra se o dia ainda tem 4 batidas e
+  // jornada real acima de 16h. [MANUAL] entra com justificativa. Uma por dia.
   let diarias = 0;
   if (isClt) {
     try {
       const cutoffStr = isMesCorrente || isMesFuturo ? cutoffIso : to;
-      const { sumDiariasForEmployee } = await import("./lib/employee-monthly-cost");
-      const soma = await sumDiariasForEmployee(employeeId, from, cutoffStr);
-      diarias = soma.total;
+      const { diaElegivelDiariaFolha, somarDiariasDaFolha } = await import("@shared/diarias-periodo");
+      const { data: lancamentos } = await supabaseAdmin
+        .from("agent_daily_allowances")
+        .select("date, amount, description, origem, justificativa")
+        .eq("employee_id", employeeId)
+        .gte("date", from)
+        .lte("date", cutoffStr);
+      const elegiveis = new Set(
+        dias
+          .filter((d: any) => diaElegivelDiariaFolha(d))
+          .map((d: any) => String(d.date).slice(0, 10))
+          .filter((date: string) => date >= from && date <= cutoffStr),
+      );
+      diarias = somarDiariasDaFolha(
+        (lancamentos || []).map((r: any) => ({
+          employeeId,
+          date: String(r.date || ""),
+          amount: Number(r.amount || 0),
+          description: r.description,
+          origem: r.origem,
+          justificativa: r.justificativa,
+        })),
+        elegiveis,
+      ).total;
     } catch { /* tabela pode não existir em ambientes antigos */ }
   }
   diarias = +diarias.toFixed(2);
@@ -2244,6 +2265,9 @@ export async function buildFolhaPonto(
     }
     const p0 = dayPairs.pairs[0];
     const p1 = dayPairs.pairs[1];
+    const jornadaRealMin = Math.round(
+      dayPairs.pairs.slice(0, 2).reduce((s, p) => s + p.workedMin, 0),
+    );
     const entryPunch = p0 ? punchByMin.get(p0.inMs) || null : canon.entry;
     const lunchOutPunch = p0 ? punchByMin.get(p0.outMs) || null : canon.lunchOut;
     // 2º par = retorno/saída; se só 1 par, lunch fica vazio e saída = fim do 1º.
@@ -2276,6 +2300,7 @@ export async function buildFolhaPonto(
       canonicalPunches: dayPairs.pairs.length * 2,
       canonicalFlags: [...canon.flags, "pairs_controlid"],
       pairCount: dayPairs.pairs.length,
+      jornadaRealMin,
       anomalies,
       observation,
       hasAlert,
