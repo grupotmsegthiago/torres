@@ -5,6 +5,8 @@ import {
   inferVehicleIcon,
   resolveVehicleIcon,
   painelEscoltaThumb,
+  rotuloModeloPainel,
+  rotuloVtr,
   vehicleRequiresInsuranceDocs,
   isMobiInsuranceIncomplete,
   VEHICLE_ICON_OPTIONS,
@@ -22,6 +24,15 @@ test("inferVehicleIcon: FIAT / MOBI", () => {
   assert.equal(inferVehicleIcon("Fiat", "Mobi Like"), "mobi");
   assert.equal(inferVehicleIcon("", "MOBI"), "mobi");
   assert.equal(inferVehicleIcon("VW", "POLO TRACK"), "polo");
+});
+
+test("rotulo do painel: modelo curto e VTR do kit quando a frota está vazia", () => {
+  assert.equal(rotuloModeloPainel("MOBI LIKE"), "Mobi");
+  assert.equal(rotuloModeloPainel("POLO TRACK MA"), "Polo");
+  assert.equal(rotuloModeloPainel("VIRTUS MB"), "Virtus");
+  assert.equal(rotuloVtr(null, "KIT TORRES - 01 - UGL7E48"), "VTR-01");
+  assert.equal(rotuloVtr("12", null), "VTR-12");
+  assert.equal(rotuloVtr(null, null), null);
 });
 
 test("painelEscoltaThumb segue o modelo do cadastro, inclusive Virtus gravado como polo", () => {

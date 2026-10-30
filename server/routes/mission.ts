@@ -1340,16 +1340,18 @@ Responda APENAS com JSON: {"km_lido": number}`;
     try {
       const { ids } = req.body;
       if (ids && Array.isArray(ids)) {
-        for (const id of ids) {
-          await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("id", id);
-        }
+        const reais = ids.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+        if (reais.length === 0) return res.json({ success: true, updated: 0 });
+        const { error } = await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).in("id", reais);
+        if (error) throw error;
       } else {
-        await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("read_by_admin", 0);
+        const { error } = await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("read_by_admin", 0);
+        if (error) throw error;
       }
       res.json({ success: true });
     } catch (err: any) {
       console.error("[mission-updates] mark-read error:", err.message);
-      res.json({ success: true });
+      res.status(500).json({ success: false, message: "Não foi possível marcar as mensagens como lidas." });
     }
   });
 

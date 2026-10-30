@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import html2canvas from "html2canvas";
 import AdminLayout from "@/components/admin/layout";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import {
   AlertTriangle, CheckCircle2, TriangleAlert, XCircle, Loader2, WifiOff, Wrench,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
-  Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
+  Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail, Tv,
   CircleFadingPlus, Eye, Fuel, Gauge, ShieldCheck, Ban, Video,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -33,7 +33,7 @@ import { useNotificationSound, useSoundEnabled, playCriticalAlarm, playSiren, pl
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { PedagioFinishReview, type PedagioFinishReviewValue } from "@/components/admin/pedagio-finish-review";
-import { VEHICLE_ICON_OPTIONS, painelEscoltaThumb, resolveVehicleIcon, vehicleIconSrc } from "@shared/vehicle-icons";
+import { VEHICLE_ICON_OPTIONS, painelEscoltaThumb, resolveVehicleIcon, rotuloModeloPainel, rotuloVtr, vehicleIconSrc } from "@shared/vehicle-icons";
 import { isPernoiteMessage } from "@shared/pernoite-mensagem";
 import { kitCompativelComPlaca } from "@shared/kit-visual";
 import { loadGoogleMapsScript } from "@/components/places-autocomplete";
@@ -208,6 +208,7 @@ interface TrackedVehicle {
   plate: string;
   model: string;
   brand: string;
+  frota?: string | null;
   year?: number | null;
   color: string | null;
   chassi?: string | null;
@@ -1883,6 +1884,24 @@ function FrenteViatura({ src, className = "" }: { src?: string; className?: stri
         className="absolute left-0 top-0 h-full w-[340%] max-w-none object-cover object-[4%_78%]"
       />
     </div>
+  );
+}
+
+/** Ids marcados nesta tela. Um refetch atrasado não devolve a carta para a coluna. */
+const lidasNaTela = new Set<number>();
+
+function semJaLidas<T extends { id?: number | string }>(lista: T[]): T[] {
+  if (lidasNaTela.size === 0) return lista;
+  return lista.filter((item) => !lidasNaTela.has(Number(item.id)));
+}
+
+function lembrarLidas(ids: Array<number | string>) {
+  for (const id of ids) {
+    const n = Number(id);
+    if (n > 0) lidasNaTela.add(n);
+  }
+  queryClient.setQueryData(["/api/mission/updates", "unread"], (atual: unknown) =>
+    Array.isArray(atual) ? semJaLidas(atual) : atual,
   );
 }
 
@@ -4120,6 +4139,7 @@ function VehicleRowActions({ v, vehicles, gerenciadoras, gridData }: { v: Tracke
               onClick={() => {
                 setPhotoModalUrl(null);
                 if (lastUpdateId) {
+                  lembrarLidas([lastUpdateId]);
                   authFetch("/api/mission/updates/mark-read", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
@@ -5283,7 +5303,7 @@ function VehicleContextMenu({ state, onClose, vehicle, vehicles, gerenciadoras, 
               </div>
               <CopyAuditStamp copiadoPor={v.activeOs?.lastAgentUpdate?.copiadoPor} copiadoEm={v.activeOs?.lastAgentUpdate?.copiadoEm} />
               <button className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs transition-colors bg-red-600 text-white hover:bg-red-700"
-                onClick={() => { setPhotoModalUrl(null); onClose(); if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); forceUpdate(n => n + 1); authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [lastUpdateId] }) }).then(() => { queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] }); queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] }); }).catch(() => {}); } }}
+                onClick={() => { setPhotoModalUrl(null); onClose(); if (lastUpdateId) { seenUpdateIds.add(lastUpdateId); lembrarLidas([lastUpdateId]); forceUpdate(n => n + 1); authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [lastUpdateId] }) }).then(() => { queryClient.invalidateQueries({ queryKey: ["/api/mission/updates"] }); queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] }); }).catch(() => {}); } }}
                 data-testid={`ctx-finalize-alert-${v.id}`}><CheckCircle2 className="w-3.5 h-3.5" /> Finalizar Aviso</button>
             </div>
           </DialogContent>
@@ -6105,15 +6125,17 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
   const statusCardRef = useRef<HTMLDivElement>(null);
   const _alertTick = useTimeAgoTicker(60000);
 
-  const { data: updates = [] } = useQuery<any[]>({
+  const { data: updatesBrutos = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
     queryFn: async () => {
       const res = await authFetch("/api/mission/updates?unread=true");
       if (!res.ok) return [];
-      return res.json();
+      const data = await res.json();
+      return semJaLidas(Array.isArray(data) ? data : []);
     },
     refetchInterval: 120000,
   });
+  const updates = useMemo(() => semJaLidas(updatesBrutos), [updatesBrutos]);
 
   const { enabled: soundEnabled, toggle: toggleSound } = useNotificationSound(updates);
 
@@ -6131,11 +6153,17 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
 
   const markReadMutation = useMutation({
     mutationFn: async (ids?: number[]) => {
-      await authFetch("/api/mission/updates/mark-read", {
+      if (ids?.length) lembrarLidas(ids);
+      else {
+        const atual = queryClient.getQueryData<any[]>(["/api/mission/updates", "unread"]) || [];
+        lembrarLidas(atual.map((item) => Number(item.id)));
+      }
+      const res = await authFetch("/api/mission/updates/mark-read", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(ids ? { ids } : {}),
       });
+      if (!res.ok) throw new Error("mark-read");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
@@ -7260,6 +7288,14 @@ function CostDetailModal({ empId, onClose }: { empId: number; onClose: () => voi
   );
 }
 
+function MolduraTv({ children }: { children: ReactNode }) {
+  return (
+    <div className="h-dvh overflow-y-auto bg-[#070b12] p-3" data-testid="painel-modo-tv">
+      {children}
+    </div>
+  );
+}
+
 export default function OperationalGridPage() {
   const { user } = useAuth();
   syncMoacirUi(user);
@@ -7269,12 +7305,11 @@ export default function OperationalGridPage() {
   const [selectedOsVehicleId, setSelectedOsVehicleId] = useState<number | null>(null);
   const [fleetDetailId, setFleetDetailId] = useState<number | null>(null);
   const [filtrosFrota, setFiltrosFrota] = useState<FiltroFrota[]>([]);
-  const [cartasSimulacao, setCartasSimulacao] = useState<(CartaPainel & { quando: number })[]>(() => {
-    const agora = Date.now();
-    return [
-      { id: -1, hora: formatTimeBRT(new Date(agora).toISOString()), autor: "Emerson", texto: "Seguindo viagem, pista livre", quando: agora },
-      { id: -2, hora: formatTimeBRT(new Date(agora - 45000).toISOString()), autor: "Johnny", texto: "Saída da origem confirmada", quando: agora - 45000 },
-    ];
+  const [modoTv, setModoTv] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const pelaUrl = new URLSearchParams(window.location.search).get("tv") === "1";
+    if (pelaUrl) sessionStorage.setItem("painel-modo-tv", "1");
+    return pelaUrl || sessionStorage.getItem("painel-modo-tv") === "1";
   });
   const [leituraMapa, setLeituraMapa] = useState<MensagemMapa[] | null>(null);
   const [alertaMsg, setAlertaMsg] = useState<{
@@ -7346,14 +7381,16 @@ export default function OperationalGridPage() {
     queryFn: async () => {
       const res = await authFetch("/api/mission/updates?unread=true");
       if (!res.ok) return [];
-      return res.json();
+      const data = await res.json();
+      return semJaLidas(Array.isArray(data) ? data : []);
     },
     refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : 30000),
     refetchIntervalInBackground: false,
   });
+  const updatesNaoLidos = useMemo(() => semJaLidas(unreadAgentUpdates), [unreadAgentUpdates]);
 
   useEffect(() => {
-    const lista = unreadAgentUpdates.filter((u) => u?.id && String(u.message || "").trim());
+    const lista = updatesNaoLidos.filter((u) => u?.id && String(u.message || "").trim());
     const montar = (u: any) => {
       const v = vehicles.find((veh) => veh.activeOs?.osNumber === u.osNumber || veh.scheduledOs?.osNumber === u.osNumber) || null;
       return {
@@ -7380,7 +7417,7 @@ export default function OperationalGridPage() {
       .sort(porRecente)[0];
     for (const u of lista) alertaConhecidos.current.add(Number(u.id));
     if (novo) setAlertaMsg(montar(novo));
-  }, [unreadAgentUpdates, vehicles]);
+  }, [updatesNaoLidos, vehicles]);
 
   const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({
     queryKey: ["/api/gerenciadoras"],
@@ -7469,30 +7506,39 @@ export default function OperationalGridPage() {
     setFiltrosFrota((atual) => atual.includes(filtro) ? atual.filter((item) => item !== filtro) : [...atual, filtro]);
   };
   const marcarCartasLidas = useCallback(async (ids: number[]) => {
-    if (ids.some((id) => id < 0)) {
-      setCartasSimulacao((atual) => atual.filter((carta) => !ids.includes(carta.id)));
-    }
-    const reais = ids.filter((id) => id > 0);
+    lembrarLidas(ids);
+    const reais = ids.map(Number).filter((id) => Number.isInteger(id) && id > 0);
     if (reais.length === 0) return;
-    await authFetch("/api/mission/updates/mark-read", {
+    const res = await authFetch("/api/mission/updates/mark-read", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: reais }),
     });
+    if (!res.ok) return;
     queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
     queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
   }, []);
 
+  const alternarModoTv = () => {
+    const next = !modoTv;
+    setModoTv(next);
+    sessionStorage.setItem("painel-modo-tv", next ? "1" : "0");
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("tv", "1");
+    else url.searchParams.delete("tv");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+  };
+
   const fleetCards = [...onlyVehicles]
     .filter((v) => {
-      if (cartasDaViatura(v, unreadAgentUpdates, gridData).length > 0) return true;
+      if (cartasDaViatura(v, updatesNaoLidos, gridData).length > 0) return true;
       if (filtrosFrota.length === 0) return true;
       const casa = filtroDaViatura(v);
       return casa != null && filtrosFrota.includes(casa);
     })
     .sort((a, b) => {
-      const quandoA = quandoMensagem(a, unreadAgentUpdates, gridData);
-      const quandoB = quandoMensagem(b, unreadAgentUpdates, gridData);
+      const quandoA = quandoMensagem(a, updatesNaoLidos, gridData);
+      const quandoB = quandoMensagem(b, updatesNaoLidos, gridData);
       const temA = quandoA > 0 ? 0 : 1;
       const temB = quandoB > 0 ? 0 : 1;
       if (temA !== temB) return temA - temB;
@@ -7560,23 +7606,8 @@ export default function OperationalGridPage() {
     };
   })();
 
-  const mensagensColuna = [
-    ...mensagensDoMapa(onlyVehicles, unreadAgentUpdates, gridData),
-    ...cartasSimulacao.map((carta) => ({
-      id: carta.id,
-      plate: "SIM9E99",
-      hora: carta.hora,
-      texto: carta.texto,
-      autor: carta.autor,
-      vehicleId: null as number | null,
-      imagem: "/assets/escolta-virtus.png",
-      osNumber: "TOR-SIM",
-      cliente: "TM Segurança Consultoria",
-      origem: "Pirapora",
-      destino: "Suzano",
-      quando: carta.quando,
-    })),
-  ].sort((a, b) => (b.quando || 0) - (a.quando || 0));
+  const mensagensColuna = mensagensDoMapa(onlyVehicles, updatesNaoLidos, gridData)
+    .sort((a, b) => (b.quando || 0) - (a.quando || 0));
   const chaveMensagens = mensagensColuna.map((mensagem) => `${mensagem.id}:${mensagem.quando || 0}`).join("|");
   const somMensagem = useSoundEnabled();
 
@@ -7609,9 +7640,10 @@ export default function OperationalGridPage() {
     };
   }, [chaveMensagens, somMensagem]);
 
+  const Moldura = modoTv ? MolduraTv : AdminLayout;
   return (
     <OpNotifProvider>
-    <AdminLayout>
+    <Moldura>
       <PainelV2>
         {!adminOnline && (
           <div className="bg-red-950/80 border-2 border-red-500/50 rounded-xl px-4 py-3 flex items-center gap-3" data-testid="admin-offline-banner">
@@ -7633,6 +7665,15 @@ export default function OperationalGridPage() {
           statusSlot={<TrucksControlStatus />}
           actions={(
             <>
+              <button
+                type="button"
+                onClick={() => { void alternarModoTv(); }}
+                className="inline-flex items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-xl text-cyan-100 bg-gradient-to-b from-slate-800 to-slate-950 border-t border-cyan-400/30 border-b border-black shadow-[0_2px_6px_rgba(0,0,0,0.55)] hover:brightness-125"
+                data-testid="button-modo-tv"
+              >
+                <Tv className="w-3.5 h-3.5" />
+                {modoTv ? "Sair da TV" : "Modo TV"}
+              </button>
               <AlertsTimeline />
               <VincularOsButton />
             </>
@@ -7743,33 +7784,6 @@ export default function OperationalGridPage() {
             )}
             <OperationNotificationsBar />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="fleet-strip">
-              <FleetCard3D
-                plate="SIM9E99"
-                driver="Emerson Jose Vieira"
-                agent2="Everton de Almeida Santos"
-                cliente="TM Segurança Consultoria"
-                origem="Pirapora"
-                destino="Suzano"
-                status="em_missao"
-                statusText="EM VIAGEM"
-                batteryPct={74}
-                osNumber="TOR-SIM"
-                carThumbnailUrl="/assets/escolta-virtus.png"
-                testId="fleet-card-simulacao"
-                rota={{
-                  origem: "PIRAPORA",
-                  destino: "SUZANO",
-                  origemTexto: "Pirapora",
-                  destinoTexto: "Suzano",
-                  pct: 62,
-                  percorridoKm: 186,
-                  totalKm: 300,
-                  previsao: "1h 10min",
-                  velocidade: 87,
-                }}
-                cartas={cartasSimulacao}
-                linkAction={<span className="text-[10px] font-bold uppercase tracking-wider text-cyan-200">Simulação</span>}
-              />
               {fleetCards.length === 0 ? (
                 <div className="col-span-full rounded-2xl border border-slate-800 bg-[#0c121d] p-8 text-center text-sm text-slate-400">
                   Nenhuma viatura nesse filtro.
@@ -7785,6 +7799,8 @@ export default function OperationalGridPage() {
                   <FleetCard3D
                     key={v.id}
                     plate={v.plate}
+                    vtr={rotuloVtr(v.frota, kitDoCard(v, kitsArmamento)?.name)}
+                    modelo={rotuloModeloPainel(v.model)}
                     driver={equipeFrota.get(v.id)?.condutor ? titleCase(equipeFrota.get(v.id)!.condutor as string) : "Sem condutor"}
                     agent2={equipeFrota.get(v.id)?.agente ? titleCase(equipeFrota.get(v.id)!.agente as string) : null}
                     cliente={ficha.cliente}
@@ -7800,7 +7816,7 @@ export default function OperationalGridPage() {
                     osNumber={osNumero}
                     carThumbnailUrl={painelEscoltaThumb(v.model)}
                     rota={rotaDoCard(v)}
-                    cartas={cartasDaViatura(v, unreadAgentUpdates, gridData)}
+                    cartas={cartasDaViatura(v, updatesNaoLidos, gridData)}
                     onSelect={() => setFleetDetailId(v.id)}
                     testId={`fleet-card-${v.id}`}
                     linkAction={(
@@ -7835,6 +7851,7 @@ export default function OperationalGridPage() {
                 onMarkRead={() => {
                   const id = alertaMsg.id;
                   alertaDispensados.current.add(id);
+                  lembrarLidas([id]);
                   setAlertaMsg(null);
                   authFetch("/api/mission/updates/mark-read", {
                     method: "PATCH",
@@ -7882,7 +7899,7 @@ export default function OperationalGridPage() {
       {costDetailEmpId && !restricted && (
         <CostDetailModal empId={costDetailEmpId} onClose={() => setCostDetailEmpId(null)} />
       )}
-    </AdminLayout>
+    </Moldura>
     </OpNotifProvider>
   );
 }

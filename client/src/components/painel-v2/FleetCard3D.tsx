@@ -24,6 +24,8 @@ const THUMBNAIL = "/assets/mini-escolta-3d.png";
 
 interface FleetCardProps {
   plate: string;
+  vtr?: string | null;
+  modelo?: string | null;
   driver: string;
   agent2?: string | null;
   cliente?: string;
@@ -340,6 +342,8 @@ function glowFor(status: ViaturaStatusType) {
 
 export function FleetCard3D({
   plate,
+  vtr,
+  modelo,
   driver,
   agent2,
   cliente = "—",
@@ -397,10 +401,14 @@ export function FleetCard3D({
 
       <div className="flex items-start justify-between gap-2 z-10">
         <div className="min-w-0">
-          <span className="block text-xl font-black tracking-wider text-slate-100 font-mono drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
-            {plate}
+          <span className="flex items-baseline gap-2">
+            <span className="text-xl font-black tracking-wider text-slate-100 font-mono drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+              {plate}
+            </span>
+            {vtr ? <span className="text-[11px] font-black tracking-wide text-cyan-200">{vtr}</span> : null}
           </span>
-          {subtitle ? <span className="block text-[11px] text-slate-400 truncate">{subtitle}</span> : null}
+          {modelo ? <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">{modelo}</span> : null}
+          {subtitle && subtitle !== "Disponível" ? <span className="block text-[11px] text-slate-400 truncate">{subtitle}</span> : null}
         </div>
         <StatusBadge3D status={status} customText={statusText} />
       </div>

@@ -1149,6 +1149,7 @@ import type { Express } from "express";
           plate: v.plate,
           model: v.model,
           brand: v.brand,
+          frota: v.frota || null,
           year: v.year,
           color: v.color,
           chassi: v.chassi,

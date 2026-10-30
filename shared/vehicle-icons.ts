@@ -72,6 +72,31 @@ export function painelEscoltaThumb(model?: string | null): string {
   return "/assets/escolta-mobi.png";
 }
 
+/** Rótulo curto embaixo da placa: Mobi, Polo ou Virtus. */
+export function rotuloModeloPainel(model?: string | null): string | null {
+  const m = String(model || "").toUpperCase();
+  if (m.includes("VIRTUS")) return "Virtus";
+  if (m.includes("MOBI")) return "Mobi";
+  if (m.includes("POLO")) return "Polo";
+  return null;
+}
+
+/** VTR-01. O campo frota manda; se estiver vazio, usa o número do kit (KIT TORRES - 01). */
+export function rotuloVtr(frota?: string | null, nomeKit?: string | null): string | null {
+  const bruto = String(frota || "").trim();
+  if (bruto) {
+    const numerado = bruto.match(/^vtr\s*-?\s*(\d+)$/i);
+    if (numerado) return `VTR-${numerado[1].padStart(2, "0")}`;
+    if (/^vtr/i.test(bruto)) return bruto.toUpperCase();
+    const num = bruto.match(/\d+/);
+    if (num) return `VTR-${num[0].padStart(2, "0")}`;
+    return bruto.toUpperCase();
+  }
+  const kit = String(nomeKit || "").match(/kit\s+torres\s*-\s*(\d+)/i);
+  if (!kit) return null;
+  return `VTR-${kit[1].padStart(2, "0")}`;
+}
+
 export function vehicleIconSrc(
   iconType?: string | null,
   brand?: string | null,
