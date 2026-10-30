@@ -2634,7 +2634,15 @@ export default function ServiceOrdersPage() {
   const ITEMS_PER_PAGE = 20;
   useEffect(() => { setCurrentPage(1); }, [filterStatus, filterClient, filterAuthorizer, filterPeriod, searchOS, filterVehicleId]);
   const { toast } = useToast();
-  const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({
+    queryKey: ["/api/service-orders", filterPeriod || "all"],
+    queryFn: async () => {
+      const qs = filterPeriod ? `?period=${encodeURIComponent(filterPeriod)}` : "";
+      const res = await authFetch(`/api/service-orders${qs}`);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -2919,6 +2927,11 @@ export default function ServiceOrdersPage() {
                   data-testid="filter-period"
                 />
               </label>
+              {filterPeriod && formatOsListPeriodLabel(filterPeriod) && (
+                <span className="text-[11px] text-neutral-500 whitespace-nowrap" data-testid="text-period-range">
+                  {formatOsListPeriodLabel(filterPeriod)!.replace(/^Período:\s*/i, "")}
+                </span>
+              )}
 
               {hasAnyFilter && (
                 <button

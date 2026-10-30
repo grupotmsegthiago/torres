@@ -23,6 +23,28 @@ export function osListCalendarMonthRange(ym: string): { from: string; to: string
   return calendarDiariasRange(year, month, "mes");
 }
 
+/** ±1 dia em torno do mês civil. Pré-filtro PostgREST; o corte fino usa osMatchesCalendarMonth. */
+export function osListCalendarMonthFetchWindow(ym: string): {
+  from: string;
+  to: string;
+  fromPad: string;
+  toPad: string;
+} | null {
+  const range = osListCalendarMonthRange(ym);
+  if (!range) return null;
+  const shift = (ymd: string, days: number): string => {
+    const d = new Date(`${ymd}T12:00:00-03:00`);
+    d.setDate(d.getDate() + days);
+    return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  };
+  return {
+    from: range.from,
+    to: range.to,
+    fromPad: shift(range.from, -1),
+    toPad: shift(range.to, 1),
+  };
+}
+
 export function formatOsListPeriodLabel(ym: string): string | null {
   const range = osListCalendarMonthRange(ym);
   return range ? formatPeriodoBR(range.from, range.to) : null;
