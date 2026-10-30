@@ -28,6 +28,7 @@ import { sendText, isZapiConfigured } from "./lib/zapi";
 import { normalizePhone } from "./lib/normalize-contact";
 import { log } from "./lib/logger";
 import { buildReminderMessage, sleep, humanDelayMs, typingSecondsForMessage, shuffle, reminderIntervalMinutes } from "./lib/whatsapp-humanize";
+import { isPernoiteMessage } from "@shared/pernoite-mensagem";
 
 const FINISHED_MISSION_STATUS = new Set([
   "encerrada", "retorno_base", "chegada_base", "finalizada", "cancelada", "recusada",
@@ -37,14 +38,6 @@ const GAP_MINUTES_RODANDO = 80;   // 1h20
 const GAP_MINUTES_PERNOITE = 130; // 2h10
 // Re-cobrança da MESMA OS: intervalo com backoff + jitter via
 // reminderIntervalMinutes(reminder_count) (anti-bloqueio). Antes era 30min cravado.
-
-// Palavras-chave (case-insensitive). Match "pernoite" em qualquer posição.
-// "Saí do pernoite" / "Reinício" / "Reiniciar" cancela o estado pernoite.
-const RE_PERNOITE = /pernoite/i;
-// Reinício cobre variações comuns que o vigilante digita pra indicar que
-// saiu do pernoite e voltou a rodar: "reinício", "reiniciar", "saí/saindo do
-// pernoite", "voltei a rodar", "em movimento", "rodando novamente", etc.
-const RE_REINICIO = /\b(rein[ií]cio|reiniciar|reiniciamos|reiniciei|sa[ií]\s*(do)?\s*pernoite|saindo\s*(do)?\s*pernoite|voltei\s+a\s+rodar|em\s+movimento|rodando\s+novamente|retomando\s+viagem)\b/i;
 
 interface ReminderRow {
   service_order_id: number;
@@ -94,13 +87,6 @@ function fmtTimeBRT(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-/** Decide se a última mensagem indica PERNOITE. */
-function isPernoiteMessage(msg: string | null): boolean {
-  if (!msg) return false;
-  if (RE_REINICIO.test(msg)) return false; // reinício cancela pernoite
-  return RE_PERNOITE.test(msg);
 }
 
 /** Adiciona "55" no início do número se ainda não tem código de país. */

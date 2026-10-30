@@ -1154,6 +1154,7 @@ import type { Express } from "express";
           chassi: v.chassi,
           renavam: v.renavam,
           km: v.km,
+          lastOilChangeKm: v.lastOilChangeKm ?? null,
           initialKm: v.initialKm,
           lastKmUpdate: v.lastKmUpdate,
           status: v.status,

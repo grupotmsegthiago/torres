@@ -63,6 +63,15 @@ export function resolveVehicleIcon(
   return "polo";
 }
 
+/** Miniatura 3D do Painel Operacional. Virtus está gravado como ícone Polo no cadastro, então a foto segue o modelo. */
+export function painelEscoltaThumb(model?: string | null): string {
+  const m = String(model || "").toUpperCase();
+  if (m.includes("VIRTUS")) return "/assets/escolta-virtus.png";
+  if (m.includes("MOBI")) return "/assets/escolta-mobi.png";
+  if (m.includes("POLO")) return "/assets/escolta-polo.png";
+  return "/assets/escolta-mobi.png";
+}
+
 export function vehicleIconSrc(
   iconType?: string | null,
   brand?: string | null,

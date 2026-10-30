@@ -14,7 +14,7 @@ import {
   ExternalLink, Zap, CalendarClock, Recycle, Car, X,
   Building2, Navigation, Play, Flag, CircleCheckBig, Siren,
   Clock, Truck, CircleDot, Pause, ChevronDown, ChevronUp,
-  AlertTriangle, CheckCircle2, XCircle, Loader2, Timer, WifiOff,
+  AlertTriangle, CheckCircle2, TriangleAlert, XCircle, Loader2, WifiOff, Wrench,
   Info, Send, Plus, Pencil, Trash2, Copy, Users, FileText,
   Crosshair, Search, Minus, LocateFixed, ChevronRight,
   Bell, BellOff, MessageSquareText, ClipboardCheck, Camera, Home, Mail,
@@ -29,13 +29,22 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { isMoacirRestrito } from "@shared/moacir-escopo";
 import { moacirHidesSensitive, syncMoacirUi } from "@/lib/moacir-ui";
-import { useNotificationSound, playAlarm, playCriticalAlarm } from "@/hooks/use-notification-sound";
+import { useNotificationSound, useSoundEnabled, playCriticalAlarm, playSiren, playSpeedTone } from "@/hooks/use-notification-sound";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { PedagioFinishReview, type PedagioFinishReviewValue } from "@/components/admin/pedagio-finish-review";
-import { VEHICLE_ICON_OPTIONS, resolveVehicleIcon, vehicleIconSrc } from "@shared/vehicle-icons";
+import { VEHICLE_ICON_OPTIONS, painelEscoltaThumb, resolveVehicleIcon, vehicleIconSrc } from "@shared/vehicle-icons";
+import { isPernoiteMessage } from "@shared/pernoite-mensagem";
+import { kitCompativelComPlaca } from "@shared/kit-visual";
 import { loadGoogleMapsScript } from "@/components/places-autocomplete";
 import { VincularOsButton, type VinculoInicial } from "@/components/admin/vincular-os-dialog";
+import { PainelV2 } from "@/components/painel-v2/PainelV2";
+import { HeaderOperacional } from "@/components/painel-v2/HeaderOperacional";
+import { KpiCard3D, KpiGlyphRelief } from "@/components/painel-v2/KpiCard3D";
+import { FleetCard3D, type CartaPainel, type RotaCard3D } from "@/components/painel-v2/FleetCard3D";
+import { OSDetailModal, type OsDetalhePainel } from "@/components/painel-v2/OSDetailModal";
+import { AlertaViaturaMensagem } from "@/components/painel-v2/AlertaViaturaMensagem";
+import type { ViaturaStatusType } from "@/components/painel-v2/StatusBadge3D";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -204,6 +213,7 @@ interface TrackedVehicle {
   chassi?: string | null;
   renavam?: string | null;
   km?: number | null;
+  lastOilChangeKm?: number | null;
   initialKm?: number | null;
   lastKmUpdate?: string | null;
   status: string;
@@ -579,6 +589,63 @@ function originDestLabel(origin?: string | null, destination?: string | null): s
   const d = shortPlaceName(destination);
   if (o && d) return `${o} / ${d}`;
   return o || d;
+}
+
+function cidadePin(value?: string | null): string {
+  const raw = (value || "").trim();
+  if (!raw) return "—";
+  const cityUf = [...raw.matchAll(/([^,\n]+?)\s*-\s*([A-Za-z]{2})\b/g)];
+  const city = cityUf.length
+    ? cityUf[cityUf.length - 1][1].trim()
+    : (raw.match(/([^,]+),\s*[A-Za-z]{2}\b/)?.[1] || shortPlaceName(raw, 16));
+  const word = city.split(/[\s/]+/).find((parte) => parte.length > 2) || city;
+  return word.replace(/[^\p{L}]/gu, "").slice(0, 10).toUpperCase() || "—";
+}
+
+function rotaDoCard(v: TrackedVehicle): RotaCard3D | null {
+  const os = v.activeOs;
+  if (!os) return null;
+  const fila = fleetQueueStatus(v);
+  if (fila.status !== "em_missao" && fila.status !== "na_origem") return null;
+  const origem = (os.origin || "").trim();
+  const destino = (os.destination || "").trim();
+  if (!origem && !destino) return null;
+
+  const progress = getRouteProgress({
+    originLat: os.originLat,
+    originLng: os.originLng,
+    destLat: os.destinationLat,
+    destLng: os.destinationLng,
+    currentLat: v.tracker?.latitude ?? null,
+    currentLng: v.tracker?.longitude ?? null,
+    missionStatus: os.missionStatus,
+    vehicleId: v.id,
+    lastPositionTime: v.tracker?.lastPositionTime,
+  });
+  const totalKm = progress && progress.distTotalKm >= 1 ? Math.round(progress.distTotalKm) : null;
+  const faltaKm = progress && totalKm != null ? Math.round(progress.distRemainingKm) : null;
+  const percorridoKm = totalKm != null && faltaKm != null ? Math.max(0, totalKm - faltaKm) : null;
+  const gpsAoVivo = v.tracker?.gpsSignal === true && v.tracker?.isLiveData !== false;
+  const velocidade = gpsAoVivo && typeof v.tracker?.speed === "number" && v.tracker.speed >= 0
+    ? Math.round(v.tracker.speed)
+    : null;
+  const previsao = faltaKm != null && faltaKm > 0
+    ? calcEta(faltaKm, v.tracker?.speed)
+    : progress?.pct === 100
+      ? "no destino"
+      : null;
+
+  return {
+    origem: cidadePin(origem),
+    destino: cidadePin(destino),
+    origemTexto: origem || "—",
+    destinoTexto: destino || "—",
+    pct: progress ? progress.pct : null,
+    percorridoKm,
+    totalKm,
+    previsao,
+    velocidade,
+  };
 }
 
 function originDestTitle(origin?: string | null, destination?: string | null): string {
@@ -1265,6 +1332,303 @@ function getViaturaStatus(v: TrackedVehicle): { label: string; className: string
   return { label: "LIVRE", icon: CheckCircle2, className: "bg-emerald-50 text-emerald-700 border-emerald-200" };
 }
 
+function ultimaMensagemAgente(v: TrackedVehicle): string | null {
+  const itens = [
+    v.activeOs?.lastAgentUpdate,
+    ...(v.activeOs?.recentUpdates || []),
+  ].filter((item) => item?.message);
+  if (itens.length === 0) return null;
+  itens.sort((a, b) => parseUTCDate(b?.createdAt).getTime() - parseUTCDate(a?.createdAt).getTime());
+  return itens[0]?.message || null;
+}
+
+function rotuloVisivelDoCard(v: TrackedVehicle, fila: { status: ViaturaStatusType; label: string }): string {
+  if ((fila.status === "em_missao" || fila.status === "na_origem") && isPernoiteMessage(ultimaMensagemAgente(v))) {
+    return "PERNOITE";
+  }
+  if (fila.status === "na_origem") return "NA ORIGEM";
+  if (fila.status === "em_missao") return "EM VIAGEM";
+  if (fila.status === "disponivel") return "DISPONÍVEL";
+  return fila.label;
+}
+
+function horaAtualBrt(): number {
+  return Number(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }));
+}
+
+type KitArmamento = {
+  id: number;
+  name: string;
+  items?: { weapon?: { type?: string | null; caliber?: string | null } | null }[];
+};
+
+function kitDoCard(v: TrackedVehicle, kits: KitArmamento[]): KitArmamento | undefined {
+  const daOs = v.activeOs?.kitId ? kits.find((kit) => kit.id === v.activeOs?.kitId) : undefined;
+  return daOs || kits.find((item) => kitCompativelComPlaca(item.name, v.plate));
+}
+
+type SessaoCondutor = {
+  id: number;
+  vehicle_id: number;
+  driver_id: number;
+  partner_id?: number | null;
+  driver_name?: string | null;
+  partner_name?: string | null;
+  started_at?: string | null;
+  created_at?: string | null;
+};
+
+function instanteEquipe(valor?: string | null): number {
+  if (!valor) return 0;
+  const t = parseUTCDate(valor).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function idPessoa(valor: unknown): number {
+  const n = Number(valor);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** Última OS ou última identificação. Quem aparece numa viatura mais recente sai da anterior. */
+function equipeDosCards(vehicles: TrackedVehicle[], sessoes: SessaoCondutor[]): Map<number, { condutor: string | null; agente: string | null }> {
+  const lista = Array.isArray(sessoes) ? sessoes : [];
+  const ultimaSessao = new Map<number, SessaoCondutor>();
+  for (const sessao of lista) {
+    if (!sessao?.vehicle_id || !sessao.driver_id) continue;
+    const atual = ultimaSessao.get(sessao.vehicle_id);
+    const quando = instanteEquipe(sessao.started_at || sessao.created_at);
+    const quandoAtual = atual ? instanteEquipe(atual.started_at || atual.created_at) : -1;
+    if (!atual || quando >= quandoAtual) ultimaSessao.set(sessao.vehicle_id, sessao);
+  }
+
+  type Slot = { id: number; nome: string; quando: number };
+  const escolhida = new Map<number, { condutor: Slot | null; agente: Slot | null }>();
+  for (const v of vehicles) {
+    const os = v.activeOs;
+    const ultima = v.lastOs;
+    const fonte = os
+      ? { condutor: os.employee1, agente: os.employee2, quando: instanteEquipe(os.missionStartedAt || os.scheduledDate) }
+      : ultima
+        ? { condutor: ultima.employee1, agente: ultima.employee2, quando: instanteEquipe(ultima.completedDate) }
+        : null;
+    const sessao = ultimaSessao.get(v.id);
+    const quandoSessao = sessao ? instanteEquipe(sessao.started_at || sessao.created_at) : 0;
+    const quandoOs = fonte?.quando || 0;
+    let condutor: Slot | null = null;
+    let agente: Slot | null = null;
+    if (sessao && quandoSessao > 0 && quandoSessao >= quandoOs) {
+      const condutorId = idPessoa(sessao.driver_id);
+      const agenteId = idPessoa(sessao.partner_id);
+      condutor = condutorId ? { id: condutorId, nome: sessao.driver_name || "Condutor", quando: quandoSessao } : null;
+      agente = agenteId ? { id: agenteId, nome: sessao.partner_name || "Agente", quando: quandoSessao } : null;
+    } else if (fonte) {
+      const condutorId = idPessoa(fonte.condutor?.id);
+      const agenteId = idPessoa(fonte.agente?.id);
+      condutor = condutorId ? { id: condutorId, nome: fonte.condutor?.name || "Condutor", quando: quandoOs } : null;
+      agente = agenteId ? { id: agenteId, nome: fonte.agente?.name || "Agente", quando: quandoOs } : null;
+    }
+    if (condutor && agente && condutor.id === agente.id) agente = null;
+    escolhida.set(v.id, { condutor, agente });
+  }
+
+  const melhor = new Map<number, { vehicleId: number; quando: number; vigente: boolean }>();
+  const registra = (pessoaId: number, vehicleId: number, quando: number, vigente: boolean) => {
+    if (!pessoaId || quando <= 0) return;
+    const atual = melhor.get(pessoaId);
+    const ganha = !atual
+      || quando > atual.quando
+      || (quando === atual.quando && vigente && !atual.vigente)
+      || (quando === atual.quando && vigente === atual.vigente && vehicleId > atual.vehicleId);
+    if (ganha) melhor.set(pessoaId, { vehicleId, quando, vigente });
+  };
+  for (const sessao of lista) {
+    if (!sessao?.vehicle_id) continue;
+    const quando = instanteEquipe(sessao.started_at || sessao.created_at);
+    const condutorId = idPessoa(sessao.driver_id);
+    const agenteId = idPessoa(sessao.partner_id);
+    if (condutorId) registra(condutorId, sessao.vehicle_id, quando, false);
+    if (agenteId) registra(agenteId, sessao.vehicle_id, quando, false);
+  }
+  for (const [vehicleId, equipe] of escolhida) {
+    if (equipe.condutor) registra(equipe.condutor.id, vehicleId, equipe.condutor.quando, true);
+    if (equipe.agente) registra(equipe.agente.id, vehicleId, equipe.agente.quando, true);
+  }
+
+  const resultado = new Map<number, { condutor: string | null; agente: string | null }>();
+  for (const [vehicleId, equipe] of escolhida) {
+    const fica = (slot: Slot | null) => {
+      if (!slot) return null;
+      const dono = melhor.get(slot.id);
+      return dono && dono.vehicleId === vehicleId && dono.quando === slot.quando ? slot.nome : null;
+    };
+    resultado.set(vehicleId, { condutor: fica(equipe.condutor), agente: fica(equipe.agente) });
+  }
+  return resultado;
+}
+
+function temAlertaNoCard(v: TrackedVehicle): boolean {
+  if (viaturaVaziaRodando(v)) return true;
+  const speed = v.tracker?.speed;
+  return typeof speed === "number" && speed > 110;
+}
+
+/** Sem OS em andamento, em movimento (acima de 2 km/h) entre 22h e 5h. */
+function viaturaVaziaRodando(v: TrackedVehicle): boolean {
+  const fila = fleetQueueStatus(v);
+  if (fila.status === "em_missao" || fila.status === "na_origem") return false;
+  const speed = v.tracker?.speed;
+  if (typeof speed !== "number" || speed <= 2) return false;
+  const hora = horaAtualBrt();
+  return hora >= 22 || hora < 5;
+}
+
+function fichaDoCard(v: TrackedVehicle, grid: GridItem[]): { cliente: string; origem: string; destino: string } {
+  const os = v.activeOs;
+  const item = os
+    ? grid.find((g) => g.osNumber === os.osNumber)
+    : grid.find((g) => g.vehicle?.plate === v.plate && g.status === "em_andamento");
+  const texto = (valor?: string | null) => shortPlaceName(valor) || "—";
+  const cliente = (os?.clientName || item?.clientName || "").trim();
+  return {
+    cliente: cliente ? titleCase(cliente) : "—",
+    origem: texto(os?.origin || item?.origin),
+    destino: texto(os?.destination || item?.destination),
+  };
+}
+
+function fleetSubtitle(v: TrackedVehicle, fila: { status: ViaturaStatusType; label: string }): string {
+  if (fila.status === "em_missao" || fila.status === "na_origem") return "";
+  if (fila.status === "manutencao_vencida") {
+    const desde = kmDesdeTrocaOleo(v);
+    return desde == null
+      ? "Revisão de óleo vencida"
+      : `Revisão vencida · ${desde.toLocaleString("pt-BR")} km desde a troca de óleo`;
+  }
+  if (fila.status === "rodizio_sp") return "Rodízio em São Paulo";
+  if (fila.label === "MISSÃO AGENDADA") return "Missão agendada";
+  return "Disponível";
+}
+
+function primeiroNome(name: string): string {
+  const parte = titleCase(name).split(" ").find(Boolean);
+  return parte || titleCase(name);
+}
+
+function fleetGpsLabel(v: TrackedVehicle): string {
+  if (!v.hasTracker || v.tracker?.gpsSignal == null) return "—";
+  return v.tracker.gpsSignal ? "OK" : "Sem sinal";
+}
+
+/** Mesmo corte do alerta de frota: troca de óleo vencida a partir de 10.000 km. */
+const OLEO_VENCIDO_KM = 10000;
+
+function kmDesdeTrocaOleo(v: TrackedVehicle): number | null {
+  if (v.km == null || v.lastOilChangeKm == null) return null;
+  return v.km - v.lastOilChangeKm;
+}
+
+function manutencaoOleoVencida(v: TrackedVehicle): boolean {
+  const desde = kmDesdeTrocaOleo(v);
+  return desde != null && desde >= OLEO_VENCIDO_KM;
+}
+
+function fleetQueueStatus(v: TrackedVehicle): { status: ViaturaStatusType; rank: number; label: string } {
+  const official = getViaturaStatus(v).label;
+  const emMissao = official !== "LIVRE" && official !== "MISSÃO AGENDADA";
+  if (emMissao) {
+    return official === "NA ORIGEM"
+      ? { status: "na_origem", rank: 1, label: official }
+      : { status: "em_missao", rank: 1, label: official };
+  }
+  if (manutencaoOleoVencida(v)) return { status: "manutencao_vencida", rank: 2, label: "MANUTENÇÃO VENCIDA" };
+  if (isRodizioSP(v.plate)) return { status: "rodizio_sp", rank: 3, label: "RODÍZIO SP" };
+  if (official === "MISSÃO AGENDADA") return { status: "disponivel", rank: 5, label: official };
+  return { status: "disponivel", rank: 5, label: "DISPONÍVEL" };
+}
+
+type FiltroFrota = "missao" | "disponivel" | "manutencao" | "rodizio";
+
+function placaIgual(a?: string | null, b?: string | null): boolean {
+  const limpa = (placa?: string | null) => (placa || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const esquerda = limpa(a);
+  return esquerda !== "" && esquerda === limpa(b);
+}
+
+function osNumerosDaViatura(v: TrackedVehicle, grid: GridItem[] = []): Set<string> {
+  const osNums = new Set<string>();
+  if (v.activeOs?.osNumber) osNums.add(v.activeOs.osNumber);
+  if (v.scheduledOs?.osNumber) osNums.add(v.scheduledOs.osNumber);
+  if (v.lastOs?.osNumber) osNums.add(v.lastOs.osNumber);
+  for (const item of grid) {
+    if (item.osNumber && placaIgual(item.vehicle?.plate, v.plate)) osNums.add(item.osNumber);
+  }
+  return osNums;
+}
+
+function quandoMensagem(v: TrackedVehicle, updates: any[], grid: GridItem[] = []): number {
+  const osNums = osNumerosDaViatura(v, grid);
+  let quando = 0;
+  for (const u of updates) {
+    if (!u?.id || !osNums.has(u.osNumber)) continue;
+    const t = parseUTCDate(u.createdAt).getTime();
+    if (t > quando) quando = t;
+  }
+  return quando;
+}
+
+function cartasDaViatura(v: TrackedVehicle, updates: any[], grid: GridItem[] = []): CartaPainel[] {
+  const osNums = osNumerosDaViatura(v, grid);
+  if (osNums.size === 0) return [];
+  return updates
+    .filter((u) => u?.id && osNums.has(u.osNumber))
+    .sort((a, b) => parseUTCDate(b.createdAt).getTime() - parseUTCDate(a.createdAt).getTime())
+    .map((u) => ({
+      id: Number(u.id),
+      texto: String(u.message || "").trim() || "Atualização sem texto",
+      hora: u.createdAt ? formatTimeBRT(u.createdAt) : "",
+      autor: u.employeeName ? titleCase(String(u.employeeName)) : "Agente",
+    }));
+}
+
+function mensagensDoMapa(vehicles: TrackedVehicle[], updates: any[], grid: GridItem[] = []): MensagemMapa[] {
+  const porId = new Map<number, MensagemMapa & { quando: number }>();
+  for (const v of vehicles) {
+    if (v.deviceType === "spy") continue;
+    const osNums = osNumerosDaViatura(v, grid);
+    for (const u of updates) {
+      if (!u?.id || !osNums.has(u.osNumber) || porId.has(Number(u.id))) continue;
+      porId.set(Number(u.id), {
+        id: Number(u.id),
+        plate: v.plate,
+        hora: u.createdAt ? formatTimeBRT(u.createdAt) : "",
+        texto: String(u.message || "").trim() || "Atualização sem texto",
+        autor: u.employeeName ? titleCase(String(u.employeeName)) : "Agente",
+        vehicleId: v.id,
+        imagem: painelEscoltaThumb(v.model),
+        osNumber: u.osNumber || v.activeOs?.osNumber || null,
+        foto: u.photoUrl || null,
+        temFoto: Boolean(u.hasPhoto || (u.photoUrl && u.photoUrl !== "[has_photo]")),
+        lat: u.latitude ?? v.tracker?.latitude ?? null,
+        lng: u.longitude ?? v.tracker?.longitude ?? null,
+        cliente: v.activeOs?.clientName || "",
+        origem: v.activeOs?.origin || "",
+        destino: v.activeOs?.destination || "",
+        quando: parseUTCDate(u.createdAt).getTime(),
+      });
+    }
+  }
+  return [...porId.values()].sort((a, b) => b.quando - a.quando);
+}
+
+function filtroDaViatura(v: TrackedVehicle): FiltroFrota | null {
+  const fila = fleetQueueStatus(v);
+  if (fila.status === "em_missao" || fila.status === "na_origem") return "missao";
+  if (fila.status === "manutencao_vencida") return "manutencao";
+  if (fila.status === "rodizio_sp") return "rodizio";
+  if (fila.label === "DISPONÍVEL") return "disponivel";
+  return null;
+}
+
 function getPriorityDisplay(priority: string) {
   switch (priority) {
     case "imediata":
@@ -1491,7 +1855,228 @@ function getNoSignalTime(v: TrackedVehicle): string | null {
   return formatTimeDiff(v.noSignalSince);
 }
 
-function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles: TrackedVehicle[]; focusVehicleId?: number | null; onProximityChange?: (result: ProximityResult | null) => void }) {
+interface MensagemMapa {
+  id: number;
+  plate: string;
+  hora: string;
+  texto: string;
+  autor: string;
+  vehicleId: number | null;
+  imagem?: string;
+  osNumber?: string | null;
+  foto?: string | null;
+  temFoto?: boolean;
+  lat?: number | null;
+  lng?: number | null;
+  cliente?: string;
+  origem?: string;
+  destino?: string;
+  quando?: number;
+}
+
+function FrenteViatura({ src, className = "" }: { src?: string; className?: string }) {
+  return (
+    <div className={`relative overflow-hidden bg-black ${className}`}>
+      <img
+        src={src || "/assets/escolta-virtus.png"}
+        alt=""
+        className="absolute left-0 top-0 h-full w-[340%] max-w-none object-cover object-[4%_78%]"
+      />
+    </div>
+  );
+}
+
+function tempoDaMensagem(mensagem: MensagemMapa): string {
+  const hora = mensagem.hora || "";
+  if (!mensagem.quando) return hora;
+  const min = Math.max(0, Math.floor((Date.now() - mensagem.quando) / 60000));
+  const rel = min < 1 ? "agora" : min < 60 ? `há ${min} min` : `há ${Math.floor(min / 60)}h`;
+  return hora ? `${hora} · ${rel}` : rel;
+}
+
+function ColunaMensagensMapa({
+  mensagens,
+  onAbrir,
+}: {
+  mensagens: MensagemMapa[];
+  onAbrir?: (itens: MensagemMapa[]) => void;
+}) {
+  const tick = useTimeAgoTicker(15000);
+  if (mensagens.length === 0) return null;
+  void tick;
+  const fila = [...mensagens].sort((a, b) => (b.quando || 0) - (a.quando || 0));
+  return (
+    <div
+      className="absolute left-3 top-3 z-30 flex max-h-[calc(100%-5.5rem)] w-72 flex-col gap-2 overflow-y-auto pr-1"
+      data-testid="mapa-coluna-mensagens"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <style>{`@keyframes msg-pisca { 0%, 46% { opacity: 1; } 50%, 96% { opacity: 0.35; } 100% { opacity: 1; } }`}</style>
+      {fila.map((mensagem) => (
+        <button
+          key={mensagem.id}
+          type="button"
+          className="relative overflow-hidden rounded-xl border border-amber-300/70 bg-[#061018]/95 p-2 text-left shadow-[0_10px_22px_rgba(0,0,0,0.55)]"
+          onClick={() => {
+            const irmas = fila.filter((item) => item.plate === mensagem.plate && item.id !== mensagem.id);
+            onAbrir?.([mensagem, ...irmas]);
+          }}
+          data-testid={`mini-vtr-mensagem-${mensagem.plate}-${mensagem.id}`}
+        >
+          <span
+            className="pointer-events-none absolute inset-0 rounded-xl ring-2 ring-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.65)]"
+            style={{ animation: "msg-pisca 0.9s steps(2, end) infinite" }}
+          />
+          <div className="relative flex items-center gap-2">
+            <img
+              src={mensagem.imagem || "/assets/escolta-virtus.png"}
+              alt=""
+              className="h-14 w-16 shrink-0 object-contain object-left drop-shadow-[0_6px_4px_rgba(0,0,0,0.85)]"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[12px] font-black tracking-wide text-cyan-100">{mensagem.plate}</span>
+                <span className="shrink-0 text-[10px] font-bold text-amber-200">{tempoDaMensagem(mensagem)}</span>
+              </div>
+              <div className="truncate text-[10px] text-slate-400">{mensagem.autor}</div>
+              <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-amber-50">{mensagem.texto}</p>
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PainelLeituraMensagem({
+  itens,
+  vehicles,
+  gridData,
+  onClose,
+  onMarcar,
+}: {
+  itens: MensagemMapa[];
+  vehicles: TrackedVehicle[];
+  gridData: GridItem[];
+  onClose: () => void;
+  onMarcar: (ids: number[]) => void;
+}) {
+  const { toast } = useToast();
+  const primeira = itens[0];
+  const veiculo = vehicles.find((item) => item.id === primeira?.vehicleId) || vehicles.find((item) => item.plate === primeira?.plate);
+  const gridItem = primeira?.osNumber ? gridData.find((item) => item.osNumber === primeira.osNumber) : undefined;
+  const lat = primeira?.lat ?? veiculo?.tracker?.latitude ?? null;
+  const lng = primeira?.lng ?? veiculo?.tracker?.longitude ?? null;
+  const mapsLink = lat != null && lng != null
+    ? `https://www.google.com/maps?q=${lat},${lng}&z=17&hl=pt-BR`
+    : primeira?.origem && primeira?.destino
+      ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(primeira.origem)}&destination=${encodeURIComponent(primeira.destino)}`
+      : null;
+  const comFoto = itens.find((item) => item.temFoto || (item.foto && item.foto !== "[has_photo]"));
+
+  const copiarMensagem = async () => {
+    const texto = veiculo
+      ? await generateReportAsync(veiculo, gridItem || null)
+      : itens.map((item) => `${item.hora} ${item.autor}: ${item.texto}`).join("\n");
+    const ok = await copyTextToClipboard(texto || itens.map((item) => item.texto).join("\n"));
+    toast({ title: ok ? "Mensagem copiada" : "Erro ao copiar", variant: ok ? "default" : "destructive" });
+    const real = itens.find((item) => item.id > 0);
+    if (real) fireCopyAudit(real.id);
+  };
+
+  const copiarFoto = async () => {
+    if (!comFoto) return;
+    let photo = comFoto.foto;
+    if ((!photo || photo === "[has_photo]") && comFoto.id > 0) {
+      try {
+        const resposta = await authFetch(`/api/mission/updates/${comFoto.id}/photo`);
+        const dados = await resposta.json();
+        photo = dados.photoUrl || null;
+      } catch {
+        photo = null;
+      }
+    }
+    if (!photo || photo === "[has_photo]") {
+      toast({ title: "Foto não disponível", variant: "destructive" });
+      return;
+    }
+    const ok = await copyPhotoToClipboard(photo);
+    toast({ title: ok ? "Foto copiada" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
+    if (comFoto.id > 0) fireCopyAudit(comFoto.id);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4" data-testid="painel-leitura-mensagem" onClick={onClose}>
+      <div
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-cyan-400/30 bg-[#0c121d] p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <FrenteViatura src={primeira?.imagem} className="h-16 w-24 rounded-lg" />
+            <div>
+              <div className="font-mono text-xl font-black tracking-wider text-slate-100">{primeira?.plate}</div>
+              <div className="text-[11px] text-slate-400">{primeira?.osNumber ? `OS ${primeira.osNumber}` : "Sem OS"}</div>
+            </div>
+          </div>
+          <button type="button" className="rounded-lg border border-slate-700 px-2 py-1 text-slate-300" onClick={onClose} aria-label="Fechar">×</button>
+        </div>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="space-y-2 text-sm text-slate-200">
+            <div><span className="text-slate-500">Cliente </span>{primeira?.cliente || "—"}</div>
+            <div><span className="text-slate-500">Rota </span>{primeira?.origem || "—"} → {primeira?.destino || "—"}</div>
+            <ul className="space-y-2">
+              {itens.map((item) => (
+                <li key={item.id} className="rounded-lg border border-amber-400/20 bg-black/30 p-2">
+                  <div className="text-[10px] font-bold text-amber-300">{item.hora} · {item.autor}</div>
+                  <p className="mt-1 text-sm text-amber-50">{item.texto}</p>
+                  {(item.temFoto || (item.foto && item.foto !== "[has_photo]")) && item.id > 0 ? (
+                    <LazyUpdatePhoto updateId={item.id} photoUrl={item.foto} />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            {lat != null && lng != null ? (
+              <a href={mapsLink || "#"} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-lg border border-cyan-400/30" data-testid="leitura-mapa">
+                <img
+                  src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=600x220&markers=color:red%7C${lat},${lng}&key=AIzaSyB41DRUbKWJHPxaFjMAwdrzWzbVKartNGg`}
+                  alt="Mapa da viatura"
+                  className="h-40 w-full object-cover"
+                />
+              </a>
+            ) : (
+              <div className="flex h-40 items-center justify-center rounded-lg border border-cyan-400/20 bg-black/30 text-xs text-slate-400">Sem coordenada desta mensagem</div>
+            )}
+            {mapsLink ? (
+              <a href={mapsLink} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs font-bold text-cyan-300 underline">Abrir no mapa</a>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white" onClick={copiarMensagem} data-testid="button-leitura-copiar-msg">Copiar mensagem</button>
+          {comFoto ? (
+            <button type="button" className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white" onClick={copiarFoto} data-testid="button-leitura-copiar-foto">Copiar foto</button>
+          ) : null}
+          <button
+            type="button"
+            className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-bold text-amber-100"
+            onClick={() => onMarcar(itens.map((item) => item.id))}
+            data-testid="button-leitura-lidas"
+          >
+            Lidas
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VehicleMap({ vehicles, focusVehicleId, onProximityChange, mensagens = [], onAbrirMensagem }: { vehicles: TrackedVehicle[]; focusVehicleId?: number | null; onProximityChange?: (result: ProximityResult | null) => void; mensagens?: MensagemMapa[]; onAbrirMensagem?: (itens: MensagemMapa[]) => void }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -1570,8 +2155,16 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         fullscreenControl: true,
         zoomControl: true,
         styles: [
+          { elementType: "geometry", stylers: [{ color: "#0b1220" }] },
+          { elementType: "labels.text.fill", stylers: [{ color: "#8aa4bf" }] },
+          { elementType: "labels.text.stroke", stylers: [{ color: "#0b1220" }] },
+          { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#1e3a5f" }] },
           { featureType: "poi", stylers: [{ visibility: "off" }] },
           { featureType: "transit", stylers: [{ visibility: "off" }] },
+          { featureType: "road", elementType: "geometry", stylers: [{ color: "#16243c" }] },
+          { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#155e75" }] },
+          { featureType: "water", elementType: "geometry", stylers: [{ color: "#061018" }] },
+          { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#0d1726" }] },
         ],
       });
     }
@@ -2294,41 +2887,30 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
   }
 
   return (
-    <div className="relative rounded-[1.75rem] overflow-hidden border border-border shadow-sm">
-      <div ref={mapRef} id="map-container" className="w-full h-[450px]" data-testid="map-container" />
-      <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-xl px-4 py-2.5 shadow-lg border border-neutral-200/80">
-        <div className="flex items-center gap-4 text-xs font-medium text-neutral-700">
-          <span className="flex items-center gap-2">
-            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#22c55e", background: "#1a1a1a" }}>
-              <Car className="w-3 h-3" style={{ color: "#22c55e" }} />
-            </div>
-            Em movimento
-          </span>
-          <span className="flex items-center gap-2">
-            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#f59e0b", background: "#1a1a1a" }}>
-              <Car className="w-3 h-3" style={{ color: "#f59e0b" }} />
-            </div>
-            Parado (ligado)
-          </span>
-          <span className="flex items-center gap-2">
-            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#94a3b8", background: "#1a1a1a" }}>
-              <Car className="w-3 h-3" style={{ color: "#94a3b8" }} />
-            </div>
-            Desligado
-          </span>
-          <span className="flex items-center gap-2">
-            <div className="w-5 h-7 rounded-sm border-2 flex items-center justify-center" style={{ borderColor: "#6b7280", background: "#1a1a1a" }}>
-              <WifiOff className="w-3 h-3" style={{ color: "#6b7280" }} />
-            </div>
-            Sem sinal
-          </span>
-          <span className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "#8b5cf6", border: "2px solid #fff", boxShadow: "0 0 0 1px #8b5cf6" }}>
-              <Radio className="w-2 h-2 text-white" />
-            </div>
-            SPY Tracker
-          </span>
-        </div>
+    <div className="relative rounded-3xl overflow-hidden border-t border-cyan-400/35 border-b-2 border-b-black border-x border-slate-800 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.08)]" data-testid="mapa-principal">
+      <div ref={mapRef} id="map-container" className="w-full h-[520px]" data-testid="map-container" />
+      <ColunaMensagensMapa mensagens={mensagens} onAbrir={onAbrirMensagem} />
+      <div className="absolute bottom-3 right-3 z-10 flex max-w-[55%] flex-wrap items-center justify-end gap-1.5">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 shadow-[0_0_12px_rgba(34,197,94,0.25)]">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(34,197,94,0.9)]" />
+          Em movimento
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-400/40 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+          <span className="w-2 h-2 rounded-full bg-amber-400" />
+          Parado (ligado)
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-500/20 border border-slate-400/30 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+          <span className="w-2 h-2 rounded-full bg-slate-400" />
+          Desligado
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/20 border border-zinc-400/35 px-2.5 py-1 text-[11px] font-semibold text-zinc-200">
+          <WifiOff className="w-3 h-3" />
+          Sem sinal
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-600/20 border border-violet-400/40 px-2.5 py-1 text-[11px] font-semibold text-violet-100">
+          <Radio className="w-3 h-3" />
+          SPY
+        </span>
       </div>
 
       {activeRouteOsId && (
@@ -2361,17 +2943,17 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
         </div>
       )}
 
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-10" data-testid="map-radius-controls">
-        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-neutral-200/80 overflow-hidden" style={{ width: "300px" }}>
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-30" data-testid="map-radius-controls">
+        <div className="bg-[#0c1422]/90 backdrop-blur-md rounded-xl shadow-lg border border-cyan-400/25 overflow-hidden" style={{ width: "320px" }}>
           <div className="relative">
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Buscar cidade, rua ou endereço..."
-              className="w-full h-10 pl-9 pr-3 text-sm border-none outline-none bg-transparent placeholder:text-neutral-400"
+              className="w-full h-10 pl-9 pr-3 text-sm border-none outline-none bg-transparent text-slate-100 placeholder:text-slate-500"
               data-testid="input-map-radius-search"
             />
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-cyan-300/80 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
           {radiusActive && radiusCenter && (
@@ -2426,9 +3008,18 @@ function VehicleMap({ vehicles, focusVehicleId, onProximityChange }: { vehicles:
 }
 
 function SpeedAlert({ vehicles }: { vehicles: TrackedVehicle[] }) {
+  const soundOn = useSoundEnabled();
   const speeding = vehicles.filter(
     (v) => v.deviceType !== "spy" && v.tracker?.speed !== undefined && v.tracker.speed > 110
   );
+  const speedingKey = speeding.map((v) => v.id).join(",");
+
+  useEffect(() => {
+    if (!soundOn || speeding.length === 0) return;
+    playSpeedTone();
+    const timer = setInterval(playSpeedTone, 20000);
+    return () => clearInterval(timer);
+  }, [soundOn, speedingKey]);
 
   if (speeding.length === 0) return null;
 
@@ -5235,2132 +5826,6 @@ function DreModal({ osId, osNumber, liveCost, open, onOpenChange }: { osId: numb
   );
 }
 
-function VehicleTable({ vehicles, gridData, gerenciadoras, onFocusVehicle, onSelectOsVehicle, clients, monthlyHours, onCostDetail }: { vehicles: TrackedVehicle[]; gridData: GridItem[]; gerenciadoras: Gerenciadora[]; onFocusVehicle?: (id: number) => void; onSelectOsVehicle?: (id: number) => void; clients?: any[]; monthlyHours?: Record<string, { totalHours: number; missions: number }>; onCostDetail?: (empId: number) => void }) {
-  const { toast } = useToast();
-  const _timeAgoTick = useTimeAgoTicker(60000);
-  const [expanded, setExpanded] = useState(true);
-  const [gridLayout, setGridLayout] = useState<"cockpit" | "classic">(() => {
-    try {
-      const saved = localStorage.getItem("opgrid:layout");
-      return saved === "classic" ? "classic" : "cockpit";
-    } catch { return "cockpit"; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("opgrid:layout", gridLayout); } catch {}
-  }, [gridLayout]);
-  const [upcomingVehicle, setUpcomingVehicle] = useState<TrackedVehicle | null>(null);
-  const [nextOsDetail, setNextOsDetail] = useState<{ os: any; vehicle: TrackedVehicle } | null>(null);
-  const [agendamentosModalOpen, setAgendamentosModalOpen] = useState(false);
-  const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
-  const [rowForwardUpdate, setRowForwardUpdate] = useState<any>(null);
-  const [rowForwardEmail, setRowForwardEmail] = useState("");
-  const [rowForwardMsg, setRowForwardMsg] = useState("");
-  const [rowSendingEmail, setRowSendingEmail] = useState(false);
-  const [rowShowHistory, setRowShowHistory] = useState(false);
-  const [dreOs, setDreOs] = useState<{ id: number; osNumber: string; liveCost?: any } | null>(null);
-
-  const { data: unreadUpdates = [] } = useQuery<any[]>({
-    queryKey: ["/api/mission/updates", "unread"],
-    queryFn: async () => {
-      const res = await authFetch("/api/mission/updates?unread=true");
-      if (!res.ok) return [];
-      return res.json();
-    },
-    refetchInterval: 120000,
-  });
-
-  useNotificationSound(unreadUpdates);
-
-  const rowForwardOsId = rowForwardUpdate?.serviceOrderId;
-  const { data: rowForwardHistory = [] } = useQuery<any[]>({
-    queryKey: ["/api/service-orders", rowForwardOsId, "forwards"],
-    queryFn: async () => {
-      if (!rowForwardOsId) return [];
-      const res = await authFetch(`/api/service-orders/${rowForwardOsId}/forwards`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!rowForwardOsId,
-  });
-
-  const markReadMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      await authFetch("/api/mission/updates/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] }); },
-  });
-
-  const getUnreadForOs = (osNumber: string) => unreadUpdates.filter((u: any) => u.osNumber === osNumber);
-
-  const { data: refPoints = [] } = useQuery<RefPoint[]>({ queryKey: ["/api/reference-points"] });
-
-  const { data: activeSessions = [] } = useQuery<any[]>({
-    queryKey: ["/api/driver-sessions", "ativo"],
-    queryFn: async () => {
-      const res = await authFetch("/api/driver-sessions?status=ativo");
-      if (!res.ok) return [];
-      return res.json();
-    },
-    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : 180000),
-    refetchIntervalInBackground: false,
-  });
-
-  const driverByVehicle = useMemo(() => {
-    const map: Record<number, { driverName: string; startedAt: string; employeeId: number | null }> = {};
-    for (const s of activeSessions) {
-      if (s.vehicle_id) map[s.vehicle_id] = { driverName: s.driver_name, startedAt: s.started_at, employeeId: s.employee_id || null };
-    }
-    return map;
-  }, [activeSessions]);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { vehicleId, x, y } = (e as CustomEvent).detail;
-      const veh = vehicles.find(v => v.id === vehicleId);
-      if (veh) setCtxMenu({ x, y, vehicle: veh });
-    };
-    window.addEventListener("vehicle-context-menu", handler);
-    return () => window.removeEventListener("vehicle-context-menu", handler);
-  }, [vehicles]);
-
-  const onlyVehicles = vehicles.filter(v => v.deviceType !== "spy");
-
-  return (
-    <>
-    <Card className="overflow-hidden shadow-sm border border-border rounded-[1.75rem]">
-      <div
-        className="flex items-center justify-between px-5 py-3.5 cursor-pointer transition-colors bg-primary text-primary-foreground"
-        onClick={() => setExpanded(!expanded)}
-        data-testid="toggle-vehicles-table"
-      >
-        <div className="flex items-center gap-2.5">
-          <Truck className="w-4 h-4 text-neutral-300" />
-          <h2 className="font-bold text-sm text-white tracking-wide uppercase font-heading" style={{ letterSpacing: "0.08em" }}>Veículos</h2>
-          <span className="text-xs text-neutral-400 font-medium ml-0.5">({onlyVehicles.length})</span>
-        </div>
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center bg-white/5 border border-white/10 rounded-full overflow-hidden text-[10px] font-bold uppercase tracking-wider" data-testid="grid-layout-toggle">
-            <button
-              type="button"
-              onClick={() => setGridLayout("cockpit")}
-              className={`px-3 py-1 transition-colors rounded-full ${gridLayout === "cockpit" ? "bg-white text-primary" : "text-neutral-300 hover:text-white"}`}
-              data-testid="button-layout-cockpit"
-              title="Layout novo (Cockpit) com foto, anel de progresso e blocos compactos"
-            >
-              Cockpit
-            </button>
-            <button
-              type="button"
-              onClick={() => setGridLayout("classic")}
-              className={`px-3 py-1 transition-colors rounded-full ${gridLayout === "classic" ? "bg-white text-primary" : "text-neutral-300 hover:text-white"}`}
-              data-testid="button-layout-classic"
-              title="Layout antigo (12 colunas, mais detalhado)"
-            >
-              Clássico
-            </button>
-          </div>
-          <MirrorAllButton vehicles={vehicles} gerenciadoras={gerenciadoras} />
-          <div onClick={() => setExpanded(!expanded)} className="cursor-pointer">
-            {expanded
-              ? <ChevronUp className="w-4 h-4 text-neutral-400 hover:text-white transition-colors" />
-              : <ChevronDown className="w-4 h-4 text-neutral-400 hover:text-white transition-colors" />
-            }
-          </div>
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="overflow-x-auto">
-          <table className="w-full" data-testid="table-vehicles-tracking">
-            <tbody className="divide-y divide-neutral-200">
-              {gridLayout === "classic" ? (
-              onlyVehicles.map((v, index) => {
-                const posInfo = getLastPositionInfo(v.tracker?.lastPositionTime);
-                const hasLocation = v.tracker?.latitude != null && v.tracker?.longitude != null;
-                const mapsUrl = hasLocation
-                  ? `https://www.google.com/maps?q=${v.tracker!.latitude},${v.tracker!.longitude}`
-                  : null;
-                const rodizio = isRodizioSP(v.plate);
-                const idleTime = getIdleTime(v);
-                const idleMin = getIdleMinutes(v);
-                const ignitionOnTime = getIgnitionOnTime(v);
-                const stoppedTime = getStoppedTime(v);
-                const noSignalTime = getNoSignalTime(v);
-                const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
-                const isIdleAlert = idleMin >= 5;
-                const samePlaceAlert = v.idleSamePlace?.isAlert === true;
-                const samePlaceCount = v.idleSamePlace?.count ?? 0;
-                const isIgnOn = v.tracker?.ignition === true;
-                const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
-                const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#94a3b8";
-                const isLive = v.tracker?.isLiveData !== false;
-
-                return (
-                  <tr
-                    key={v.id}
-                    className={`transition-colors cursor-context-menu ${
-                      samePlaceAlert ? "bg-red-50/80 hover:bg-red-50" :
-                      isOverSpeed ? "bg-red-50/80 hover:bg-red-50" :
-                      isIdleAlert ? "bg-amber-50/60 hover:bg-amber-50" :
-                      rodizio ? "bg-red-50/30 hover:bg-red-50/50" :
-                      index % 2 === 0 ? "bg-white hover:bg-neutral-50/80" : "bg-neutral-50/30 hover:bg-neutral-50/80"
-                    }`}
-                    data-testid={`row-vehicle-${v.id}`}
-                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, vehicle: v }); }}
-                  >
-                    <td className="px-2 py-1.5 text-center">
-                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-neutral-900 text-white font-bold text-xs shadow-sm">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                    </td>
-
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-full overflow-hidden border-2 flex-shrink-0 shadow-sm bg-white" style={{ borderColor: statusColor }}>
-                          <img src={vehicleIconSrc(v.iconType, v.brand, v.model)} alt="VTR" className="w-full h-full object-cover" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`font-extrabold text-sm tracking-wide ${rodizio ? "text-red-600" : "text-neutral-900"}`}>
-                              {v.plate}
-                            </span>
-                            {rodizio && (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <span className="text-xs px-2 py-0.5 bg-red-600 text-white rounded font-bold uppercase animate-pulse shadow-sm">Rodízio SP</span>
-                                </TooltipTrigger>
-                                <TooltipContent>Veículo em rodízio hoje em São Paulo (7h-10h / 17h-20h)</TooltipContent>
-                              </Tooltip>
-                            )}
-                            {v.trackerType === "truckscontrol" && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-neutral-900 text-amber-400 rounded font-bold uppercase">Onixsat</span>
-                            )}
-                            {isOverSpeed && (
-                              <span className="text-xs px-2 py-0.5 bg-red-600 text-white rounded font-bold shadow-sm">
-                                {v.tracker!.speed} km/h
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-neutral-500 mt-0.5 leading-tight" style={{ fontWeight: 400 }}>
-                            {v.brand} {v.model}
-                            {v.year ? ` ${v.year}` : ""}
-                            {v.color ? <span className="text-neutral-400"> · {v.color}</span> : ""}
-                          </p>
-                        </div>
-                        <VehicleInfoTooltip v={v} />
-                        <VehicleCamerasHover
-                          vehicleId={v.id}
-                          plate={v.plate}
-                          noIntegration={!(v as any).ssxIntegrationCode}
-                        >
-                          <button
-                            type="button"
-                            className={`inline-flex items-center justify-center w-6 h-6 rounded transition-colors ${
-                              (v as any).ssxIntegrationCode
-                                ? "text-indigo-600 hover:bg-indigo-50"
-                                : "text-neutral-300 hover:bg-neutral-100"
-                            }`}
-                            title={(v as any).ssxIntegrationCode ? "Ver câmeras AO VIVO" : "Sem câmera SSX configurada"}
-                            data-testid={`button-cameras-${v.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Video className="w-3.5 h-3.5" />
-                          </button>
-                        </VehicleCamerasHover>
-                        <VincularOsButton compact inicial={vinculoDaViatura(v)} testId={`button-vincular-os-${v.id}`} />
-                      </div>
-                    </td>
-
-                    <td className="px-2 py-1.5 text-center">
-                      {!v.hasTracker ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <ToggleLeft className="w-5 h-5 mx-auto text-neutral-300" />
-                          </TooltipTrigger>
-                          <TooltipContent>Sem integração / rastreador</TooltipContent>
-                        </Tooltip>
-                      ) : v.tracker?.ignition === undefined ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <ToggleLeft className="w-5 h-5 mx-auto text-amber-500" />
-                          </TooltipTrigger>
-                          <TooltipContent>Sem informação de ignição</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            {v.tracker.ignition
-                              ? <ToggleRight className="w-5 h-5 mx-auto text-green-500" />
-                              : <ToggleLeft className="w-5 h-5 mx-auto text-red-500" />
-                            }
-                          </TooltipTrigger>
-                          <TooltipContent>{v.tracker.ignition ? "Ignição Ligada" : "Ignição Desligada"}</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-center">
-                      {!v.hasTracker ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Signal className="w-4 h-4 mx-auto text-neutral-300" />
-                          </TooltipTrigger>
-                          <TooltipContent>Sem integração / rastreador</TooltipContent>
-                        </Tooltip>
-                      ) : v.tracker?.gpsSignal === undefined ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Signal className="w-4 h-4 mx-auto text-neutral-400" />
-                          </TooltipTrigger>
-                          <TooltipContent>Sem informação de GPS</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Signal className={`w-4 h-4 mx-auto ${v.tracker.gpsSignal ? "text-emerald-600" : "text-neutral-400"}`} />
-                          </TooltipTrigger>
-                          <TooltipContent>{v.tracker.gpsSignal ? "GPS OK" : "GPS sem sinal"}</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </td>
-
-
-                    <td className="px-2 py-1.5" style={{ maxWidth: "200px" }}>
-                      {v.tracker?.address ? (
-                        <button
-                          type="button"
-                          onClick={() => { if (hasLocation && onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
-                          className={`flex items-start gap-1.5 group text-left w-full max-w-full overflow-hidden ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
-                          data-testid={`link-map-${v.id}`}
-                        >
-                          <ShieldCheck className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${posInfo.noSignal ? "text-red-500" : hasLocation ? "text-emerald-600 group-hover:text-emerald-700" : "text-neutral-300"}`} />
-                          <div className="min-w-0">
-                            <span className={`text-xs font-medium leading-tight block truncate ${posInfo.noSignal ? "text-red-600" : hasLocation ? "text-neutral-700 group-hover:text-neutral-900 group-hover:underline" : "text-neutral-500"}`} title={v.tracker.address}>
-                              {v.tracker.address}
-                            </span>
-                            {posInfo.noSignal && (
-                              <span className="text-[10px] text-red-500 flex items-center gap-0.5 mt-0.5" data-testid={`no-signal-vehicle-${v.id}`}>
-                                <WifiOff className="w-3 h-3" /> Sem sinal
-                              </span>
-                            )}
-                            {v.activeOs?.agentLocation && (
-                              <AgentLocationLine label="Agente 1" lat={v.activeOs.agentLocation.latitude} lng={v.activeOs.agentLocation.longitude} updatedAt={v.activeOs.agentLocation.updatedAt} colorClass="text-blue-600" />
-                            )}
-                            {v.activeOs?.agentLocation2 && (
-                              <AgentLocationLine label="Agente 2" lat={v.activeOs.agentLocation2.latitude} lng={v.activeOs.agentLocation2.longitude} updatedAt={v.activeOs.agentLocation2.updatedAt} colorClass="text-teal-600" />
-                            )}
-                          </div>
-                        </button>
-                      ) : hasLocation ? (
-                        <button
-                          type="button"
-                          onClick={() => { if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
-                          className="inline-flex items-center gap-1 text-neutral-500 hover:text-neutral-700 text-xs font-medium cursor-pointer"
-                          data-testid={`link-map-${v.id}`}
-                        >
-                          <div>
-                            <div className="flex items-center gap-1">
-                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                              Ver no mapa
-                            </div>
-                            {v.activeOs?.agentLocation && (
-                              <AgentLocationLine label="Agente 1" lat={v.activeOs.agentLocation.latitude} lng={v.activeOs.agentLocation.longitude} updatedAt={v.activeOs.agentLocation.updatedAt} colorClass="text-blue-600" />
-                            )}
-                            {v.activeOs?.agentLocation2 && (
-                              <AgentLocationLine label="Agente 2" lat={v.activeOs.agentLocation2.latitude} lng={v.activeOs.agentLocation2.longitude} updatedAt={v.activeOs.agentLocation2.updatedAt} colorClass="text-teal-600" />
-                            )}
-                          </div>
-                        </button>
-                      ) : (
-                        <div>
-                          <span className="text-neutral-300 text-xs">—</span>
-                          {v.activeOs?.agentLocation && (
-                            <AgentLocationLine label="Agente 1" lat={v.activeOs.agentLocation.latitude} lng={v.activeOs.agentLocation.longitude} updatedAt={v.activeOs.agentLocation.updatedAt} colorClass="text-blue-600" />
-                          )}
-                          {v.activeOs?.agentLocation2 && (
-                            <AgentLocationLine label="Agente 2" lat={v.activeOs.agentLocation2.latitude} lng={v.activeOs.agentLocation2.longitude} updatedAt={v.activeOs.agentLocation2.updatedAt} colorClass="text-teal-600" />
-                          )}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 whitespace-nowrap min-w-[100px]">
-                      {v.tracker?.lastPositionTime ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <div className={`inline-flex items-center gap-1.5 ${posInfo.color}`}>
-                              {posInfo.noSignal ? <WifiOff className="w-3 h-3 flex-shrink-0" /> : <Clock className="w-3 h-3 flex-shrink-0" />}
-                              <span className="text-xs font-semibold tabular-nums">
-                                {parseUTCDate(v.tracker.lastPositionTime).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "America/Sao_Paulo" })}
-                                {" - "}
-                                {parseUTCDate(v.tracker.lastPositionTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" })}
-                              </span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>{posInfo.noSignal ? `⚠ Sem sinal há ${posInfo.text}` : `Última posição há ${posInfo.text}`}</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                      {v.tracker?.speed != null ? (
-                        <span className={`text-xs font-bold tabular-nums ${isOverSpeed ? "text-red-600" : v.tracker.speed > 0 ? "text-neutral-800" : "text-neutral-400"}`}>
-                          {v.tracker.speed} km/h
-                        </span>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {v.lastAlert ? (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <div className="inline-flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
-                              <span className="text-[11px] font-semibold text-neutral-700 tabular-nums">
-                                {v.lastAlert.createdAt ? parseUTCDate(v.lastAlert.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" }) : "—"}
-                                {" "}
-                                {v.lastAlert.createdAt ? formatTimeBRT(v.lastAlert.createdAt) : ""}
-                              </span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p className="font-bold">{v.lastAlert.eventType === "excesso_velocidade" ? "Excesso de Velocidade" : v.lastAlert.eventType}</p>
-                            <p>{v.lastAlert.details || "—"}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5">
-                      {(() => {
-                        const driver = driverByVehicle[v.id];
-                        const driverEmpId = driver?.employeeId;
-                        const isDriver1 = driverEmpId && v.activeOs?.employee1?.id === driverEmpId;
-                        const isDriver2 = driverEmpId && v.activeOs?.employee2?.id === driverEmpId;
-                        const noAgentIsDriver = driverEmpId && !isDriver1 && !isDriver2;
-
-                        return v.activeOs ? (
-                          <div className="flex flex-col gap-1.5">
-                            {v.activeOs.employee1 && (
-                              <div className="flex items-center gap-1.5">
-                                {isDriver1 ? (
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 flex-shrink-0" data-testid={`icon-driver-agent1-${v.id}`}>
-                                        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Condutor da viatura</TooltipContent>
-                                  </Tooltip>
-                                ) : (
-                                  <Users className="w-3.5 h-3.5 text-neutral-900 flex-shrink-0" />
-                                )}
-                                <span className="font-bold text-xs text-neutral-900 leading-tight">
-                                  {titleCase(v.activeOs.employee1.name)}
-                                </span>
-                                {v.activeOs.employee1.phone && !moacirHidesSensitive() && (
-                                  <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
-                                    <SiWhatsapp className="w-3.5 h-3.5" />
-                                  </a>
-                                )}
-                                <Link href={`/admin/employees?id=${v.activeOs.employee1.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent1-${v.id}`}>
-                                  <FileText className="w-3.5 h-3.5" />
-                                </Link>
-                              </div>
-                            )}
-                            {v.activeOs.employee2 && (
-                              <div className="flex items-center gap-1.5 pl-5 border-l-2 border-neutral-200">
-                                {isDriver2 && (
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 flex-shrink-0" data-testid={`icon-driver-agent2-${v.id}`}>
-                                        <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Condutor da viatura</TooltipContent>
-                                  </Tooltip>
-                                )}
-                                <span className="font-semibold text-xs text-neutral-500 leading-tight">
-                                  {titleCase(v.activeOs.employee2.name)}
-                                </span>
-                                {v.activeOs.employee2.phone && !moacirHidesSensitive() && (
-                                  <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
-                                    <SiWhatsapp className="w-3.5 h-3.5" />
-                                  </a>
-                                )}
-                                <Link href={`/admin/employees?id=${v.activeOs.employee2.id}`} className="text-blue-400 hover:text-blue-600 transition-colors" data-testid={`btn-doc-agent2-${v.id}`}>
-                                  <FileText className="w-3.5 h-3.5" />
-                                </Link>
-                              </div>
-                            )}
-                            {noAgentIsDriver && driver && (
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 flex-shrink-0">
-                                      <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Condutor: {driver.driverName}</TooltipContent>
-                                </Tooltip>
-                                <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{driver.driverName}</span>
-                              </div>
-                            )}
-                            {!v.activeOs.employee1 && !v.activeOs.employee2 && !noAgentIsDriver && <span className="text-neutral-300 text-xs">Sem agente</span>}
-                          </div>
-                        ) : driver ? (
-                          <div className="flex items-center gap-1.5">
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 flex-shrink-0">
-                                  <svg viewBox="0 0 24 24" className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>Condutor da viatura</TooltipContent>
-                            </Tooltip>
-                            <span className="text-xs font-bold text-emerald-700 leading-tight" data-testid={`text-driver-${v.id}`}>{driver.driverName}</span>
-                          </div>
-                        ) : (
-                          <span className="text-neutral-300 text-xs">—</span>
-                        );
-                      })()}
-                    </td>
-
-
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {v.activeOs ? (
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-neutral-900 text-xs hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-vehicle-${v.id}`}>
-                              {v.activeOs.osNumber}
-                            </Link>
-                            {(() => {
-                              const osUnreads = getUnreadForOs(v.activeOs!.osNumber);
-                              const latestUnread = osUnreads.length > 0 ? osUnreads[0] : null;
-                              if (!latestUnread) return null;
-                              return (
-                                <button
-                                  onClick={() => {
-                                    setRowForwardUpdate(latestUnread);
-                                    const gridItem = gridData.find((g: GridItem) => g.osNumber === latestUnread.osNumber);
-                                    const client = gridItem?.clientName ? (clients || []).find((c: any) => c.name === gridItem.clientName) : null;
-                                    setRowForwardEmail(client?.email || "");
-                                    setRowForwardMsg("");
-                                    setRowShowHistory(false);
-                                  }}
-                                  className="relative p-1 rounded-md bg-amber-500 text-white hover:bg-amber-600 transition-colors animate-pulse"
-                                  data-testid={`btn-row-alert-${v.id}`}
-                                  title={`${osUnreads.length} atualização(ões) não lida(s)`}
-                                >
-                                  <Bell className="w-3.5 h-3.5" />
-                                  {osUnreads.length > 1 && (
-                                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-600 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{osUnreads.length}</span>
-                                  )}
-                                </button>
-                              );
-                            })()}
-                            {hasLocation && (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); }
-                                      if (onSelectOsVehicle) onSelectOsVehicle(v.id);
-                                    }}
-                                    className="p-0.5 rounded hover:bg-blue-50 transition-colors"
-                                    data-testid={`button-nearby-${v.id}`}
-                                  >
-                                    <Navigation className="w-3 h-3 text-blue-500 hover:text-blue-700" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent>Ver veículos próximos</TooltipContent>
-                              </Tooltip>
-                            )}
-                            {v.activeOs.priority === "imediata" && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded font-black border bg-red-600 text-white border-red-700 animate-pulse">
-                                REAPROVEITAMENTO
-                              </span>
-                            )}
-                            {v.activeOs.lastAgentUpdate ? (
-                              <>
-                                <span className="text-xs px-2 py-0.5 rounded font-bold border bg-blue-50 text-blue-700 border-blue-200">
-                                  {getMissionLabel(v.activeOs.lastAgentUpdate.missionStep || v.activeOs.missionStatus)}
-                                </span>
-                                {(() => {
-                                  const urgency = getTimeAgoUrgency(v.activeOs.lastAgentUpdate.createdAt);
-                                  if (!urgency.text) return null;
-                                  const timeStr = v.activeOs.lastAgentUpdate.createdAt
-                                    ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt)
-                                    : "";
-                                  return (
-                                    <span className={`text-[10px] font-bold ${urgency.colorClass}`} data-testid={`elapsed-${v.id}`}>
-                                      {timeStr} ({urgency.text})
-                                    </span>
-                                  );
-                                })()}
-                              </>
-                            ) : (
-                              <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
-                                getStatusDisplay(v.activeOs.missionStatus, v.activeOs.status).className
-                              }`}>
-                                {getMissionLabel(v.activeOs.missionStatus)}
-                              </span>
-                            )}
-                            {v.activeOs.lastAgentUpdate && (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <Info className="w-3.5 h-3.5 text-blue-500 cursor-help" />
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className="max-w-[280px]">
-                                  <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
-                                  <p className="text-[10px] text-neutral-400 mt-0.5">
-                                    {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt) : ""}
-                                    {(v.activeOs.lastAgentUpdate.hasPhoto || (v.activeOs.lastAgentUpdate.photoUrl && v.activeOs.lastAgentUpdate.photoUrl !== "[has_photo]")) ? " · 📷 Foto" : ""}
-                                  </p>
-                                  {(() => {
-                                    const u2 = getTimeAgoUrgency(v.activeOs!.lastAgentUpdate!.createdAt);
-                                    if (!u2.text || u2.minutesAgo < 0) return null;
-                                    return <p className={`text-[10px] font-bold mt-0.5 ${u2.colorClass}`}>{u2.text}</p>;
-                                  })()}
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </div>
-                          <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px]" title={v.activeOs.clientName}>
-                            {v.activeOs.clientName}
-                            {v.activeOs.scheduledDate && (
-                              <span className="ml-1 text-[10px] text-neutral-400">
-                                · {(() => {
-                                  const sd = parseUTCDate(v.activeOs.scheduledDate);
-                                  const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                                  const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                                  const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-                                  if (sdBRT === nowBRT) return `Hoje ${timeStr}`;
-                                  return `${sd.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })} ${timeStr}`;
-                                })()}
-                              </span>
-                            )}
-                          </p>
-                          {(v.activeOs.origin || v.activeOs.destination) && (
-                            <p
-                              className="text-[10px] font-semibold text-neutral-600 truncate max-w-[220px]"
-                              title={originDestTitle(v.activeOs.origin, v.activeOs.destination)}
-                              data-testid={`text-origin-dest-table-${v.id}`}
-                            >
-                              {originDestLabel(v.activeOs.origin, v.activeOs.destination)}
-                            </p>
-                          )}
-                          {(() => {
-                            const todayLocalStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                            const vtrItems = gridData.filter((g: GridItem) => {
-                              if (g.vehicle?.plate !== v.plate || g.status === "recusada" || g.status === "cancelada") return false;
-                              if (!g.scheduledDate) return false;
-                              const sd = new Date(g.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                              return sd === todayLocalStr;
-                            });
-                            if (vtrItems.length === 0) return null;
-                            const vtrWithCost = [...vtrItems].sort((a, b) => {
-                              const da = a.scheduledDate ? parseUTCDate(a.scheduledDate).getTime() : 0;
-                              const db2 = b.scheduledDate ? parseUTCDate(b.scheduledDate).getTime() : 0;
-                              return da - db2;
-                            });
-                            const totFat = vtrWithCost.reduce((s, g) => s + (g.liveCost?.faturamento || 0), 0);
-                            const totHE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_hora_extra || 0), 0);
-                            const totPag = vtrWithCost.reduce((s, g) => s + (g.liveCost?.pagamento || 0), 0);
-                            const totComb = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
-                            const totPed = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_pedagio || 0), 0);
-                            const totOutros = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_outros || 0), 0);
-                            const totCusto = vtrWithCost.reduce((s, g) => s + (g.liveCost?.custo_total || 0), 0);
-                            const totResult = vtrWithCost.reduce((s, g) => s + (g.liveCost?.resultado || 0), 0);
-                            const META_VTR = 1800;
-                            const metaBatida = !moacirHidesSensitive() && totFat >= META_VTR;
-                            const statusLabel = (g2: GridItem) => {
-                              const s = g2.status?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                              const ms = g2.missionStatus;
-                              if (s === "concluida" || ms === "encerrada" || ms === "finalizada") return { icon: "✓", cls: "text-green-400", label: "Concluída" };
-                              if (s === "cancelada") return { icon: "✗", cls: "text-red-400", label: "Cancelada" };
-                              if (s === "agendada" || ms === "aguardando") return { icon: "📅", cls: "text-blue-300", label: "Agendada" };
-                              if (ms === "checkin_chegada_km" || ms === "checkin_veiculo_escoltado" || ms === "checkin_dados_motorista")
-                                return { icon: "📍", cls: "text-orange-400", label: "Na Origem" };
-                              if (ms === "checkout_armamento" || ms === "checkout_viatura" || ms === "checkout_km_saida" || ms === "em_transito_origem")
-                                return { icon: "🚗", cls: "text-sky-400", label: "Em Trânsito Origem" };
-                              if (ms === "em_transito_destino" || ms === "iniciar_missao")
-                                return { icon: "🚛", cls: "text-sky-400", label: "Em Trânsito" };
-                              if (ms === "chegada_destino" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno")
-                                return { icon: "🏁", cls: "text-purple-400", label: "No Destino" };
-                              if (ms === "retorno_base" || ms === "chegada_base")
-                                return { icon: "🏠", cls: "text-neutral-400", label: "Retorno Base" };
-                              return { icon: "⟳", cls: "text-sky-400", label: "Em Operação" };
-                            };
-                            return (
-                              <div className="mt-0.5" data-testid={`live-cost-${v.id}`}>
-                                {vtrWithCost.length > 1 && (
-                                  <p className="text-[9px] text-neutral-400 font-semibold mb-0.5">{vtrWithCost.length} missões hoje</p>
-                                )}
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 cursor-help ${metaBatida ? "text-emerald-800 bg-emerald-100 border-2 border-emerald-400 ring-1 ring-emerald-300" : "text-emerald-700 bg-emerald-50 border border-emerald-200"}`}>
-                                        <span>▲</span> {fmtBRL(totFat)}
-                                        {totHE > 0 && <span className="text-[8px] font-black text-amber-600 bg-amber-100 rounded px-0.5 ml-0.5">HE</span>}
-                                        {metaBatida && <span className="ml-0.5">🏆</span>}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
-                                      <p className="font-black text-neutral-900">Faturamento VTR (Hoje)</p>
-                                      {vtrWithCost.map(g => {
-                                        const st = statusLabel(g);
-                                        const hora = (g.missionStartedAt || g.scheduledDate) ? formatTimeBRT((g.missionStartedAt || g.scheduledDate)!) : "--:--";
-                                        const he = g.liveCost?.fat_hora_extra || 0;
-                                        const ke = g.liveCost?.fat_km_extra || 0;
-                                        const heHours = g.liveCost?.horas_excedentes || 0;
-                                        const franqH = g.liveCost?.contrato_valores?.franquia_horas || 0;
-                                        const valorHE = g.liveCost?.contrato_valores?.valor_hora_extra || 0;
-                                        return (
-                                          <div key={g.id}>
-                                            <p className="flex items-center gap-1">
-                                              <span className={st.cls}>{st.icon}</span>
-                                              <span className="text-neutral-400">{hora}</span>
-                                              <span className="font-bold text-neutral-800">{g.osNumber}: {fmtBRL(g.liveCost?.faturamento || 0)}</span>
-                                              <span className={`text-[9px] ${st.cls}`}>({st.label})</span>
-                                            </p>
-                                            {(he > 0 || ke > 0) && (
-                                              <p className="pl-4 text-[10px] text-amber-600 font-bold">
-                                                {he > 0 && <span>HE (receita): {fmtBRL(he)} ({heHours.toFixed(1)}h × {fmtBRL(valorHE)}/h) </span>}
-                                                {ke > 0 && <span>KM exc: {fmtBRL(ke)}</span>}
-                                              </p>
-                                            )}
-                                            {he === 0 && franqH > 0 && (g.liveCost?.horas_missao || 0) > 0 && (
-                                              <p className="pl-4 text-[10px] text-neutral-400">
-                                                Franquia: {(g.liveCost?.horas_missao || 0).toFixed(1)}h / {franqH}h
-                                              </p>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                      {vtrWithCost.length > 1 && <p className="font-black text-neutral-900 border-t border-neutral-200 pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
-                                      {(() => {
-                                        const totHE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_hora_extra || 0), 0);
-                                        const totKE = vtrWithCost.reduce((s, g) => s + (g.liveCost?.fat_km_extra || 0), 0);
-                                        if (totHE <= 0 && totKE <= 0) return null;
-                                        return (
-                                          <p className="text-[10px] text-amber-600 font-bold">
-                                            {totHE > 0 && <span>Total HE: {fmtBRL(totHE)} </span>}
-                                            {totKE > 0 && <span>Total KM exc: {fmtBRL(totKE)}</span>}
-                                          </p>
-                                        );
-                                      })()}
-                                      <div className={`border-t border-neutral-200 pt-1 mt-1 font-black ${metaBatida ? "text-green-700" : "text-neutral-500"}`}>
-                                        Meta: {fmtBRL(META_VTR)} {metaBatida ? "✓ META BATIDA!" : `(faltam ${fmtBRL(META_VTR - totFat)})`}
-                                      </div>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 cursor-help">
-                                        <span>▼</span> {fmtBRL(totCusto)}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
-                                      <p className="font-black text-neutral-900">Custo VTR (Hoje)</p>
-                                      <p className="text-neutral-700">Pag. Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
-                                      {totComb > 0 && <p className="text-neutral-700">Combustível: <span className="font-bold">{fmtBRL(totComb)}</span></p>}
-                                      {totPed > 0 && <p className="text-neutral-700">Pedágio: <span className="font-bold">{fmtBRL(totPed)}</span></p>}
-                                      {totOutros > 0 && <p className="text-neutral-700">Outros: <span className="font-bold">{fmtBRL(totOutros)}</span></p>}
-                                      {vtrWithCost.length > 1 && (
-                                        <div className="border-t border-neutral-200 pt-1 mt-1">
-                                          <p className="font-black text-[10px] text-neutral-900">Por missão:</p>
-                                          {vtrWithCost.map(g => (
-                                            <p key={g.id} className="text-neutral-700">{g.osNumber}: custo <span className="font-bold">{fmtBRL(g.liveCost?.custo_total || 0)}</span></p>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                  <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${moacirHidesSensitive() ? "text-neutral-500 bg-neutral-100 border border-neutral-200" : totResult >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
-                                    = {fmtBRL(totResult)}
-                                  </span>
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); const gridLc = vtrWithCost.find((g: any) => g.id === v.activeOs!.id); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber, liveCost: gridLc?.liveCost || null }); }}
-                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
-                                        hidden={moacirHidesSensitive()}
-                                        data-testid={`button-dre-${v.id}`}
-                                      >
-                                        <FileText className="w-3 h-3" /> DRE
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>DRE Operacional desta OS</TooltipContent>
-                                  </Tooltip>
-                                </div>
-                                <div className="mt-1 flex items-center gap-1.5" hidden={moacirHidesSensitive()}>
-                                  <div className="flex-1 h-1.5 bg-neutral-200 rounded-full overflow-hidden" data-testid={`meta-bar-${v.id}`}>
-                                    <div
-                                      className={`h-full rounded-full transition-all ${metaBatida ? "bg-emerald-500" : totFat >= META_VTR * 0.7 ? "bg-blue-500" : "bg-neutral-400"}`}
-                                      style={{ width: `${Math.min((totFat / META_VTR) * 100, 100)}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-[9px] font-bold text-neutral-400">{Math.round((totFat / META_VTR) * 100)}%</span>
-                                  {metaBatida && (
-                                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1 py-0.5 uppercase" data-testid={`meta-batida-${v.id}`}>
-                                      Meta Batida!
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                          {(() => {
-                            if (!v.activeOs) return null;
-                            const ms = v.activeOs.missionStatus;
-                            const isActive = ms && ms !== "aguardando";
-                            if (!isActive) return null;
-                            const rp = getRouteProgress({
-                              originLat: v.activeOs.originLat, originLng: v.activeOs.originLng,
-                              destLat: v.activeOs.destinationLat, destLng: v.activeOs.destinationLng,
-                              currentLat: v.tracker?.latitude, currentLng: v.tracker?.longitude,
-                              missionStatus: ms,
-                              vehicleId: v.id,
-                              lastPositionTime: v.tracker?.lastPositionTime,
-                            });
-                            if (rp && rp.distTotalKm > 0) {
-                              return <div className="mt-1.5"><RouteProgressBar pct={rp.pct} distRemainingKm={rp.distRemainingKm} distTotalKm={rp.distTotalKm} distTravelledKm={rp.distTravelledKm} compact /></div>;
-                            }
-                            const stepPct = getMissionProgress(ms);
-                            if (rp && rp.distRemainingKm > 0) {
-                              return <div className="mt-1.5"><RouteProgressBar pct={stepPct} distRemainingKm={rp.distRemainingKm} distTotalKm={0} compact /></div>;
-                            }
-                            return <div className="mt-1.5"><RouteProgressBar pct={stepPct} distRemainingKm={0} distTotalKm={0} compact noDistance /></div>;
-                          })()}
-                          {(v.activeOs.missionStartedAt || v.activeOs.scheduledDate) && (
-                            <p className="text-xs text-neutral-400 font-medium">
-                              {(() => {
-                                const dateRef = v.activeOs.missionStartedAt || v.activeOs.scheduledDate;
-                                if (!dateRef) return "";
-                                const sd = parseUTCDate(dateRef);
-                                const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                                const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                                const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-                                if (sdBRT === nowBRT) return `Hoje ${timeStr}`;
-                                return `${sd.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })} ${timeStr}`;
-                              })()}
-                            </p>
-                          )}
-                        </div>
-                      ) : v.scheduledOs ? (
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <Link href={`/admin/service-orders?os=${v.scheduledOs.id}`} className="font-bold text-neutral-600 text-xs hover:text-blue-700 hover:underline transition-colors cursor-pointer" data-testid={`link-os-scheduled-${v.id}`}>
-                              {v.scheduledOs.osNumber}
-                            </Link>
-                            <span className={`text-xs px-2 py-0.5 rounded font-bold border ${v.scheduledOs.priority === "imediata" ? "bg-red-50 text-red-700 border-red-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
-                              {v.scheduledOs.priority === "imediata" ? "Reaproveitamento" : "Agendamento"}
-                            </span>
-                          </div>
-                          {v.scheduledOs.scheduledDate && (
-                            <p className="text-xs text-neutral-500 font-medium">
-                              {parseUTCDate(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                            </p>
-                          )}
-                        </div>
-                      ) : v.upcomingOrders && v.upcomingOrders.length > 0 ? (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      ) : (
-                        <span className="text-neutral-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                      {(() => {
-                        const vStatus = getViaturaStatus(v);
-                        const VIcon = vStatus.icon;
-                        return (
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-bold border ${vStatus.className}`}>
-                              <VIcon className="w-3 h-3" />
-                              {vStatus.label}
-                            </span>
-                            {v.activeOs?.kitName && (
-                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" data-testid={`kit-badge-${v.id}`}>
-                                🔫 {v.activeOs.kitName}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-
-                    <td className="px-2 py-1.5 whitespace-nowrap">
-                      {(() => {
-                        const rp = getVehicleRefPoint(v, refPoints);
-                        if (rp) {
-                          return (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded border" style={{ borderColor: rp.color + "40", backgroundColor: rp.color + "10", color: rp.color }}>
-                              <MapPin className="w-3 h-3" />
-                              {rp.name}
-                            </span>
-                          );
-                        }
-                        const nextSchedRef = v.upcomingOrders?.find(u => u.id !== v.activeOs?.id && u.scheduledDate)
-                          || (v.upcomingOrders && v.upcomingOrders.length > 0 ? v.upcomingOrders[0] : null);
-                        if (nextSchedRef) {
-                          return (
-                            <button
-                              onClick={() => setNextOsDetail({ os: nextSchedRef, vehicle: v })}
-                              className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 animate-pulse cursor-pointer hover:bg-blue-100 transition-colors"
-                              data-testid={`btn-next-sched-ref-${v.id}`}
-                            >
-                              <CalendarClock className="w-3 h-3" />
-                              PRÓXIMO AGENDAMENTO
-                            </button>
-                          );
-                        }
-                        if (v.activeOs?.missionStatus) {
-                          const ms = v.activeOs.missionStatus;
-                          const transitLabel = getTransitStatus(ms);
-                          const transitColor = ms === "em_transito_destino" || ms === "em_transito_origem"
-                            ? "text-blue-700 bg-blue-50 border-blue-200"
-                            : ms === "iniciar_missao"
-                            ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                            : ms === "chegada_destino" || ms === "checkout_km_final" || ms === "checkout_viatura_retorno"
-                            ? "text-purple-700 bg-purple-50 border-purple-200"
-                            : ms === "finalizada" || ms === "retorno_base" || ms === "chegada_base"
-                            ? "text-amber-700 bg-amber-50 border-amber-200"
-                            : ms === "aguardando"
-                            ? "text-neutral-600 bg-neutral-50 border-neutral-200"
-                            : "text-cyan-700 bg-cyan-50 border-cyan-200";
-                          return (
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${transitColor}`}>
-                              <Navigation className="w-3 h-3" />
-                              {transitLabel}
-                            </span>
-                          );
-                        }
-                        return <span className="text-neutral-300 text-xs">—</span>;
-                      })()}
-                    </td>
-                  </tr>
-                );
-              })
-              ) : (
-                onlyVehicles.map((v, index) => {
-                const posInfo = getLastPositionInfo(v.tracker?.lastPositionTime);
-                const hasLocation = v.tracker?.latitude != null && v.tracker?.longitude != null;
-                const rodizio = isRodizioSP(v.plate);
-                const idleMin = getIdleMinutes(v);
-                const noSignalTime = getNoSignalTime(v);
-                const isOverSpeed = v.tracker?.speed !== undefined && v.tracker.speed > 110;
-                const isIdleAlert = idleMin >= 5;
-                const samePlaceAlert = v.idleSamePlace?.isAlert === true;
-                const isIgnOn = v.tracker?.ignition === true;
-                const isMov = isIgnOn && (v.tracker?.speed ?? 0) > 5;
-                const statusColor = noSignalTime ? "#6b7280" : isMov ? "#22c55e" : isIgnOn ? "#f59e0b" : "#94a3b8";
-                const driver = driverByVehicle[v.id];
-                const driverEmpId = driver?.employeeId;
-                const isDriver1 = driverEmpId && v.activeOs?.employee1?.id === driverEmpId;
-                const isDriver2 = driverEmpId && v.activeOs?.employee2?.id === driverEmpId;
-
-                // Lateral bar color (status indicator)
-                const sideBar =
-                  samePlaceAlert ? "#dc2626" :
-                  isOverSpeed ? "#dc2626" :
-                  isIdleAlert ? "#f59e0b" :
-                  rodizio ? "#fb923c" :
-                  statusColor;
-
-                // Route progress
-                const rp = v.activeOs ? getRouteProgress({
-                  originLat: v.activeOs.originLat, originLng: v.activeOs.originLng,
-                  destLat: v.activeOs.destinationLat, destLng: v.activeOs.destinationLng,
-                  currentLat: v.tracker?.latitude, currentLng: v.tracker?.longitude,
-                  missionStatus: v.activeOs.missionStatus,
-                  vehicleId: v.id,
-                  lastPositionTime: v.tracker?.lastPositionTime,
-                }) : null;
-                const stepPct = v.activeOs?.missionStatus ? getMissionProgress(v.activeOs.missionStatus) : 0;
-                const ringPct = rp && rp.distTotalKm > 0 ? Math.round(rp.pct) : Math.round(stepPct);
-
-                // Financial aggregation (today missions for this plate)
-                const todayLocalStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                const vtrItems = gridData.filter((g: GridItem) => {
-                  if (g.vehicle?.plate !== v.plate || g.status === "recusada" || g.status === "cancelada") return false;
-                  if (!g.scheduledDate) return false;
-                  const sd = new Date(g.scheduledDate).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                  return sd === todayLocalStr;
-                });
-                const totFat = vtrItems.reduce((s, g) => s + (g.liveCost?.faturamento || 0), 0);
-                const totHE = vtrItems.reduce((s, g) => s + (g.liveCost?.fat_hora_extra || 0), 0);
-                const totPag = vtrItems.reduce((s, g) => s + (g.liveCost?.pagamento || 0), 0);
-                const totComb = vtrItems.reduce((s, g) => s + (g.liveCost?.custo_combustivel || 0), 0);
-                const totPed = vtrItems.reduce((s, g) => s + (g.liveCost?.custo_pedagio || 0), 0);
-                const totOutros = vtrItems.reduce((s, g) => s + (g.liveCost?.custo_outros || 0), 0);
-                const totCusto = vtrItems.reduce((s, g) => s + (g.liveCost?.custo_total || 0), 0);
-                const totResult = vtrItems.reduce((s, g) => s + (g.liveCost?.resultado || 0), 0);
-                const META_VTR = 1800;
-                const metaBatida = !moacirHidesSensitive() && totFat >= META_VTR;
-                const metaPct = Math.round((totFat / META_VTR) * 100);
-
-                const osUnreads = v.activeOs ? getUnreadForOs(v.activeOs.osNumber) : [];
-                const latestUnread = osUnreads.length > 0 ? osUnreads[0] : null;
-                const refPt = getVehicleRefPoint(v, refPoints);
-                const viaturaSt = getViaturaStatus(v);
-                const VIcon = viaturaSt.icon;
-                const basePt = refPoints.find(rp => /\bbase\b/i.test(rp.name)) || refPoints[0] || null;
-                const distFromBase = (basePt && v.tracker?.latitude != null && v.tracker?.longitude != null)
-                  ? haversineDistance(v.tracker.latitude, v.tracker.longitude, basePt.latitude, basePt.longitude)
-                  : null;
-
-                return (
-                  <tr
-                    key={v.id}
-                    className="group cursor-context-menu hover:bg-neutral-50/60 transition-colors"
-                    data-testid={`row-vehicle-${v.id}`}
-                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, vehicle: v }); }}
-                  >
-                    <td className="p-0 align-stretch">
-                      <div
-                        className="grid items-stretch divide-x divide-neutral-200 border-l-[3px]"
-                        style={{ gridTemplateColumns: "44px 240px 200px minmax(260px,1fr) minmax(300px,360px) 72px", borderLeftColor: sideBar }}
-                      >
-                        {/* # index */}
-                        <div className="flex items-center justify-center px-1 py-2 bg-neutral-50/40">
-                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-sm tabular-nums">
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                        </div>
-
-                        {/* Identidade: foto + placa + modelo + OS */}
-                        <div className="flex items-center gap-3 px-3 py-2 min-w-0">
-                          <div
-                            className="w-16 h-16 rounded-2xl overflow-hidden border-2 flex-shrink-0 shadow-sm bg-white"
-                            style={{ borderColor: statusColor }}
-                          >
-                            <img
-                              src={vehicleIconSrc(v.iconType, v.brand, v.model)}
-                              alt={v.plate}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1 flex-wrap">
-                              <span className={`font-extrabold text-base tracking-wide leading-none ${rodizio ? "text-red-600" : "text-neutral-900"}`} data-testid={`text-plate-${v.id}`}>
-                                {v.plate}
-                              </span>
-                              {rodizio && (
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <span className="text-[9px] px-1 py-0 bg-red-600 text-white rounded font-bold uppercase animate-pulse">RD</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Rodízio SP hoje (7-10h / 17-20h)</TooltipContent>
-                                </Tooltip>
-                              )}
-                              {v.trackerType === "truckscontrol" && (
-                                <span className="text-[9px] px-1 py-0 bg-neutral-900 text-amber-400 rounded font-bold uppercase">OXS</span>
-                              )}
-                              {isOverSpeed && (
-                                <span className="text-[10px] px-1 py-0 bg-red-600 text-white rounded font-bold animate-pulse">{v.tracker!.speed}km/h</span>
-                              )}
-                              <VehicleInfoTooltip v={v} />
-                              <VehicleCamerasHover
-                                vehicleId={v.id}
-                                plate={v.plate}
-                                noIntegration={!(v as any).ssxIntegrationCode}
-                              >
-                                <button
-                                  type="button"
-                                  className={`inline-flex items-center justify-center w-5 h-5 rounded transition-colors ${
-                                    (v as any).ssxIntegrationCode
-                                      ? "text-indigo-600 hover:bg-indigo-50"
-                                      : "text-neutral-300 hover:bg-neutral-100"
-                                  }`}
-                                  title={(v as any).ssxIntegrationCode ? "Câmeras AO VIVO" : "Sem câmera SSX"}
-                                  data-testid={`button-cameras-card-${v.id}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Video className="w-3 h-3" />
-                                </button>
-                              </VehicleCamerasHover>
-                              <VincularOsButton compact inicial={vinculoDaViatura(v)} testId={`button-vincular-os-card-${v.id}`} />
-                            </div>
-                            {v.activeOs && (v.activeOs.origin || v.activeOs.destination) && (
-                              <p
-                                className="text-[10px] font-semibold text-neutral-700 truncate mt-0.5"
-                                title={originDestTitle(v.activeOs.origin, v.activeOs.destination)}
-                                data-testid={`text-origin-dest-${v.id}`}
-                              >
-                                {originDestLabel(v.activeOs.origin, v.activeOs.destination)}
-                              </p>
-                            )}
-                            <p className="text-[11px] text-neutral-500 leading-tight truncate mt-0.5">
-                              {v.brand} {v.model}{v.year ? ` ${v.year}` : ""}{v.color ? ` · ${v.color}` : ""}
-                            </p>
-                            {v.activeOs ? (
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <Link href={`/admin/service-orders?os=${v.activeOs.id}`} className="font-bold text-[11px] text-blue-700 hover:underline tabular-nums" data-testid={`link-os-vehicle-${v.id}`}>
-                                  {v.activeOs.osNumber}
-                                </Link>
-                                {v.activeOs.priority === "imediata" && (
-                                  <span className="text-[8px] px-1 rounded font-black bg-red-600 text-white animate-pulse">REAP</span>
-                                )}
-                                {v.activeOs.kitName && (
-                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1" title={v.activeOs.kitName} data-testid={`kit-badge-${v.id}`}>
-                                    🔫 KIT
-                                  </span>
-                                )}
-                              </div>
-                            ) : v.scheduledOs ? (
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <Link href={`/admin/service-orders?os=${v.scheduledOs.id}`} className="font-bold text-[11px] text-neutral-600 hover:text-blue-700 hover:underline tabular-nums" data-testid={`link-os-scheduled-${v.id}`}>
-                                  {v.scheduledOs.osNumber}
-                                </Link>
-                                <span className={`text-[9px] px-1 rounded font-bold ${v.scheduledOs.priority === "imediata" ? "bg-red-50 text-red-700 border border-red-200" : "bg-blue-50 text-blue-700 border border-blue-200"}`}>
-                                  {v.scheduledOs.priority === "imediata" ? "REAP" : "AGD"}
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        {/* Telemetria: 2x2 micro-stats */}
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 px-3 py-2 content-center bg-neutral-50/30 text-[10px]">
-                          {/* IGN */}
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span className="text-[8px] font-black uppercase text-neutral-400 tracking-wider">IGN</span>
-                            {!v.hasTracker ? (
-                              <Tooltip><TooltipTrigger><ToggleLeft className="w-3.5 h-3.5 text-neutral-300" /></TooltipTrigger><TooltipContent>Sem rastreador</TooltipContent></Tooltip>
-                            ) : v.tracker?.ignition === undefined ? (
-                              <Tooltip><TooltipTrigger><ToggleLeft className="w-3.5 h-3.5 text-amber-500" /></TooltipTrigger><TooltipContent>Sem dado</TooltipContent></Tooltip>
-                            ) : v.tracker.ignition ? (
-                              <Tooltip><TooltipTrigger><span className="inline-flex items-center gap-0.5"><ToggleRight className="w-3.5 h-3.5 text-green-500" /><span className="font-bold text-green-600 text-[10px]">ON</span></span></TooltipTrigger><TooltipContent>Ignição Ligada</TooltipContent></Tooltip>
-                            ) : (
-                              <Tooltip><TooltipTrigger><span className="inline-flex items-center gap-0.5"><ToggleLeft className="w-3.5 h-3.5 text-red-500" /><span className="font-bold text-red-600 text-[10px]">OFF</span></span></TooltipTrigger><TooltipContent>Ignição Desligada</TooltipContent></Tooltip>
-                            )}
-                          </div>
-                          {/* VEL */}
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span className="text-[8px] font-black uppercase text-neutral-400 tracking-wider">VEL</span>
-                            {v.tracker?.speed != null ? (
-                              <span className={`text-[11px] font-bold tabular-nums ${isOverSpeed ? "text-red-600" : (v.tracker.speed ?? 0) > 0 ? "text-neutral-800" : "text-neutral-400"}`}>
-                                {v.tracker.speed}<span className="text-[8px] font-normal text-neutral-400">km/h</span>
-                              </span>
-                            ) : (<span className="text-neutral-300">—</span>)}
-                          </div>
-                          {/* GPS */}
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span className="text-[8px] font-black uppercase text-neutral-400 tracking-wider">GPS</span>
-                            {!v.hasTracker ? (
-                              <Tooltip><TooltipTrigger><Signal className="w-3.5 h-3.5 text-neutral-300" /></TooltipTrigger><TooltipContent>Sem rastreador</TooltipContent></Tooltip>
-                            ) : (
-                              <Tooltip><TooltipTrigger><Signal className={`w-3.5 h-3.5 ${v.tracker?.gpsSignal ? "text-emerald-600" : "text-neutral-400"}`} /></TooltipTrigger><TooltipContent>{v.tracker?.gpsSignal ? "GPS OK" : "Sem sinal"}</TooltipContent></Tooltip>
-                            )}
-                            {v.lastAlert && (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <AlertTriangle className="w-3 h-3 text-amber-500 ml-0.5" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="font-bold">{v.lastAlert.eventType === "excesso_velocidade" ? "Excesso Velocidade" : v.lastAlert.eventType}</p>
-                                  <p className="text-[10px]">{v.lastAlert.createdAt ? `${parseUTCDate(v.lastAlert.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })} ${formatTimeBRT(v.lastAlert.createdAt)}` : ""}</p>
-                                  <p className="text-[10px]">{v.lastAlert.details || ""}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </div>
-                          {/* ÚLT POS */}
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span className="text-[8px] font-black uppercase text-neutral-400 tracking-wider">ÚLT</span>
-                            {v.tracker?.lastPositionTime ? (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold tabular-nums ${posInfo.color}`}>
-                                    {posInfo.noSignal && <WifiOff className="w-3 h-3" />}
-                                    {posInfo.text}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {posInfo.noSignal ? "⚠ Sem sinal há " : "Última posição há "}{posInfo.text}
-                                  <br />
-                                  <span className="text-[10px]">{parseUTCDate(v.tracker.lastPositionTime).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : (<span className="text-neutral-300">—</span>)}
-                          </div>
-                        </div>
-
-                        {/* Missão: status + agentes + endereço + viatura/ref */}
-                        <div className="flex flex-col gap-1 px-3 py-2 min-w-0">
-                          {v.activeOs ? (
-                            <>
-                              {/* Status badge + ações */}
-                              <div className="flex items-center gap-1 flex-wrap">
-                                {latestUnread && (
-                                  <button
-                                    onClick={() => {
-                                      setRowForwardUpdate(latestUnread);
-                                      const gridItem = gridData.find((g: GridItem) => g.osNumber === latestUnread.osNumber);
-                                      const client = gridItem?.clientName ? (clients || []).find((c: any) => c.name === gridItem.clientName) : null;
-                                      setRowForwardEmail(client?.email || "");
-                                      setRowForwardMsg("");
-                                      setRowShowHistory(false);
-                                    }}
-                                    className="relative p-0.5 rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors animate-pulse"
-                                    data-testid={`btn-row-alert-${v.id}`}
-                                    title={`${osUnreads.length} atualização(ões) não lida(s)`}
-                                  >
-                                    <Bell className="w-3 h-3" />
-                                    {osUnreads.length > 1 && (
-                                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-600 text-white text-[7px] font-bold rounded-full flex items-center justify-center">{osUnreads.length}</span>
-                                    )}
-                                  </button>
-                                )}
-                                {v.activeOs.lastAgentUpdate ? (
-                                  <>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-blue-50 text-blue-700 border-blue-200">
-                                      {getMissionLabel(v.activeOs.lastAgentUpdate.missionStep || v.activeOs.missionStatus)}
-                                    </span>
-                                    {(() => {
-                                      const urgency = getTimeAgoUrgency(v.activeOs.lastAgentUpdate.createdAt);
-                                      if (!urgency.text) return null;
-                                      const timeStr = v.activeOs.lastAgentUpdate.createdAt ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt) : "";
-                                      return (
-                                        <span className={`text-[9px] font-bold ${urgency.colorClass}`} data-testid={`elapsed-${v.id}`}>
-                                          {timeStr} ({urgency.text})
-                                        </span>
-                                      );
-                                    })()}
-                                    <Tooltip>
-                                      <TooltipTrigger>
-                                        <Info className="w-3 h-3 text-blue-500 cursor-help" />
-                                      </TooltipTrigger>
-                                      <TooltipContent side="bottom" className="max-w-[280px]">
-                                        <p className="font-bold text-xs">"{v.activeOs.lastAgentUpdate.message}"</p>
-                                        <p className="text-[10px] text-neutral-400 mt-0.5">
-                                          {titleCase(v.activeOs.lastAgentUpdate.agentName)} · {v.activeOs.lastAgentUpdate.createdAt ? formatTimeBRT(v.activeOs.lastAgentUpdate.createdAt) : ""}
-                                          {(v.activeOs.lastAgentUpdate.hasPhoto || (v.activeOs.lastAgentUpdate.photoUrl && v.activeOs.lastAgentUpdate.photoUrl !== "[has_photo]")) ? " · 📷" : ""}
-                                        </p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </>
-                                ) : (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${getStatusDisplay(v.activeOs.missionStatus, v.activeOs.status).className}`}>
-                                    {getMissionLabel(v.activeOs.missionStatus)}
-                                  </span>
-                                )}
-                                {hasLocation && (
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); }
-                                          if (onSelectOsVehicle) onSelectOsVehicle(v.id);
-                                        }}
-                                        className="p-0.5 rounded hover:bg-blue-50 transition-colors opacity-0 group-hover:opacity-100"
-                                        data-testid={`button-nearby-${v.id}`}
-                                      >
-                                        <Navigation className="w-3 h-3 text-blue-500 hover:text-blue-700" />
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Veículos próximos</TooltipContent>
-                                  </Tooltip>
-                                )}
-                              </div>
-
-                              {/* Agentes (compact + hover whatsapp/doc) */}
-                              <div className="flex flex-col gap-0.5">
-                                {v.activeOs.employee1 && (
-                                  <div className="flex items-center gap-1 group/ag1">
-                                    {isDriver1 ? (
-                                      <Tooltip>
-                                        <TooltipTrigger>
-                                          <span className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 flex-shrink-0" data-testid={`icon-driver-agent1-${v.id}`}>
-                                            <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>Condutor</TooltipContent>
-                                      </Tooltip>
-                                    ) : (
-                                      <Users className="w-3 h-3 text-neutral-700 flex-shrink-0" />
-                                    )}
-                                    <span className="font-bold text-[11px] text-neutral-900 leading-tight truncate" title={v.activeOs.employee1.name}>
-                                      {titleCase(v.activeOs.employee1.name)}
-                                    </span>
-                                    <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/ag1:opacity-100 transition-opacity">
-                                      {v.activeOs.employee1.phone && !moacirHidesSensitive() && (
-                                        <a href={`https://wa.me/${formatPhone(v.activeOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent1-${v.id}`}>
-                                          <SiWhatsapp className="w-3 h-3" />
-                                        </a>
-                                      )}
-                                      <Link href={`/admin/employees?id=${v.activeOs.employee1.id}`} className="text-blue-400 hover:text-blue-600" data-testid={`btn-doc-agent1-${v.id}`}>
-                                        <FileText className="w-3 h-3" />
-                                      </Link>
-                                    </div>
-                                  </div>
-                                )}
-                                {v.activeOs.employee2 && (
-                                  <div className="flex items-center gap-1 group/ag2">
-                                    {isDriver2 ? (
-                                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 flex-shrink-0" data-testid={`icon-driver-agent2-${v.id}`}>
-                                        <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="3" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="21"/><line x1="3" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="21" y2="12"/></svg>
-                                      </span>
-                                    ) : (
-                                      <span className="w-3 h-3 flex-shrink-0" />
-                                    )}
-                                    <span className="font-medium text-[10px] text-neutral-500 leading-tight truncate" title={v.activeOs.employee2.name}>
-                                      {titleCase(v.activeOs.employee2.name)}
-                                    </span>
-                                    <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/ag2:opacity-100 transition-opacity">
-                                      {v.activeOs.employee2.phone && !moacirHidesSensitive() && (
-                                        <a href={`https://wa.me/${formatPhone(v.activeOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-agent2-${v.id}`}>
-                                          <SiWhatsapp className="w-3 h-3" />
-                                        </a>
-                                      )}
-                                      <Link href={`/admin/employees?id=${v.activeOs.employee2.id}`} className="text-blue-400 hover:text-blue-600" data-testid={`btn-doc-agent2-${v.id}`}>
-                                        <FileText className="w-3 h-3" />
-                                      </Link>
-                                    </div>
-                                  </div>
-                                )}
-                                {driver && !isDriver1 && !isDriver2 && (
-                                  <div className="flex items-center gap-1">
-                                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 flex-shrink-0">
-                                      <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/></svg>
-                                    </span>
-                                    <span className="text-[10px] font-bold text-emerald-700 truncate" data-testid={`text-driver-${v.id}`}>{driver.driverName}</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Cliente + endereço */}
-                              <div className="flex items-start gap-1 min-w-0">
-                                {v.tracker?.address ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => { if (hasLocation && onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
-                                    className={`flex items-start gap-1 group/loc text-left flex-1 min-w-0 ${hasLocation ? "cursor-pointer" : "cursor-default"}`}
-                                    data-testid={`link-map-${v.id}`}
-                                  >
-                                    <ShieldCheck className={`w-3 h-3 flex-shrink-0 mt-0.5 ${posInfo.noSignal ? "text-red-500" : "text-emerald-600"}`} />
-                                    <span className={`text-[10px] truncate leading-tight ${posInfo.noSignal ? "text-red-600" : "text-neutral-600 group-hover/loc:text-neutral-900 group-hover/loc:underline"}`} title={v.tracker.address}>
-                                      {v.tracker.address}
-                                    </span>
-                                  </button>
-                                ) : hasLocation ? (
-                                  <button type="button" onClick={() => { if (onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }} className="text-[10px] text-neutral-500 hover:text-neutral-700" data-testid={`link-map-${v.id}`}>
-                                    <ShieldCheck className="w-3 h-3 inline text-emerald-600" /> Ver no mapa
-                                  </button>
-                                ) : (
-                                  <span className="text-neutral-300 text-[10px]">—</span>
-                                )}
-                              </div>
-                              {v.activeOs.agentLocation && (
-                                <AgentLocationLine label="A1" lat={v.activeOs.agentLocation.latitude} lng={v.activeOs.agentLocation.longitude} updatedAt={v.activeOs.agentLocation.updatedAt} colorClass="text-blue-600" />
-                              )}
-                              {v.activeOs.agentLocation2 && (
-                                <AgentLocationLine label="A2" lat={v.activeOs.agentLocation2.latitude} lng={v.activeOs.agentLocation2.longitude} updatedAt={v.activeOs.agentLocation2.updatedAt} colorClass="text-teal-600" />
-                              )}
-
-                              {/* Cliente + viatura status + ref */}
-                              <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                                <span className="text-[10px] text-neutral-500 font-medium truncate max-w-[140px]" title={v.activeOs.clientName}>
-                                  {v.activeOs.clientName}
-                                </span>
-                                {v.activeOs.scheduledDate && (() => {
-                                  const sd = parseUTCDate(v.activeOs.scheduledDate);
-                                  const nowBRT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                                  const sdBRT = sd.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-                                  const timeStr = sd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-                                  const lbl = sdBRT === nowBRT ? `Hoje ${timeStr}` : `${sd.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })} ${timeStr}`;
-                                  return <span className="text-[9px] text-neutral-400">· {lbl}</span>;
-                                })()}
-                                <span className={`inline-flex items-center gap-0.5 text-[9px] px-1 py-0 rounded font-bold border ${viaturaSt.className}`}>
-                                  <VIcon className="w-2.5 h-2.5" />{viaturaSt.label}
-                                </span>
-                                {refPt && (
-                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1 py-0 rounded border" style={{ borderColor: refPt.color + "40", backgroundColor: refPt.color + "10", color: refPt.color }}>
-                                    <MapPin className="w-2.5 h-2.5" />{refPt.name}
-                                  </span>
-                                )}
-                              </div>
-                            </>
-                          ) : v.scheduledOs ? (
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-1">
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${v.scheduledOs.priority === "imediata" ? "bg-red-50 text-red-700 border-red-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
-                                  {v.scheduledOs.priority === "imediata" ? "Reaproveitamento" : "Agendamento"}
-                                </span>
-                                {v.scheduledOs.scheduledDate && (
-                                  <span className="text-[10px] text-neutral-500 font-medium">
-                                    {parseUTCDate(v.scheduledOs.scheduledDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                                  </span>
-                                )}
-                              </div>
-                              <span className={`inline-flex w-fit items-center gap-0.5 text-[9px] px-1 py-0 rounded font-bold border ${viaturaSt.className}`}>
-                                <VIcon className="w-2.5 h-2.5" />{viaturaSt.label}
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col gap-1">
-                              {v.lastOs && (v.lastOs.employee1 || v.lastOs.employee2) && (
-                                <div className="flex flex-col gap-0.5 mb-0.5" data-testid={`last-os-agents-${v.id}`}>
-                                  {v.lastOs.employee1 && (
-                                    <div className="flex items-center gap-1 group/lo1">
-                                      <Users className="w-3 h-3 text-neutral-400 flex-shrink-0" />
-                                      <span className="font-semibold text-[11px] text-neutral-500 leading-tight truncate" title={`${v.lastOs.employee1.name} · última OS ${v.lastOs.osNumber}`}>
-                                        {titleCase(v.lastOs.employee1.name)}
-                                      </span>
-                                      <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/lo1:opacity-100 transition-opacity">
-                                        {v.lastOs.employee1.phone && !moacirHidesSensitive() && (
-                                          <a href={`https://wa.me/${formatPhone(v.lastOs.employee1.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-lastos1-${v.id}`}>
-                                            <SiWhatsapp className="w-3 h-3" />
-                                          </a>
-                                        )}
-                                        <Link href={`/admin/employees?id=${v.lastOs.employee1.id}`} className="text-blue-400 hover:text-blue-600" data-testid={`btn-doc-lastos1-${v.id}`}>
-                                          <FileText className="w-3 h-3" />
-                                        </Link>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {v.lastOs.employee2 && (
-                                    <div className="flex items-center gap-1 group/lo2">
-                                      <span className="w-3 h-3 flex-shrink-0" />
-                                      <span className="font-medium text-[10px] text-neutral-400 leading-tight truncate" title={`${v.lastOs.employee2.name} · última OS ${v.lastOs.osNumber}`}>
-                                        {titleCase(v.lastOs.employee2.name)}
-                                      </span>
-                                      <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/lo2:opacity-100 transition-opacity">
-                                        {v.lastOs.employee2.phone && !moacirHidesSensitive() && (
-                                          <a href={`https://wa.me/${formatPhone(v.lastOs.employee2.phone)}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-600" data-testid={`btn-whatsapp-lastos2-${v.id}`}>
-                                            <SiWhatsapp className="w-3 h-3" />
-                                          </a>
-                                        )}
-                                        <Link href={`/admin/employees?id=${v.lastOs.employee2.id}`} className="text-blue-400 hover:text-blue-600" data-testid={`btn-doc-lastos2-${v.id}`}>
-                                          <FileText className="w-3 h-3" />
-                                        </Link>
-                                      </div>
-                                    </div>
-                                  )}
-                                  <span className="text-[9px] text-neutral-300 italic leading-tight">última OS · {v.lastOs.osNumber}</span>
-                                </div>
-                              )}
-                              <span className={`inline-flex w-fit items-center gap-0.5 text-[9px] px-1 py-0 rounded font-bold border ${viaturaSt.className}`}>
-                                <VIcon className="w-2.5 h-2.5" />{viaturaSt.label}
-                              </span>
-                              {refPt && (
-                                <span className="inline-flex w-fit items-center gap-0.5 text-[9px] font-bold px-1 py-0 rounded border" style={{ borderColor: refPt.color + "40", backgroundColor: refPt.color + "10", color: refPt.color }}>
-                                  <MapPin className="w-2.5 h-2.5" />{refPt.name}
-                                </span>
-                              )}
-                              {v.tracker?.address && (
-                                <button
-                                  type="button"
-                                  onClick={() => { if (hasLocation && onFocusVehicle) { onFocusVehicle(v.id); document.getElementById("map-container")?.scrollIntoView({ behavior: "smooth", block: "center" }); } }}
-                                  className="flex items-start gap-1 text-left min-w-0"
-                                  data-testid={`link-map-${v.id}`}
-                                >
-                                  <ShieldCheck className="w-3 h-3 flex-shrink-0 mt-0.5 text-emerald-600" />
-                                  <span className="text-[10px] truncate text-neutral-600" title={v.tracker.address}>{v.tracker.address}</span>
-                                </button>
-                              )}
-                              {distFromBase != null && (
-                                <span
-                                  className={`inline-flex w-fit items-center gap-0.5 text-[9px] font-bold px-1 py-0 rounded border ${distFromBase < 0.5 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : distFromBase < 10 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
-                                  title={`Distância em linha reta até ${basePt?.name || "a base"}`}
-                                  data-testid={`text-dist-base-${v.id}`}
-                                >
-                                  <Building2 className="w-2.5 h-2.5" />
-                                  {distFromBase < 0.5 ? "Na base" : distFromBase < 1 ? `${Math.round(distFromBase * 1000)}m da base` : `${distFromBase.toFixed(1)}km da base`}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Financeiro */}
-                        <div className="flex flex-col justify-center gap-1 px-3 py-2 bg-neutral-50/30">
-                          {vtrItems.length > 0 ? (
-                            <div data-testid={`live-cost-${v.id}`}>
-                              {vtrItems.length > 1 && (
-                                <p className="text-[9px] text-neutral-400 font-semibold mb-0.5">{vtrItems.length} missões hoje</p>
-                              )}
-                              <div className="flex items-center gap-1 flex-wrap">
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 cursor-help ${metaBatida ? "text-emerald-800 bg-emerald-100 border-2 border-emerald-400" : "text-emerald-700 bg-emerald-50 border border-emerald-200"}`}>
-                                      <span>▲</span> {fmtBRL(totFat)}
-                                      {totHE > 0 && <span className="text-[8px] font-black text-amber-600 bg-amber-100 rounded px-0.5 ml-0.5">HE</span>}
-                                      {metaBatida && <span className="ml-0.5">🏆</span>}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
-                                    <p className="font-black text-neutral-900">Faturamento VTR (Hoje)</p>
-                                    {vtrItems.map(g => (
-                                      <p key={g.id} className="text-neutral-700">{g.osNumber}: <span className="font-bold">{fmtBRL(g.liveCost?.faturamento || 0)}</span></p>
-                                    ))}
-                                    {vtrItems.length > 1 && <p className="font-black border-t pt-1 mt-1">Total: {fmtBRL(totFat)}</p>}
-                                    <div className={`border-t border-neutral-200 pt-1 mt-1 font-black ${metaBatida ? "text-green-700" : "text-neutral-500"}`}>
-                                      Meta: {fmtBRL(META_VTR)} {metaBatida ? "✓ BATIDA!" : `(faltam ${fmtBRL(META_VTR - totFat)})`}
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 cursor-help">
-                                      <span>▼</span> {fmtBRL(totCusto)}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="text-xs max-w-xs bg-white text-neutral-800 border border-neutral-200 shadow-lg">
-                                    <p className="font-black text-neutral-900">Custo VTR (Hoje)</p>
-                                    <p className="text-neutral-700">Pag. Agentes: <span className="font-bold">{fmtBRL(totPag)}</span></p>
-                                    {totComb > 0 && <p className="text-neutral-700">Combustível: <span className="font-bold">{fmtBRL(totComb)}</span></p>}
-                                    {totPed > 0 && <p className="text-neutral-700">Pedágio: <span className="font-bold">{fmtBRL(totPed)}</span></p>}
-                                    {totOutros > 0 && <p className="text-neutral-700">Outros: <span className="font-bold">{fmtBRL(totOutros)}</span></p>}
-                                  </TooltipContent>
-                                </Tooltip>
-                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold rounded px-1.5 py-0.5 ${moacirHidesSensitive() ? "text-neutral-500 bg-neutral-100 border border-neutral-200" : totResult >= 0 ? "text-blue-700 bg-blue-50 border border-blue-200" : "text-red-700 bg-red-50 border border-red-200"}`}>
-                                  = {fmtBRL(totResult)}
-                                </span>
-                                {v.activeOs && (
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); const gridLc = vtrItems.find((g: any) => g.id === v.activeOs!.id); setDreOs({ id: v.activeOs!.id, osNumber: v.activeOs!.osNumber, liveCost: gridLc?.liveCost || null }); }}
-                                        className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-500 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded px-1.5 py-0.5 transition-colors"
-                                        hidden={moacirHidesSensitive()}
-                                        data-testid={`button-dre-${v.id}`}
-                                      >
-                                        <FileText className="w-3 h-3" /> DRE
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>DRE Operacional</TooltipContent>
-                                  </Tooltip>
-                                )}
-                              </div>
-                              <div className="mt-1 flex items-center gap-1.5" hidden={moacirHidesSensitive()}>
-                                <div className="flex-1 h-1.5 bg-neutral-200 rounded-full overflow-hidden" data-testid={`meta-bar-${v.id}`}>
-                                  <div
-                                    className={`h-full rounded-full transition-all ${metaBatida ? "bg-emerald-500" : totFat >= META_VTR * 0.7 ? "bg-blue-500" : "bg-neutral-400"}`}
-                                    style={{ width: `${Math.min(metaPct, 100)}%` }}
-                                  />
-                                </div>
-                                <span className="text-[9px] font-bold text-neutral-400 tabular-nums">{metaPct}%</span>
-                                {metaBatida && (
-                                  <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1 uppercase" data-testid={`meta-batida-${v.id}`}>
-                                    META!
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-neutral-300 text-xs italic">sem missão hoje</span>
-                          )}
-                        </div>
-
-                        {/* Anel de progresso da rota */}
-                        <div className="flex items-center justify-center px-2 py-2 bg-neutral-50/40">
-                          {v.activeOs && v.activeOs.missionStatus && v.activeOs.missionStatus !== "aguardando" ? (
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <div className="relative w-14 h-14">
-                                  <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
-                                    <circle cx="18" cy="18" r="15" fill="none" stroke="#e5e7eb" strokeWidth="3" />
-                                    <circle
-                                      cx="18" cy="18" r="15" fill="none"
-                                      stroke={ringPct >= 100 ? "#10b981" : ringPct >= 70 ? "#3b82f6" : "#f59e0b"}
-                                      strokeWidth="3" strokeLinecap="round"
-                                      strokeDasharray={`${(ringPct / 100) * 94.25} 94.25`}
-                                    />
-                                  </svg>
-                                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                    <span className="text-[11px] font-black text-neutral-800 leading-none tabular-nums">{ringPct}%</span>
-                                    {rp && rp.distRemainingKm > 0 && (
-                                      <span className="text-[7px] text-neutral-400 leading-none mt-0.5 tabular-nums">{rp.distRemainingKm.toFixed(0)}km</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="font-bold">Progresso de rota: {ringPct}%</p>
-                                {rp && rp.distTotalKm > 0 && (
-                                  <p className="text-[10px]">{rp.distRemainingKm.toFixed(1)}km restantes de {rp.distTotalKm.toFixed(1)}km</p>
-                                )}
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            <div className="w-14 h-14 flex items-center justify-center text-neutral-200 text-2xl">○</div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {(() => {
-        const allNext: { os: any; veh: TrackedVehicle | null }[] = [];
-        for (const v of vehicles) {
-          for (const u of (v.upcomingOrders || [])) {
-            const uStatus = (u.status || "").toLowerCase();
-            const uMission = (u.missionStatus || "").toLowerCase();
-            const isFinished = uStatus === "concluida" || uStatus === "concluída" || uStatus === "cancelada" || uStatus === "recusada" || uMission === "encerrada" || uMission === "finalizada";
-            if (u.scheduledDate && !isFinished && !allNext.find(a => a.os.id === u.id)) {
-              allNext.push({ os: u, veh: v });
-            }
-          }
-        }
-        for (const g of gridData) {
-          if ((g.status === "agendada" || g.status === "aberta") && g.scheduledDate && !allNext.find(a => a.os.id === g.id)) {
-            const veh = vehicles.find(vh => vh.plate === g.vehicle?.plate) || null;
-            allNext.push({
-              os: {
-                id: g.id, osNumber: g.osNumber, status: g.status, priority: g.priority || "agendada",
-                scheduledDate: g.scheduledDate, clientName: g.clientName || "—",
-                origin: g.origin || null, destination: g.destination || null,
-                employee1Name: g.employee1?.name || null, employee1Phone: g.employee1?.phone || null,
-                employee2Name: g.employee2?.name || null, employee2Phone: g.employee2?.phone || null,
-                escortedDriverName: g.escortedDriverName || null, escortedDriverPhone: g.escortedDriverPhone || null,
-                escortedVehiclePlate: g.escortedVehiclePlate || null, type: "escolta",
-              },
-              veh,
-            });
-          }
-        }
-        allNext.sort((a, b) => parseUTCDate(a.os.scheduledDate).getTime() - parseUTCDate(b.os.scheduledDate).getTime());
-        if (allNext.length === 0) return null;
-
-        const nextOs = allNext[0];
-        const nextDt = nextOs.os.scheduledDate ? parseUTCDate(nextOs.os.scheduledDate) : null;
-        const nextDiff = nextDt ? nextDt.getTime() - Date.now() : 0;
-        const nextIsPast = nextDiff < 0;
-        const nextIsUrgent = nextDiff > 0 && nextDiff < 3600000;
-
-        return (
-          <div className="border-t border-neutral-200 px-4 py-2" data-testid="section-proximos-agendamentos">
-            <button
-              onClick={() => setAgendamentosModalOpen(true)}
-              className={`w-full flex items-center justify-between rounded-lg px-3 py-2 cursor-pointer transition-all hover:shadow-md border ${
-                nextIsPast ? "border-red-300 bg-red-50 hover:bg-red-100" :
-                nextIsUrgent ? "border-amber-300 bg-amber-50 hover:bg-amber-100" :
-                "border-blue-200 bg-blue-50 hover:bg-blue-100"
-              }`}
-              data-testid="button-open-agendamentos"
-            >
-              <div className="flex items-center gap-2">
-                <CalendarClock className={`w-4 h-4 ${nextIsPast ? "text-red-600" : nextIsUrgent ? "text-amber-600" : "text-blue-600"}`} />
-                <span className="text-[10px] font-black uppercase text-neutral-700">Próximo Agendamento</span>
-                <span className="font-black text-xs text-neutral-900">{nextOs.os.osNumber}</span>
-                {nextDt && (
-                  <span className="text-xs font-bold text-neutral-700">
-                    {nextDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                  </span>
-                )}
-                <span className="text-[11px] text-neutral-500 truncate max-w-[160px]">{nextOs.os.clientName}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 ${nextIsPast ? "bg-red-200 text-red-800" : nextIsUrgent ? "bg-amber-200 text-amber-800" : "bg-blue-200 text-blue-800"}`}>
-                  {allNext.length}
-                </span>
-                <ChevronRight className="w-4 h-4 text-neutral-400" />
-              </div>
-            </button>
-          </div>
-        );
-      })()}
-    </Card>
-    <UpcomingOrdersModal vehicle={upcomingVehicle} open={!!upcomingVehicle} onClose={() => setUpcomingVehicle(null)} />
-
-    <Dialog open={agendamentosModalOpen} onOpenChange={setAgendamentosModalOpen}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg">
-            <CalendarClock className="w-5 h-5 text-blue-600" />
-            Próximos Agendamentos
-          </DialogTitle>
-        </DialogHeader>
-        {(() => {
-          const allNext: { os: any; veh: TrackedVehicle | null }[] = [];
-          for (const v of vehicles) {
-            for (const u of (v.upcomingOrders || [])) {
-              const uStatus = (u.status || "").toLowerCase();
-              const uMission = (u.missionStatus || "").toLowerCase();
-              const isFinished = uStatus === "concluida" || uStatus === "concluída" || uStatus === "cancelada" || uMission === "encerrada" || uMission === "finalizada";
-              if (u.scheduledDate && !isFinished && !allNext.find(a => a.os.id === u.id)) {
-                allNext.push({ os: u, veh: v });
-              }
-            }
-          }
-          for (const g of gridData) {
-            if ((g.status === "agendada" || g.status === "aberta") && g.scheduledDate && !allNext.find(a => a.os.id === g.id)) {
-              const veh = vehicles.find(vh => vh.plate === g.vehicle?.plate) || null;
-              allNext.push({
-                os: {
-                  id: g.id, osNumber: g.osNumber, status: g.status, priority: g.priority || "agendada",
-                  scheduledDate: g.scheduledDate, clientName: g.clientName || "—",
-                  origin: g.origin || null, destination: g.destination || null,
-                  employee1Name: g.employee1?.name || null, employee1Phone: g.employee1?.phone || null,
-                  employee2Name: g.employee2?.name || null, employee2Phone: g.employee2?.phone || null,
-                  escortedDriverName: g.escortedDriverName || null, escortedDriverPhone: g.escortedDriverPhone || null,
-                  escortedVehiclePlate: g.escortedVehiclePlate || null, type: "escolta",
-                },
-                veh,
-              });
-            }
-          }
-          allNext.sort((a, b) => parseUTCDate(a.os.scheduledDate).getTime() - parseUTCDate(b.os.scheduledDate).getTime());
-
-          if (allNext.length === 0) return <p className="text-sm text-neutral-400 text-center py-6">Nenhum agendamento pendente</p>;
-
-          return (
-            <div className="space-y-3">
-              {allNext.map((item, idx) => {
-                const { os, veh } = item;
-                const scheduledDt = os.scheduledDate ? parseUTCDate(os.scheduledDate) : null;
-                const diff = scheduledDt ? scheduledDt.getTime() - Date.now() : 0;
-                const isPast = diff < 0;
-                const isUrgent = diff > 0 && diff < 3600000;
-                const h = Math.floor(Math.abs(diff) / 3600000);
-                const m = Math.floor((Math.abs(diff) % 3600000) / 60000);
-                const timeStr = h > 0 ? `${h}h${m > 0 ? m + "min" : ""}` : `${m}min`;
-
-                return (
-                  <div key={os.id} className={`rounded-xl border-2 p-4 space-y-3 transition-colors ${
-                    idx === 0 ? (isPast ? "border-red-300 bg-red-50/50" : isUrgent ? "border-amber-300 bg-amber-50/50" : "border-blue-300 bg-blue-50/50") : "border-neutral-200 bg-white"
-                  }`} data-testid={`modal-agendamento-${os.id}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {idx === 0 && <span className="text-[9px] font-black bg-neutral-900 text-white px-1.5 py-0.5 rounded uppercase">Próxima</span>}
-                        <span className="font-black text-lg text-neutral-900">{os.osNumber}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isPast ? "bg-red-100 text-red-700" : isUrgent ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
-                          {isPast ? `Atrasada −${timeStr}` : timeStr}
-                        </span>
-                      </div>
-                      {scheduledDt && (
-                        <div className="text-right">
-                          <p className="text-lg font-black text-neutral-800">
-                            {scheduledDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                          </p>
-                          <p className="text-[10px] text-neutral-500 font-medium">
-                            {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-neutral-50 rounded-lg p-2.5 border">
-                        <p className="text-[9px] text-neutral-400 font-bold uppercase mb-0.5">Cliente</p>
-                        <p className="text-xs font-bold text-neutral-800 truncate">{os.clientName}</p>
-                      </div>
-                      <div className="bg-neutral-50 rounded-lg p-2.5 border">
-                        <p className="text-[9px] text-neutral-400 font-bold uppercase mb-0.5">Viatura</p>
-                        <p className="text-xs font-bold text-neutral-800">{veh ? `${veh.plate} — ${veh.model}` : "Sem viatura"}</p>
-                      </div>
-                    </div>
-
-                    {(os.origin || os.destination) && (
-                      <div className="bg-neutral-50 rounded-lg p-2.5 border">
-                        <p className="text-[9px] text-neutral-400 font-bold uppercase mb-1">Rota</p>
-                        {os.origin && <p className="text-[11px] text-neutral-700"><span className="font-bold text-green-700">ORIGEM:</span> {os.origin}</p>}
-                        {os.destination && <p className="text-[11px] text-neutral-700 mt-0.5"><span className="font-bold text-red-700">DESTINO:</span> {os.destination}</p>}
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-3 flex-wrap">
-                      {os.employee1Name && (
-                        <div className="flex items-center gap-1.5 bg-neutral-50 rounded-lg px-2.5 py-1.5 border">
-                          <Users className="w-3.5 h-3.5 text-neutral-400" />
-                          <span className="text-[11px] font-bold text-neutral-800">{os.employee1Name}</span>
-                          {os.employee1Phone && !moacirHidesSensitive() && (
-                            <a href={`https://wa.me/55${os.employee1Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
-                              <SiWhatsapp className="w-3.5 h-3.5" />
-                            </a>
-                          )}
-                        </div>
-                      )}
-                      {os.employee2Name && (
-                        <div className="flex items-center gap-1.5 bg-neutral-50 rounded-lg px-2.5 py-1.5 border">
-                          <Users className="w-3.5 h-3.5 text-neutral-400" />
-                          <span className="text-[11px] font-bold text-neutral-800">{os.employee2Name}</span>
-                          {os.employee2Phone && (
-                            <a href={`https://wa.me/55${os.employee2Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
-                              <SiWhatsapp className="w-3.5 h-3.5" />
-                            </a>
-                          )}
-                        </div>
-                      )}
-                      {!os.employee1Name && !os.employee2Name && (
-                        <span className="text-[10px] text-amber-600 font-bold bg-amber-50 border border-amber-200 rounded px-2 py-1">Sem agentes designados</span>
-                      )}
-                    </div>
-
-                    {(os.escortedDriverName || os.escortedVehiclePlate) && (
-                      <div className="flex items-center gap-2 bg-neutral-50 rounded-lg px-2.5 py-1.5 border">
-                        <Truck className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                        <div className="text-[11px]">
-                          {os.escortedDriverName && <span className="font-bold text-neutral-800">{os.escortedDriverName}</span>}
-                          {os.escortedVehiclePlate && <span className="text-neutral-500 ml-2">Placa: {os.escortedVehiclePlate}</span>}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2 pt-1">
-                      <Link href={`/admin/service-orders?os=${os.id}`} className="flex-1">
-                        <Button variant="outline" size="sm" className="w-full text-xs" data-testid={`button-open-os-modal-${os.id}`}>
-                          <ExternalLink className="w-3.5 h-3.5 mr-1" /> Abrir OS
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-        <div className="pt-2">
-          <Button variant="outline" onClick={() => setAgendamentosModalOpen(false)} className="w-full">Fechar</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-
-    <Dialog open={!!nextOsDetail} onOpenChange={(v) => { if (!v) setNextOsDetail(null); }}>
-      <DialogContent className="max-w-md">
-        {nextOsDetail && (() => {
-          const { os, vehicle: veh } = nextOsDetail;
-          const scheduledDt = os.scheduledDate ? parseUTCDate(os.scheduledDate) : null;
-          const timeUntil = scheduledDt ? (() => {
-            const diff = scheduledDt.getTime() - Date.now();
-            if (diff < 0) return "Já passou";
-            const h = Math.floor(diff / 3600000);
-            const m = Math.floor((diff % 3600000) / 60000);
-            return h > 0 ? `em ${h}h${m > 0 ? `${m}min` : ""}` : `em ${m}min`;
-          })() : null;
-          return (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-lg">
-                  <CalendarClock className="w-5 h-5 text-blue-600" />
-                  Próximo Agendamento
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div>
-                    <p className="font-black text-xl text-blue-900" data-testid="text-next-os-number">{os.osNumber}</p>
-                    <p className="text-xs text-blue-600 font-medium">{os.type === "escolta" ? "Escolta Armada" : os.type || "—"}</p>
-                  </div>
-                  {scheduledDt && (
-                    <div className="text-right">
-                      <p className="text-lg font-black text-blue-800">
-                        {scheduledDt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
-                      </p>
-                      <p className="text-xs text-blue-600 font-medium">
-                        {scheduledDt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}
-                      </p>
-                      {timeUntil && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${timeUntil === "Já passou" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-                          {timeUntil}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
-                    <Building2 className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-[10px] text-neutral-400 font-bold uppercase">Cliente</p>
-                      <p className="text-sm font-bold text-neutral-800" data-testid="text-next-client">{os.clientName}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
-                    <Car className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-[10px] text-neutral-400 font-bold uppercase">Viatura</p>
-                      <p className="text-sm font-bold text-neutral-800" data-testid="text-next-vehicle">{veh.plate} — {veh.model}</p>
-                    </div>
-                  </div>
-
-                  {(os.origin || os.destination) && (
-                    <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
-                      <Navigation className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-neutral-400 font-bold uppercase">Rota</p>
-                        {os.origin && <p className="text-xs text-neutral-700"><span className="font-bold text-green-700">ORIGEM:</span> {os.origin}</p>}
-                        {os.destination && <p className="text-xs text-neutral-700"><span className="font-bold text-red-700">DESTINO:</span> {os.destination}</p>}
-                      </div>
-                    </div>
-                  )}
-
-                  {(os.employee1Name || os.employee2Name) && (
-                    <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
-                      <Users className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-[10px] text-neutral-400 font-bold uppercase">Agentes</p>
-                        {os.employee1Name && (
-                          <div className="flex items-center gap-2">
-                            <p className="text-xs font-bold text-neutral-800">{os.employee1Name}</p>
-                            {os.employee1Phone && !moacirHidesSensitive() && (
-                              <a href={`https://wa.me/55${os.employee1Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
-                                <SiWhatsapp className="w-3.5 h-3.5" />
-                              </a>
-                            )}
-                          </div>
-                        )}
-                        {os.employee2Name && (
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-xs font-bold text-neutral-800">{os.employee2Name}</p>
-                            {os.employee2Phone && (
-                              <a href={`https://wa.me/55${os.employee2Phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-800">
-                                <SiWhatsapp className="w-3.5 h-3.5" />
-                              </a>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {(os.escortedDriverName || os.escortedVehiclePlate) && (
-                    <div className="flex items-start gap-2 bg-neutral-50 rounded-lg p-3 border">
-                      <Truck className="w-4 h-4 text-neutral-500 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-[10px] text-neutral-400 font-bold uppercase">Escoltado</p>
-                        {os.escortedDriverName && <p className="text-xs font-bold text-neutral-800">{os.escortedDriverName}</p>}
-                        {os.escortedDriverPhone && !moacirHidesSensitive() && (
-                          <a href={`tel:${os.escortedDriverPhone}`} className="text-xs text-blue-600 hover:underline">{displayPhoneBR(os.escortedDriverPhone)}</a>
-                        )}
-                        {os.escortedVehiclePlate && <p className="text-xs text-neutral-600 font-medium">Placa: {os.escortedVehiclePlate}</p>}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <Link href={`/admin/service-orders?os=${os.id}`} className="flex-1">
-                    <Button variant="outline" className="w-full text-xs" data-testid="button-go-to-os">
-                      <ExternalLink className="w-3.5 h-3.5 mr-1" /> Abrir OS
-                    </Button>
-                  </Link>
-                  <Button variant="outline" onClick={() => setNextOsDetail(null)} className="flex-1 text-xs" data-testid="button-close-next-detail">
-                    Fechar
-                  </Button>
-                </div>
-              </div>
-            </>
-          );
-        })()}
-      </DialogContent>
-    </Dialog>
-    {ctxMenu && (
-      <VehicleContextMenu
-        state={ctxMenu}
-        onClose={() => setCtxMenu(null)}
-        vehicle={ctxMenu.vehicle}
-        vehicles={vehicles}
-        gerenciadoras={gerenciadoras}
-        gridData={gridData}
-        onFocusVehicle={onFocusVehicle}
-        refPoints={refPoints}
-      />
-    )}
-
-    <Dialog open={!!rowForwardUpdate} onOpenChange={() => {}}>
-      <DialogContent
-        className="p-0 overflow-hidden border-0 [&>button]:hidden max-w-2xl bg-white max-h-[90vh] overflow-y-auto"
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-      >
-        <DialogHeader className="px-4 pt-4 pb-2 relative">
-          <DialogTitle className="text-sm font-bold flex items-center gap-2 text-neutral-900">
-            <Send className="w-4 h-4" /> Encaminhar — {rowForwardUpdate?.osNumber || ""}
-          </DialogTitle>
-          <button
-            className="absolute top-3 right-3 p-1 rounded-full text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
-            onClick={() => {
-              const uid = rowForwardUpdate?.id;
-              setRowForwardUpdate(null);
-              if (uid) markReadMutation.mutate([uid]);
-            }}
-            data-testid="btn-close-row-forward"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </DialogHeader>
-
-        {rowForwardUpdate && (
-          <div className="px-4">
-            <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
-              <div className="flex items-start gap-3">
-                {(rowForwardUpdate.hasPhoto || (rowForwardUpdate.photoUrl && rowForwardUpdate.photoUrl !== "[has_photo]")) && (
-                  <LazyUpdatePhoto updateId={rowForwardUpdate.id} photoUrl={rowForwardUpdate.photoUrl} />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-neutral-800">"{rowForwardUpdate.message}"</p>
-                  <p className="text-[10px] text-neutral-500 mt-1">
-                    {titleCase(rowForwardUpdate.employeeName)} · {rowForwardUpdate.createdAt ? formatTimeBRT(rowForwardUpdate.createdAt) : ""} · {rowForwardUpdate.missionStep ? getMissionLabel(rowForwardUpdate.missionStep) : ""}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 space-y-2" hidden={moacirHidesSensitive()}>
-              <div>
-                <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Email do Cliente</label>
-                <input type="email" value={rowForwardEmail} onChange={(e) => setRowForwardEmail(e.target.value)} placeholder="email@cliente.com.br" className="w-full text-sm border border-neutral-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:border-neutral-500" data-testid="input-row-forward-email" />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1">Mensagem adicional (opcional)</label>
-                <textarea value={rowForwardMsg} onChange={(e) => setRowForwardMsg(e.target.value)} placeholder="Observação para o cliente..." rows={2} className="w-full text-sm border border-neutral-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:border-neutral-500 resize-none" data-testid="input-row-forward-msg" />
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                disabled={!rowForwardEmail || rowSendingEmail}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={async () => {
-                  if (!rowForwardUpdate || !rowForwardEmail) return;
-                  setRowSendingEmail(true);
-                  try {
-                    const res = await authFetch(`/api/mission/updates/${rowForwardUpdate.id}/forward`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipientEmail: rowForwardEmail, customMessage: rowForwardMsg }) });
-                    if (!res.ok) { const err = await res.json().catch(() => ({ message: "Erro" })); throw new Error(err.message); }
-                    toast({ title: "Email enviado!", description: `Encaminhado para ${rowForwardEmail}` });
-                    queryClient.invalidateQueries({ queryKey: ["/api/service-orders", rowForwardOsId, "forwards"] });
-                    setRowShowHistory(true);
-                  } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
-                  setRowSendingEmail(false);
-                }}
-                hidden={moacirHidesSensitive()}
-                data-testid="btn-row-send-email"
-              >
-                {rowSendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                {rowSendingEmail ? "Enviando..." : "Enviar por Email"}
-              </button>
-
-              {IS_MOBILE ? (
-                <button
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-amber-500 text-white hover:bg-amber-600"
-                  onClick={async () => {
-                    if (!rowForwardUpdate) return;
-                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
-                    const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
-                    const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                    const result = await shareMobileReportWithPhoto(reportText, rowForwardUpdate.photoUrl);
-                    if (result === "shared") toast({ title: "Relatório compartilhado!" });
-                    else if (result !== "cancelled") toast({ title: "Erro", variant: "destructive" });
-                  }}
-                  data-testid="btn-row-share"
-                >
-                  <Send className="w-4 h-4" /> Compartilhar
-                </button>
-              ) : (<>
-                {rowForwardUpdate?.photoUrl && (
-                  <button
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-amber-500 text-white hover:bg-amber-600"
-                    onClick={async () => {
-                      const ok = await copyPhotoToClipboard(rowForwardUpdate.photoUrl!);
-                      toast({ title: ok ? "Relatório Copiado!" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
-                      fireCopyAudit(rowForwardUpdate?.id);
-                    }}
-                    data-testid="btn-row-copy-photo"
-                  >
-                    <Camera className="w-4 h-4" /> Copiar Foto
-                  </button>
-                )}
-                <button
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-blue-600 text-white hover:bg-blue-700"
-                  onClick={async () => {
-                    if (!rowForwardUpdate) return;
-                    const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
-                    const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
-                    const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                    const ok = await copyTextToClipboard(reportText);
-                    toast({ title: ok ? "Relatório Copiado!" : "Erro ao copiar texto", variant: ok ? "default" : "destructive" });
-                    fireCopyAudit(rowForwardUpdate.id);
-                  }}
-                  data-testid="btn-row-copy-text"
-                >
-                  <FileText className="w-4 h-4" /> Copiar Texto
-                </button>
-              </>)}
-
-              <button
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-green-600 text-white hover:bg-green-700"
-                onClick={async () => {
-                  if (!rowForwardUpdate) return;
-                  const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === rowForwardUpdate.osNumber);
-                  const gridItem = gridData.find((g: GridItem) => g.osNumber === rowForwardUpdate.osNumber);
-                  const reportText = matchedVehicle ? await generateReportAsync(matchedVehicle, gridItem || null) : `*TORRES VIGILÂNCIA PATRIMONIAL*\n*OS* ${rowForwardUpdate.osNumber}\n\n📣 *OCORRÊNCIA:* ${rowForwardUpdate.message?.toUpperCase()}`;
-                  await copyTextToClipboard(reportText); const encoded = encodeURIComponent(reportText); window.open(`https://wa.me/?text=${encoded}`, "_blank");
-                }}
-                data-testid="btn-row-whatsapp-form"
-              >
-                <SiWhatsapp className="w-4 h-4" /> Enviar WhatsApp
-              </button>
-            </div>
-            <CopyAuditStamp copiadoPor={rowForwardUpdate?.copiadoPor || rowForwardUpdate?.copiado_por} copiadoEm={rowForwardUpdate?.copiadoEm || rowForwardUpdate?.copiado_em} />
-
-            {rowForwardHistory.length > 0 && (
-              <div className="mt-3">
-                <button onClick={() => setRowShowHistory(!rowShowHistory)} className="flex items-center gap-1.5 text-xs font-bold text-neutral-600 hover:text-neutral-900" data-testid="btn-row-toggle-history">
-                  <Clock className="w-3.5 h-3.5" /> Histórico ({rowForwardHistory.length}) <ChevronRight className={`w-3 h-3 transition-transform ${rowShowHistory ? "rotate-90" : ""}`} />
-                </button>
-                {rowShowHistory && (
-                  <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
-                    {rowForwardHistory.map((fwd: any) => (
-                      <div key={fwd.id} className="flex items-center gap-2 text-xs bg-neutral-50 rounded-md px-3 py-2 border border-neutral-100">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                        <span className="font-semibold text-neutral-700">{moacirHidesSensitive() ? "oculto" : fwd.recipientEmail}</span>
-                        <span className="text-neutral-400">·</span>
-                        <span className="text-neutral-500">{fwd.message ? `"${fwd.message.slice(0, 40)}..."` : "—"}</span>
-                        {fwd.photoIncluded && <span className="text-neutral-400">📷</span>}
-                        <span className="text-neutral-400 ml-auto flex-shrink-0">{parseUTCDate(fwd.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="px-4 pb-4 pt-2 flex justify-end">
-          <button
-            className="inline-flex items-center gap-2 px-6 py-2 rounded-lg font-bold text-xs bg-red-600 text-white hover:bg-red-700"
-            onClick={() => {
-              const uid = rowForwardUpdate?.id;
-              setRowForwardUpdate(null);
-              if (uid) markReadMutation.mutate([uid]);
-            }}
-            data-testid="btn-row-forward-finalize"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" /> Finalizar
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
-    {dreOs && (
-      <DreModal osId={dreOs.id} osNumber={dreOs.osNumber} liveCost={dreOs.liveCost} open={!!dreOs} onOpenChange={(o) => { if (!o) setDreOs(null); }} />
-    )}
-    </>
-  );
-}
 
 function TrucksControlStatus() {
   const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -7752,10 +6217,40 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     prevCriticalVtrsRef.current = currentCritical;
     if (newlyCritical.length > 0 && soundEnabled) {
       playCriticalAlarm();
-    } else if (newlyOffline.length > 0 && soundEnabled) {
-      playAlarm();
     }
   }, [vtrGroups, soundEnabled]);
+
+  useEffect(() => {
+    if (!soundEnabled || updates.length === 0) return;
+    const esperaMs = 2 * 60 * 1000;
+    const idade = (u: { createdAt?: string | null }) => {
+      const ts = u?.createdAt ? parseUTCDate(u.createdAt).getTime() : 0;
+      return ts > 0 ? Date.now() - ts : 0;
+    };
+    const algumaSemLeitura = () => updates.some((u) => idade(u) >= esperaMs);
+    let intervalo: ReturnType<typeof setInterval> | undefined;
+    let espera: ReturnType<typeof setTimeout> | undefined;
+    const tocar = () => {
+      if (!algumaSemLeitura()) return;
+      playSiren();
+      intervalo = setInterval(() => {
+        if (algumaSemLeitura()) playSiren();
+      }, 20000);
+    };
+    if (algumaSemLeitura()) {
+      tocar();
+    } else {
+      const falta = updates.reduce((menor, u) => {
+        const restante = esperaMs - idade(u);
+        return restante > 0 && restante < menor ? restante : menor;
+      }, Number.POSITIVE_INFINITY);
+      if (Number.isFinite(falta)) espera = setTimeout(tocar, falta);
+    }
+    return () => {
+      if (intervalo) clearInterval(intervalo);
+      if (espera) clearTimeout(espera);
+    };
+  }, [updates, soundEnabled]);
 
   if (updates.length === 0) return (
     <div className="flex justify-end" data-testid="sound-toggle-idle">
@@ -7777,7 +6272,24 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
   );
 
   return (
-    <div className="bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden" data-testid="mission-updates-alert">
+    <>
+    <div className="flex justify-end" data-testid="sound-toggle-updates">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant="outline"
+            className={`h-7 w-7 p-0 border-neutral-200 hover:bg-neutral-100 ${soundEnabled ? "text-neutral-600" : "text-neutral-400"}`}
+            onClick={toggleSound}
+            data-testid="button-toggle-sound"
+          >
+            {soundEnabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{soundEnabled ? "Desativar alerta sonoro" : "Ativar alerta sonoro"}</TooltipContent>
+      </Tooltip>
+    </div>
+    <div className="hidden" aria-hidden="true" data-testid="mission-updates-alert">
       <div className="px-4 py-3 flex items-center justify-between bg-amber-100/50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center">
@@ -8421,6 +6933,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }
 
@@ -8754,6 +7267,27 @@ export default function OperationalGridPage() {
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focusVehicleId, setFocusVehicleId] = useState<number | null>(null);
   const [selectedOsVehicleId, setSelectedOsVehicleId] = useState<number | null>(null);
+  const [fleetDetailId, setFleetDetailId] = useState<number | null>(null);
+  const [filtrosFrota, setFiltrosFrota] = useState<FiltroFrota[]>([]);
+  const [cartasSimulacao, setCartasSimulacao] = useState<(CartaPainel & { quando: number })[]>(() => {
+    const agora = Date.now();
+    return [
+      { id: -1, hora: formatTimeBRT(new Date(agora).toISOString()), autor: "Emerson", texto: "Seguindo viagem, pista livre", quando: agora },
+      { id: -2, hora: formatTimeBRT(new Date(agora - 45000).toISOString()), autor: "Johnny", texto: "Saída da origem confirmada", quando: agora - 45000 },
+    ];
+  });
+  const [leituraMapa, setLeituraMapa] = useState<MensagemMapa[] | null>(null);
+  const [alertaMsg, setAlertaMsg] = useState<{
+    id: number;
+    plate: string;
+    driver: string;
+    message: string;
+    time: string;
+    imageUrl: string;
+    vehicle: TrackedVehicle | null;
+  } | null>(null);
+  const alertaConhecidos = useRef<Set<number> | null>(null);
+  const alertaDispensados = useRef<Set<number>>(new Set());
   const [proximityResult, setProximityResult] = useState<ProximityResult | null>(null);
   const [mirrorVehicle, setMirrorVehicle] = useState<TrackedVehicle | null>(null);
   const [mirrorDialogOpen, setMirrorDialogOpen] = useState(false);
@@ -8790,6 +7324,63 @@ export default function OperationalGridPage() {
     refetchIntervalInBackground: false,
     staleTime: 60_000,
   });
+
+  const { data: kitsArmamento = [] } = useQuery<KitArmamento[]>({
+    queryKey: ["/api/weapon-kits"],
+    staleTime: 60_000,
+  });
+
+  const { data: sessoesCondutor = [] } = useQuery<SessaoCondutor[]>({
+    queryKey: ["/api/driver-sessions", "frota-card"],
+    queryFn: async () => {
+      const res = await authFetch("/api/driver-sessions");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : REFRESH_INTERVAL_MS),
+    refetchIntervalInBackground: false,
+  });
+
+  const { data: unreadAgentUpdates = [] } = useQuery<any[]>({
+    queryKey: ["/api/mission/updates", "unread"],
+    queryFn: async () => {
+      const res = await authFetch("/api/mission/updates?unread=true");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: () => (typeof document !== "undefined" && document.hidden ? false : 30000),
+    refetchIntervalInBackground: false,
+  });
+
+  useEffect(() => {
+    const lista = unreadAgentUpdates.filter((u) => u?.id && String(u.message || "").trim());
+    const montar = (u: any) => {
+      const v = vehicles.find((veh) => veh.activeOs?.osNumber === u.osNumber || veh.scheduledOs?.osNumber === u.osNumber) || null;
+      return {
+        id: Number(u.id),
+        plate: v?.plate || "—",
+        driver: u.employeeName ? titleCase(String(u.employeeName)) : "Agente",
+        message: String(u.message).trim(),
+        time: u.createdAt ? formatTimeBRT(u.createdAt) : "",
+        imageUrl: painelEscoltaThumb(v?.model),
+        vehicle: v,
+      };
+    };
+    const porRecente = (a: any, b: any) => parseUTCDate(b.createdAt || 0).getTime() - parseUTCDate(a.createdAt || 0).getTime();
+    if (alertaConhecidos.current === null) {
+      alertaConhecidos.current = new Set(lista.map((u) => Number(u.id)));
+      const fresco = [...lista].sort(porRecente)[0];
+      if (fresco && Date.now() - parseUTCDate(fresco.createdAt).getTime() < 3 * 60 * 1000) {
+        setAlertaMsg(montar(fresco));
+      }
+      return;
+    }
+    const novo = [...lista]
+      .filter((u) => !alertaConhecidos.current!.has(Number(u.id)) && !alertaDispensados.current.has(Number(u.id)))
+      .sort(porRecente)[0];
+    for (const u of lista) alertaConhecidos.current.add(Number(u.id));
+    if (novo) setAlertaMsg(montar(novo));
+  }, [unreadAgentUpdates, vehicles]);
 
   const { data: gerenciadoras = [] } = useQuery<Gerenciadora[]>({
     queryKey: ["/api/gerenciadoras"],
@@ -8865,119 +7456,264 @@ export default function OperationalGridPage() {
   };
 
   const onlyVehicles = vehicles.filter((v) => v.deviceType !== "spy");
-  const trackedCount = onlyVehicles.filter((v) => v.hasTracker).length;
-  const withPositionCount = vehicles.filter((v) => v.tracker?.latitude != null).length;
-  const tcCount = onlyVehicles.filter((v) => v.trackerType === "truckscontrol").length;
-  const noSignalCount = onlyVehicles.filter((v) => !!v.noSignalSince && v.tracker?.isLiveData === false).length;
-  const activeOsCount = gridData.length;
+  const equipeFrota = equipeDosCards(onlyVehicles, sessoesCondutor);
+  const filasFrota = onlyVehicles.map((v) => fleetQueueStatus(v));
+  const emMissaoCount = filasFrota.filter((f) => f.status === "em_missao" || f.status === "na_origem").length;
+  const disponiveisCount = filasFrota.filter((f) => f.label === "DISPONÍVEL").length;
+  const manutencaoCount = filasFrota.filter((f) => f.status === "manutencao_vencida").length;
+  const rodizioCount = filasFrota.filter((f) => f.status === "rodizio_sp").length;
 
   const lastRefreshStr = new Date(lastRefresh).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" });
+
+  const alternarFiltro = (filtro: FiltroFrota) => {
+    setFiltrosFrota((atual) => atual.includes(filtro) ? atual.filter((item) => item !== filtro) : [...atual, filtro]);
+  };
+  const marcarCartasLidas = useCallback(async (ids: number[]) => {
+    if (ids.some((id) => id < 0)) {
+      setCartasSimulacao((atual) => atual.filter((carta) => !ids.includes(carta.id)));
+    }
+    const reais = ids.filter((id) => id > 0);
+    if (reais.length === 0) return;
+    await authFetch("/api/mission/updates/mark-read", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: reais }),
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+  }, []);
+
+  const fleetCards = [...onlyVehicles]
+    .filter((v) => {
+      if (cartasDaViatura(v, unreadAgentUpdates, gridData).length > 0) return true;
+      if (filtrosFrota.length === 0) return true;
+      const casa = filtroDaViatura(v);
+      return casa != null && filtrosFrota.includes(casa);
+    })
+    .sort((a, b) => {
+      const quandoA = quandoMensagem(a, unreadAgentUpdates, gridData);
+      const quandoB = quandoMensagem(b, unreadAgentUpdates, gridData);
+      const temA = quandoA > 0 ? 0 : 1;
+      const temB = quandoB > 0 ? 0 : 1;
+      if (temA !== temB) return temA - temB;
+      if (temA === 0 && quandoA !== quandoB) return quandoB - quandoA;
+      const byRank = fleetQueueStatus(a).rank - fleetQueueStatus(b).rank;
+      return byRank || a.plate.localeCompare(b.plate, "pt-BR");
+    });
+
+  const fleetDetalhe: OsDetalhePainel | null = (() => {
+    const v = fleetDetailId == null ? null : onlyVehicles.find((item) => item.id === fleetDetailId) ?? null;
+    if (!v) return null;
+    const fila = fleetQueueStatus(v);
+    const os = v.activeOs;
+    const gi = os ? gridData.find((g) => g.id === os.id) : undefined;
+    const equipeCard = equipeFrota.get(v.id);
+    const kitCasa = kitDoCard(v, kitsArmamento);
+    const equipe: string[] = [];
+    if (equipeCard?.condutor) equipe.push(titleCase(equipeCard.condutor));
+    if (equipeCard?.agente) equipe.push(titleCase(equipeCard.agente));
+    if (gi?.escortedDriverName) equipe.push(`Escoltado: ${titleCase(gi.escortedDriverName)}`);
+    const mensagens: OsDetalhePainel["mensagens"] = [];
+    const pushMsg = (texto?: string | null, quando?: string | null, agente?: string | null) => {
+      const clean = texto?.trim();
+      if (!clean || mensagens.some((m) => m.texto === clean)) return;
+      mensagens.push({
+        texto: clean,
+        quando: quando ? formatTimeBRT(quando) : "—",
+        agente: agente ? titleCase(agente) : "Agente",
+      });
+    };
+    pushMsg(os?.lastAgentUpdate?.message, os?.lastAgentUpdate?.createdAt, os?.lastAgentUpdate?.agentName);
+    for (const update of os?.recentUpdates || []) {
+      pushMsg(update.message, update.createdAt, update.agentName);
+      if (mensagens.length >= 5) break;
+    }
+    const inicioRaw = os?.missionStartedAt || os?.scheduledDate || gi?.missionStartedAt || gi?.scheduledDate || null;
+    const kmTxt = (n?: number | null) => (n == null || Number.isNaN(Number(n)) ? null : `${Number(n).toLocaleString("pt-BR")} km`);
+    return {
+      vehicleId: v.id,
+      plate: v.plate,
+      badge: fila.status,
+      badgeText: fila.label,
+      osId: os?.id ?? v.scheduledOs?.id ?? null,
+      osNumber: os?.osNumber ?? v.scheduledOs?.osNumber ?? null,
+      cliente: os?.clientName ?? null,
+      origem: os?.origin ?? null,
+      destino: os?.destination ?? null,
+      inicio: inicioRaw ? `${formatDateBRT(inicioRaw)} ${formatTimeBRT(inicioRaw)}` : null,
+      kmInicial: kmTxt(gi?.kmInicial),
+      kmFinal: kmTxt(gi?.kmFinal),
+      equipe,
+      equipeLinha: [equipeCard?.condutor, equipeCard?.agente].filter(Boolean).map((n) => primeiroNome(n as string)).join(" & ") || null,
+      kit: os?.kitName ?? kitCasa?.name ?? null,
+      kitId: os?.kitId ?? kitCasa?.id ?? null,
+      viatura: [v.brand, v.model].filter(Boolean).join(" ") || null,
+      origemLat: os?.originLat ?? null,
+      origemLng: os?.originLng ?? null,
+      destinoLat: os?.destinationLat ?? null,
+      destinoLng: os?.destinationLng ?? null,
+      posLat: v.tracker?.latitude ?? null,
+      posLng: v.tracker?.longitude ?? null,
+      mensagens,
+      gps: fleetGpsLabel(v),
+      endereco: v.tracker?.address ?? null,
+    };
+  })();
+
+  const mensagensColuna = [
+    ...mensagensDoMapa(onlyVehicles, unreadAgentUpdates, gridData),
+    ...cartasSimulacao.map((carta) => ({
+      id: carta.id,
+      plate: "SIM9E99",
+      hora: carta.hora,
+      texto: carta.texto,
+      autor: carta.autor,
+      vehicleId: null as number | null,
+      imagem: "/assets/escolta-virtus.png",
+      osNumber: "TOR-SIM",
+      cliente: "TM Segurança Consultoria",
+      origem: "Pirapora",
+      destino: "Suzano",
+      quando: carta.quando,
+    })),
+  ].sort((a, b) => (b.quando || 0) - (a.quando || 0));
+  const chaveMensagens = mensagensColuna.map((mensagem) => `${mensagem.id}:${mensagem.quando || 0}`).join("|");
+  const somMensagem = useSoundEnabled();
+
+  useEffect(() => {
+    if (!somMensagem || !chaveMensagens) return;
+    const esperaMs = 2 * 60 * 1000;
+    const vencida = () => mensagensColuna.some((mensagem) => mensagem.quando && Date.now() - mensagem.quando >= esperaMs);
+    let intervalo: ReturnType<typeof setInterval> | undefined;
+    let espera: ReturnType<typeof setTimeout> | undefined;
+    const tocar = () => {
+      if (!vencida()) return;
+      playSiren();
+      intervalo = setInterval(() => {
+        if (vencida()) playSiren();
+      }, 20000);
+    };
+    if (vencida()) {
+      tocar();
+    } else {
+      const falta = mensagensColuna.reduce((menor, mensagem) => {
+        if (!mensagem.quando) return menor;
+        const restante = esperaMs - (Date.now() - mensagem.quando);
+        return restante > 0 && restante < menor ? restante : menor;
+      }, Number.POSITIVE_INFINITY);
+      if (Number.isFinite(falta)) espera = setTimeout(tocar, falta);
+    }
+    return () => {
+      if (intervalo) clearInterval(intervalo);
+      if (espera) clearTimeout(espera);
+    };
+  }, [chaveMensagens, somMensagem]);
 
   return (
     <OpNotifProvider>
     <AdminLayout>
-      <div className="space-y-4">
+      <PainelV2>
         {!adminOnline && (
-          <div className="bg-red-50 border-2 border-red-300 rounded-xl px-4 py-3 flex items-center gap-3 animate-pulse" data-testid="admin-offline-banner">
-            <Loader2 className="w-5 h-5 text-red-600 animate-spin flex-shrink-0" />
+          <div className="bg-red-950/80 border-2 border-red-500/50 rounded-xl px-4 py-3 flex items-center gap-3" data-testid="admin-offline-banner">
+            <Loader2 className="w-5 h-5 text-red-300 animate-spin flex-shrink-0" />
             <div>
-              <p className="text-sm font-bold text-red-800">Tentando reconectar...</p>
-              <p className="text-[10px] text-red-600">Conexão perdida. O sistema vai reconectar automaticamente.</p>
+              <p className="text-sm font-bold text-red-100">Tentando reconectar...</p>
+              <p className="text-[10px] text-red-300">Conexão perdida. O sistema vai reconectar automaticamente.</p>
             </div>
           </div>
         )}
-        <div className="rounded-[1.75rem] overflow-hidden shadow-lg bg-primary text-primary-foreground">
-          <div className="px-6 py-5">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
-                  <Radio className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-white tracking-wide" data-testid="text-grid-title">
-                    Grid Operacional
-                  </h1>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Monitoramento em tempo real
-                  </p>
-                </div>
-                <TrucksControlStatus />
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl px-3 py-2" data-testid="brt-central-clock">
-                  <Clock className="w-4 h-4 text-emerald-400" />
-                  <div className="flex flex-col items-end leading-tight">
-                    <span className="text-sm font-black text-white tabular-nums tracking-wider" data-testid="text-brt-time">{brtClock.time}</span>
-                    <span className="text-[9px] text-neutral-400 font-medium uppercase">{brtClock.date}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-neutral-300 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-3 py-2" data-testid="countdown-timer">
-                  <Timer className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>Próxima <span className="font-bold text-white">{countdown.display}</span></span>
-                  <span className="text-neutral-500">|</span>
-                  <span>Última <span className="font-medium text-neutral-200">{lastRefreshStr}</span></span>
-                </div>
-                <AlertsTimeline />
-                <VincularOsButton />
-                <Button
-                  size="sm"
-                  onClick={handleRefresh}
-                  disabled={isFetching}
-                  className="bg-white/10 hover:bg-white/20 text-white border border-white/10 backdrop-blur-sm rounded-2xl gap-2 font-semibold shadow-none"
-                  data-testid="button-refresh-grid"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
-                  Atualizar
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 mt-5">
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Truck className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Veículos</span>
-                </div>
-                <p className="text-2xl font-bold text-white font-heading">{onlyVehicles.length}</p>
-              </div>
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Satellite className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Rastreados</span>
-                </div>
-                <p className="text-2xl font-bold text-white font-heading">{trackedCount}{tcCount > 0 && <span className="text-sm text-neutral-400 font-medium ml-1">({tcCount} TC)</span>}</p>
-              </div>
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Com Posição</span>
-                </div>
-                <p className="text-2xl font-bold text-white font-heading">{withPositionCount}</p>
-              </div>
-              {noSignalCount > 0 && (
-                <div className="bg-white/5 backdrop-blur-sm border border-amber-500/30 rounded-2xl px-4 py-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <WifiOff className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Sem Sinal</span>
-                  </div>
-                  <p className="text-2xl font-bold text-amber-300 font-heading">{noSignalCount}</p>
-                </div>
-              )}
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Navigation className="w-3.5 h-3.5 text-neutral-400" />
-                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Operações</span>
-                </div>
-                <p className="text-2xl font-bold text-white font-heading">{activeOsCount}</p>
-              </div>
-            </div>
-          </div>
+        <HeaderOperacional
+          time={brtClock.time}
+          date={brtClock.date}
+          online={adminOnline}
+          countdown={countdown.display}
+          lastRefresh={lastRefreshStr}
+          refreshing={isFetching}
+          onRefresh={handleRefresh}
+          statusSlot={<TrucksControlStatus />}
+          actions={(
+            <>
+              <AlertsTimeline />
+              <VincularOsButton />
+            </>
+          )}
+        />
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+          <KpiCard3D
+            label="Veículos"
+            value={onlyVehicles.length}
+            accentColor="cyan"
+            selected={filtrosFrota.length === 0}
+            dimmed={filtrosFrota.length > 0}
+            onSelect={() => setFiltrosFrota([])}
+            icon={<img src="/assets/escolta-virtus.png" alt="Viatura de escolta" className="w-[4.75rem] h-11 object-contain drop-shadow-[0_10px_8px_rgba(0,0,0,0.85)]" />}
+            testId="kpi-veiculos"
+          />
+          <KpiCard3D
+            label="Em missão"
+            value={emMissaoCount}
+            accentColor="emerald"
+            tinted
+            selected={filtrosFrota.includes("missao")}
+            dimmed={filtrosFrota.length > 0 && !filtrosFrota.includes("missao")}
+            onSelect={() => alternarFiltro("missao")}
+            icon={(
+              <KpiGlyphRelief accentColor="emerald">
+                <span className="pointer-events-none absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-400/70 animate-ping" />
+                <ShieldCheck className="relative w-6 h-6 text-emerald-300 drop-shadow-[0_0_8px_#34d399]" />
+              </KpiGlyphRelief>
+            )}
+            testId="kpi-em-missao"
+          />
+          <KpiCard3D
+            label="Disponíveis"
+            value={disponiveisCount}
+            accentColor="cyan"
+            tinted
+            selected={filtrosFrota.includes("disponivel")}
+            dimmed={filtrosFrota.length > 0 && !filtrosFrota.includes("disponivel")}
+            onSelect={() => alternarFiltro("disponivel")}
+            icon={(
+              <KpiGlyphRelief accentColor="cyan">
+                <CheckCircle2 className="w-6 h-6 text-cyan-300 drop-shadow-[0_0_8px_#22d3ee]" />
+              </KpiGlyphRelief>
+            )}
+            testId="kpi-disponiveis"
+          />
+          <KpiCard3D
+            label="Em manutenção"
+            value={manutencaoCount}
+            accentColor="rose"
+            tinted
+            selected={filtrosFrota.includes("manutencao")}
+            dimmed={filtrosFrota.length > 0 && !filtrosFrota.includes("manutencao")}
+            onSelect={() => alternarFiltro("manutencao")}
+            icon={(
+              <KpiGlyphRelief accentColor="rose" pulse>
+                <Wrench className="w-6 h-6 text-rose-300 drop-shadow-[0_0_8px_#fb7185]" />
+              </KpiGlyphRelief>
+            )}
+            testId="kpi-manutencao"
+          />
+          <KpiCard3D
+            label="Rodízio SP"
+            value={rodizioCount}
+            accentColor="amber"
+            tinted
+            selected={filtrosFrota.includes("rodizio")}
+            dimmed={filtrosFrota.length > 0 && !filtrosFrota.includes("rodizio")}
+            onSelect={() => alternarFiltro("rodizio")}
+            icon={(
+              <KpiGlyphRelief accentColor="amber">
+                <TriangleAlert className="w-6 h-6 text-amber-300 drop-shadow-[0_0_8px_#fbbf24]" />
+              </KpiGlyphRelief>
+            )}
+            testId="kpi-rodizio"
+          />
         </div>
 
         {isLoading ? (
-          <Card>
-            <div className="p-12 text-center text-neutral-400">Carregando grid operacional...</div>
-          </Card>
+          <div className="rounded-2xl border border-slate-800 bg-[#0c121d] p-12 text-center text-slate-400">Carregando grid operacional...</div>
         ) : (
           <>
             <MissionUpdatesAlert vehicles={vehicles} gridData={gridData} clients={clients} />
@@ -8990,7 +7726,13 @@ export default function OperationalGridPage() {
                 onFocusVehicle={(id) => setFocusVehicleId(id)}
               />
             )}
-            <VehicleMap vehicles={vehicles} focusVehicleId={focusVehicleId} onProximityChange={(r) => setProximityResult(r)} />
+            <VehicleMap
+              vehicles={vehicles}
+              focusVehicleId={focusVehicleId}
+              onProximityChange={(r) => setProximityResult(r)}
+              mensagens={mensagensColuna}
+              onAbrirMensagem={setLeituraMapa}
+            />
             {selectedOsVehicleId && (
               <NearbyVehiclesPanel
                 vehicles={vehicles}
@@ -9000,13 +7742,137 @@ export default function OperationalGridPage() {
               />
             )}
             <OperationNotificationsBar />
-            <VehicleTable vehicles={vehicles} gridData={gridData} gerenciadoras={gerenciadoras} onFocusVehicle={(id) => setFocusVehicleId(id)} onSelectOsVehicle={(id) => setSelectedOsVehicleId(prev => prev === id ? null : id)} clients={clients} monthlyHours={monthlyHours} onCostDetail={restricted ? undefined : (empId) => setCostDetailEmpId(empId)} />
-            <div className="text-xs text-neutral-400 text-right" data-testid="text-grid-count">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="fleet-strip">
+              <FleetCard3D
+                plate="SIM9E99"
+                driver="Emerson Jose Vieira"
+                agent2="Everton de Almeida Santos"
+                cliente="TM Segurança Consultoria"
+                origem="Pirapora"
+                destino="Suzano"
+                status="em_missao"
+                statusText="EM VIAGEM"
+                batteryPct={74}
+                osNumber="TOR-SIM"
+                carThumbnailUrl="/assets/escolta-virtus.png"
+                testId="fleet-card-simulacao"
+                rota={{
+                  origem: "PIRAPORA",
+                  destino: "SUZANO",
+                  origemTexto: "Pirapora",
+                  destinoTexto: "Suzano",
+                  pct: 62,
+                  percorridoKm: 186,
+                  totalKm: 300,
+                  previsao: "1h 10min",
+                  velocidade: 87,
+                }}
+                cartas={cartasSimulacao}
+                linkAction={<span className="text-[10px] font-bold uppercase tracking-wider text-cyan-200">Simulação</span>}
+              />
+              {fleetCards.length === 0 ? (
+                <div className="col-span-full rounded-2xl border border-slate-800 bg-[#0c121d] p-8 text-center text-sm text-slate-400">
+                  Nenhuma viatura nesse filtro.
+                </div>
+              ) : null}
+              {fleetCards.map((v) => {
+                const battery = typeof v.batteryLevel === "number" && v.batteryLevel >= 0 ? Math.round(v.batteryLevel) : null;
+                const fila = fleetQueueStatus(v);
+                const ficha = fichaDoCard(v, gridData);
+                const osNumero = v.activeOs?.osNumber || v.scheduledOs?.osNumber || null;
+                const subtitulo = fleetSubtitle(v, fila);
+                return (
+                  <FleetCard3D
+                    key={v.id}
+                    plate={v.plate}
+                    driver={equipeFrota.get(v.id)?.condutor ? titleCase(equipeFrota.get(v.id)!.condutor as string) : "Sem condutor"}
+                    agent2={equipeFrota.get(v.id)?.agente ? titleCase(equipeFrota.get(v.id)!.agente as string) : null}
+                    cliente={ficha.cliente}
+                    origem={ficha.origem}
+                    destino={ficha.destino}
+                    aviso={viaturaVaziaRodando(v) ? "Viatura vazia em movimento após 22h" : null}
+                    alerta={temAlertaNoCard(v)}
+                    status={fila.status}
+                    statusText={rotuloVisivelDoCard(v, fila)}
+                    subtitle={subtitulo || undefined}
+                    batteryPct={battery}
+                    lastMessage={v.activeOs?.lastAgentUpdate?.message}
+                    osNumber={osNumero}
+                    carThumbnailUrl={painelEscoltaThumb(v.model)}
+                    rota={rotaDoCard(v)}
+                    cartas={cartasDaViatura(v, unreadAgentUpdates, gridData)}
+                    onSelect={() => setFleetDetailId(v.id)}
+                    testId={`fleet-card-${v.id}`}
+                    linkAction={(
+                      <VincularOsButton
+                        compact
+                        inicial={vinculoDaViatura(v)}
+                        testId={`button-vincular-os-fleet-${v.id}`}
+                        label={osNumero ? "Alterar OS" : "Vincular OS"}
+                        buttonClassName="h-7 px-2 text-[10px] font-bold uppercase tracking-wider text-cyan-100 bg-gradient-to-b from-cyan-950/80 to-slate-950 border border-cyan-400/40 rounded-md gap-1 shadow-none hover:brightness-125"
+                      />
+                    )}
+                  />
+                );
+              })}
+            </div>
+            <OSDetailModal
+              detalhe={fleetDetalhe}
+              onClose={() => setFleetDetailId(null)}
+              onFocusMap={(id) => setFocusVehicleId(id)}
+            />
+            {alertaMsg ? (
+              <AlertaViaturaMensagem
+                plate={alertaMsg.plate}
+                driver={alertaMsg.driver}
+                message={alertaMsg.message}
+                time={alertaMsg.time}
+                imageUrl={alertaMsg.imageUrl}
+                onClose={() => {
+                  alertaDispensados.current.add(alertaMsg.id);
+                  setAlertaMsg(null);
+                }}
+                onMarkRead={() => {
+                  const id = alertaMsg.id;
+                  alertaDispensados.current.add(id);
+                  setAlertaMsg(null);
+                  authFetch("/api/mission/updates/mark-read", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ids: [id] }),
+                  }).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ["/api/mission/updates", "unread"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
+                  }).catch(() => {});
+                }}
+                linkAction={alertaMsg.vehicle ? (
+                  <VincularOsButton
+                    inicial={vinculoDaViatura(alertaMsg.vehicle)}
+                    testId="button-alerta-vincular-os"
+                    label="Vincular OS"
+                    buttonClassName="w-full py-3.5 h-auto text-xs font-black uppercase tracking-widest text-cyan-200 rounded-xl bg-gradient-to-b from-cyan-950/80 to-slate-900 border border-cyan-400/40 shadow-none hover:brightness-125"
+                  />
+                ) : undefined}
+              />
+            ) : null}
+            {leituraMapa ? (
+              <PainelLeituraMensagem
+                itens={leituraMapa}
+                vehicles={onlyVehicles}
+                gridData={gridData}
+                onClose={() => setLeituraMapa(null)}
+                onMarcar={(ids) => {
+                  void marcarCartasLidas(ids);
+                  setLeituraMapa(null);
+                }}
+              />
+            ) : null}
+            <div className="text-xs text-slate-500 text-right" data-testid="text-grid-count">
               Atualização automática a cada 2 minutos
             </div>
           </>
         )}
-      </div>
+      </PainelV2>
       <MirrorVehicleDialog
         vehicle={mirrorVehicle}
         open={mirrorDialogOpen}

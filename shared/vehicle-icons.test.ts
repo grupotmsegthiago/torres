@@ -4,6 +4,7 @@ import {
   vehicleIconSrc,
   inferVehicleIcon,
   resolveVehicleIcon,
+  painelEscoltaThumb,
   vehicleRequiresInsuranceDocs,
   isMobiInsuranceIncomplete,
   VEHICLE_ICON_OPTIONS,
@@ -21,6 +22,14 @@ test("inferVehicleIcon: FIAT / MOBI", () => {
   assert.equal(inferVehicleIcon("Fiat", "Mobi Like"), "mobi");
   assert.equal(inferVehicleIcon("", "MOBI"), "mobi");
   assert.equal(inferVehicleIcon("VW", "POLO TRACK"), "polo");
+});
+
+test("painelEscoltaThumb segue o modelo do cadastro, inclusive Virtus gravado como polo", () => {
+  assert.equal(painelEscoltaThumb("MOBI"), "/assets/escolta-mobi.png");
+  assert.equal(painelEscoltaThumb("MOBI LIKE"), "/assets/escolta-mobi.png");
+  assert.equal(painelEscoltaThumb("POLO TRACK"), "/assets/escolta-polo.png");
+  assert.equal(painelEscoltaThumb("POLO TRACK MA"), "/assets/escolta-polo.png");
+  assert.equal(painelEscoltaThumb("VIRTUS MB"), "/assets/escolta-virtus.png");
 });
 
 test("resolveVehicleIcon: Mobi com icon_type default polo usa marca/modelo", () => {

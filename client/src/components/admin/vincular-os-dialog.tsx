@@ -55,10 +55,12 @@ export type VinculoInicial = {
   kitId?: number | null;
 };
 
-export function VincularOsButton({ inicial, compact, testId }: {
+export function VincularOsButton({ inicial, compact, buttonClassName, testId, label }: {
   inicial?: VinculoInicial | null;
   compact?: boolean;
+  buttonClassName?: string;
   testId?: string;
+  label?: string;
 } = {}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -246,13 +248,13 @@ export function VincularOsButton({ inicial, compact, testId }: {
       <Button
         size="sm"
         onClick={(e) => { e.stopPropagation(); abrir(); }}
-        className={compact
+        className={buttonClassName ?? (compact
           ? "h-6 px-1.5 text-[10px] font-bold uppercase tracking-wide bg-neutral-900 text-white hover:bg-neutral-700 rounded-md gap-1 shadow-none"
-          : "bg-white text-neutral-900 hover:bg-neutral-100 border border-white/20 rounded-2xl gap-2 font-semibold shadow-none"}
+          : "bg-white text-neutral-900 hover:bg-neutral-100 border border-white/20 rounded-2xl gap-2 font-semibold shadow-none")}
         data-testid={testId || "button-vincular-os"}
       >
         <Link2 className={compact ? "w-3 h-3" : "w-4 h-4"} />
-        Vincular OS
+        {label || "Vincular OS"}
       </Button>
       <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
