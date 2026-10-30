@@ -14,6 +14,11 @@ import { calendarDiariasRange, formatPeriodoBR } from "./diarias-periodo";
 
 const YM = /^(\d{4})-(\d{2})$/;
 
+/** Mês civil corrente em America/Sao_Paulo como YYYY-MM (default da listagem de OS). */
+export function currentBrtCalendarMonthYm(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+}
+
 export function osListCalendarMonthRange(ym: string): { from: string; to: string } | null {
   const match = YM.exec(String(ym || "").trim());
   if (!match) return null;

@@ -21,7 +21,7 @@ import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem,
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { isClientActive } from "@shared/client-duplicates";
 import { applyPedagioClientMarkup, osCobraMarkupPedagio, pedagioCobrancaCliente } from "@shared/pedagio-markup";
-import { formatOsListPeriodLabel, osMatchesCalendarMonth } from "@shared/os-list-period";
+import { currentBrtCalendarMonthYm, formatOsListPeriodLabel, osMatchesCalendarMonth } from "@shared/os-list-period";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -2629,12 +2629,13 @@ export default function ServiceOrdersPage() {
   });
   const [filterAuthorizer, setFilterAuthorizer] = useState<number | null>(null);
   const [filterClient, setFilterClient] = useState<number | null>(null);
-  const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
+  const [filterPeriod, setFilterPeriod] = useState<string>(() => currentBrtCalendarMonthYm());
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
+  const defaultPeriodYm = currentBrtCalendarMonthYm();
   useEffect(() => { setCurrentPage(1); }, [filterStatus, filterClient, filterAuthorizer, filterPeriod, searchOS, filterVehicleId]);
   const { toast } = useToast();
-  const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({
+  const { data: orders = [], isLoading, isFetching } = useQuery<ServiceOrder[]>({
     queryKey: ["/api/service-orders", filterPeriod || "all"],
     queryFn: async () => {
       const qs = filterPeriod ? `?period=${encodeURIComponent(filterPeriod)}` : "";
@@ -2643,6 +2644,7 @@ export default function ServiceOrdersPage() {
       return res.json();
     },
   });
+  const listLoading = isLoading || isFetching;
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -2847,7 +2849,7 @@ export default function ServiceOrdersPage() {
           return [uid, { id: uid, name: u?.name || `User #${uid}` }];
         })).values()];
         const clientsInOrders = [...new Map(allOrds.map(o => [o.clientId, { id: o.clientId, name: getClientName(o.clientId) }])).values()];
-        const hasAnyFilter = filterStatus || filterAuthorizer || filterClient || filterPeriod;
+        const hasAnyFilter = !!(filterStatus || filterAuthorizer || filterClient || (filterPeriod && filterPeriod !== defaultPeriodYm));
 
         return (
           <div className="mb-3 space-y-2" data-testid="section-filters">
@@ -2913,29 +2915,29 @@ export default function ServiceOrdersPage() {
               </select>
 
               <label
-                className="inline-flex items-center gap-1.5 text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus-within:ring-2 focus-within:ring-black/10"
+                className="inline-flex items-center gap-1.5 text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus-within:ring-2 focus-within:ring-black/10 max-w-full"
                 title={filterPeriod ? (formatOsListPeriodLabel(filterPeriod) || "Período") : "Período"}
               >
                 <Calendar className="w-3 h-3 text-neutral-400 shrink-0" />
-                <span className="text-neutral-500">Período</span>
+                <span className="text-neutral-500 shrink-0">Período</span>
                 <input
                   type="month"
                   aria-label="Período"
                   value={filterPeriod || ""}
-                  onChange={e => setFilterPeriod(e.target.value || null)}
-                  className="bg-transparent text-xs text-neutral-800 focus:outline-none"
+                  onChange={e => setFilterPeriod(e.target.value || defaultPeriodYm)}
+                  className="bg-transparent text-xs text-neutral-800 focus:outline-none min-w-0"
                   data-testid="filter-period"
                 />
               </label>
               {filterPeriod && formatOsListPeriodLabel(filterPeriod) && (
-                <span className="text-[11px] text-neutral-500 whitespace-nowrap" data-testid="text-period-range">
+                <span className="text-[11px] text-neutral-500 whitespace-nowrap tabular-nums" data-testid="text-period-range">
                   {formatOsListPeriodLabel(filterPeriod)!.replace(/^Período:\s*/i, "")}
                 </span>
               )}
 
               {hasAnyFilter && (
                 <button
-                  onClick={() => { setFilterStatus(null); setFilterAuthorizer(null); setFilterClient(null); setFilterPeriod(null); }}
+                  onClick={() => { setFilterStatus(null); setFilterAuthorizer(null); setFilterClient(null); setFilterPeriod(defaultPeriodYm); }}
                   className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 ml-1 transition-colors"
                   data-testid="button-clear-filters"
                 >
@@ -2948,10 +2950,17 @@ export default function ServiceOrdersPage() {
       })()}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-neutral-400">Carregando...</div>
+        {listLoading ? (
+          <div className="p-8 text-center text-neutral-400 flex flex-col items-center gap-2" data-testid="orders-loading">
+            <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
+            <span>Carregando...</span>
+          </div>
         ) : (orders || []).length === 0 ? (
-          <div className="p-8 text-center text-neutral-400">Nenhuma OS registrada</div>
+          <div className="p-8 text-center text-neutral-400" data-testid="orders-empty">
+            {filterPeriod
+              ? "Nenhuma ordem de serviço encontrada para este período"
+              : "Nenhuma OS registrada"}
+          </div>
         ) : (() => {
           const getOsStatusKey = (o: ServiceOrder) => {
             if (o.status === "cancelada") return "cancelada";
@@ -2997,9 +3006,22 @@ export default function ServiceOrdersPage() {
           const totalPages = Math.ceil(totalFiltered / ITEMS_PER_PAGE);
           const safePage = Math.min(currentPage, totalPages || 1);
           const paginatedOrders = displayOrders.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
-          if (totalFiltered === 0) return (
-            <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada com os filtros selecionados</div>
-          );
+          if (totalFiltered === 0) {
+            const onlyPeriod =
+              !!filterPeriod &&
+              !searchOS.trim() &&
+              !filterStatus &&
+              !filterClient &&
+              !filterAuthorizer &&
+              !filterVehicleId;
+            return (
+              <div className="p-8 text-center text-neutral-400" data-testid="orders-empty-filtered">
+                {onlyPeriod
+                  ? "Nenhuma ordem de serviço encontrada para este período"
+                  : "Nenhuma OS encontrada com os filtros selecionados"}
+              </div>
+            );
+          }
           return (
           <div>
           <div className="overflow-x-auto">
