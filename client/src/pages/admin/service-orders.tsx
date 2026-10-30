@@ -21,6 +21,7 @@ import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem,
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { isClientActive } from "@shared/client-duplicates";
 import { applyPedagioClientMarkup, osCobraMarkupPedagio, pedagioCobrancaCliente } from "@shared/pedagio-markup";
+import { currentBrtCalendarMonthYm, formatOsListPeriodLabel, osMatchesCalendarMonth } from "@shared/os-list-period";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -2628,12 +2629,22 @@ export default function ServiceOrdersPage() {
   });
   const [filterAuthorizer, setFilterAuthorizer] = useState<number | null>(null);
   const [filterClient, setFilterClient] = useState<number | null>(null);
-  const [filterPeriod, setFilterPeriod] = useState<string | null>(null);
+  const [filterPeriod, setFilterPeriod] = useState<string>(() => currentBrtCalendarMonthYm());
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
+  const defaultPeriodYm = currentBrtCalendarMonthYm();
   useEffect(() => { setCurrentPage(1); }, [filterStatus, filterClient, filterAuthorizer, filterPeriod, searchOS, filterVehicleId]);
   const { toast } = useToast();
-  const { data: orders = [], isLoading } = useQuery<ServiceOrder[]>({ queryKey: ["/api/service-orders"], queryFn: getQueryFn({ on401: "throw" }) });
+  const { data: orders = [], isLoading, isFetching } = useQuery<ServiceOrder[]>({
+    queryKey: ["/api/service-orders", filterPeriod || "all"],
+    queryFn: async () => {
+      const qs = filterPeriod ? `?period=${encodeURIComponent(filterPeriod)}` : "";
+      const res = await authFetch(`/api/service-orders${qs}`);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const listLoading = isLoading || isFetching;
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/employees"], queryFn: getQueryFn({ on401: "throw" }) });
   const { data: vehicles = [] } = useQuery<Vehicle[]>({ queryKey: ["/api/vehicles"], queryFn: getQueryFn({ on401: "throw" }) });
@@ -2838,7 +2849,7 @@ export default function ServiceOrdersPage() {
           return [uid, { id: uid, name: u?.name || `User #${uid}` }];
         })).values()];
         const clientsInOrders = [...new Map(allOrds.map(o => [o.clientId, { id: o.clientId, name: getClientName(o.clientId) }])).values()];
-        const hasAnyFilter = filterStatus || filterAuthorizer || filterClient || filterPeriod;
+        const hasAnyFilter = !!(filterStatus || filterAuthorizer || filterClient || (filterPeriod && filterPeriod !== defaultPeriodYm));
 
         return (
           <div className="mb-3 space-y-2" data-testid="section-filters">
@@ -2903,23 +2914,30 @@ export default function ServiceOrdersPage() {
                 {authorizers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
 
-              <select
-                value={filterPeriod || ""}
-                onChange={e => setFilterPeriod(e.target.value || null)}
-                className="text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus:outline-none focus:ring-2 focus:ring-black/10"
-                data-testid="filter-period"
+              <label
+                className="inline-flex items-center gap-1.5 text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white text-neutral-700 focus-within:ring-2 focus-within:ring-black/10 max-w-full"
+                title={filterPeriod ? (formatOsListPeriodLabel(filterPeriod) || "Período") : "Período"}
               >
-                <option value="">Período</option>
-                <option value="hoje">Hoje</option>
-                <option value="ontem">Ontem</option>
-                <option value="semana">Esta Semana</option>
-                <option value="mes">Este Mês</option>
-                <option value="ano">Este Ano</option>
-              </select>
+                <Calendar className="w-3 h-3 text-neutral-400 shrink-0" />
+                <span className="text-neutral-500 shrink-0">Período</span>
+                <input
+                  type="month"
+                  aria-label="Período"
+                  value={filterPeriod || ""}
+                  onChange={e => setFilterPeriod(e.target.value || defaultPeriodYm)}
+                  className="bg-transparent text-xs text-neutral-800 focus:outline-none min-w-0"
+                  data-testid="filter-period"
+                />
+              </label>
+              {filterPeriod && formatOsListPeriodLabel(filterPeriod) && (
+                <span className="text-[11px] text-neutral-500 whitespace-nowrap tabular-nums" data-testid="text-period-range">
+                  {formatOsListPeriodLabel(filterPeriod)!.replace(/^Período:\s*/i, "")}
+                </span>
+              )}
 
               {hasAnyFilter && (
                 <button
-                  onClick={() => { setFilterStatus(null); setFilterAuthorizer(null); setFilterClient(null); setFilterPeriod(null); }}
+                  onClick={() => { setFilterStatus(null); setFilterAuthorizer(null); setFilterClient(null); setFilterPeriod(defaultPeriodYm); }}
                   className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 ml-1 transition-colors"
                   data-testid="button-clear-filters"
                 >
@@ -2932,10 +2950,17 @@ export default function ServiceOrdersPage() {
       })()}
 
       <Card className="bg-white border-neutral-200 overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-neutral-400">Carregando...</div>
+        {listLoading ? (
+          <div className="p-8 text-center text-neutral-400 flex flex-col items-center gap-2" data-testid="orders-loading">
+            <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
+            <span>Carregando...</span>
+          </div>
         ) : (orders || []).length === 0 ? (
-          <div className="p-8 text-center text-neutral-400">Nenhuma OS registrada</div>
+          <div className="p-8 text-center text-neutral-400" data-testid="orders-empty">
+            {filterPeriod
+              ? "Nenhuma ordem de serviço encontrada para este período"
+              : "Nenhuma OS registrada"}
+          </div>
         ) : (() => {
           const getOsStatusKey = (o: ServiceOrder) => {
             if (o.status === "cancelada") return "cancelada";
@@ -2959,34 +2984,9 @@ export default function ServiceOrdersPage() {
           if (filterAuthorizer && !isSearching) {
             filtered = filtered.filter(o => (o as any).createdByUserId === filterAuthorizer);
           }
-          if (filterPeriod && !isSearching) {
-            const now = new Date();
-            const brNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-            const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-            let periodStart: Date;
-            let periodEnd: Date;
-            if (filterPeriod === "hoje") {
-              periodStart = startOfDay(brNow);
-              periodEnd = new Date(periodStart.getTime() + 86400000);
-            } else if (filterPeriod === "ontem") {
-              periodEnd = startOfDay(brNow);
-              periodStart = new Date(periodEnd.getTime() - 86400000);
-            } else if (filterPeriod === "semana") {
-              const dayOfWeek = brNow.getDay();
-              const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-              periodStart = new Date(startOfDay(brNow).getTime() - diffToMonday * 86400000);
-              periodEnd = new Date(periodStart.getTime() + 7 * 86400000);
-            } else if (filterPeriod === "ano") {
-              periodStart = new Date(brNow.getFullYear(), 0, 1);
-              periodEnd = new Date(brNow.getFullYear() + 1, 0, 1);
-            } else {
-              periodStart = new Date(brNow.getFullYear(), brNow.getMonth(), 1);
-              periodEnd = new Date(brNow.getFullYear(), brNow.getMonth() + 1, 1);
-            }
-            filtered = filtered.filter(o => {
-              const d = o.scheduledDate ? new Date(ensureUTC(o.scheduledDate)!) : o.createdAt ? new Date(ensureUTC(o.createdAt)!) : null;
-              return d && d >= periodStart && d < periodEnd;
-            });
+          if (filterPeriod) {
+            // Mês civil em BRT. Campo já usado neste filtro: scheduledDate, ou createdAt se não houver agendamento.
+            filtered = filtered.filter(o => osMatchesCalendarMonth(o, filterPeriod));
           }
           const displayOrders = searchOS.trim() ? filtered.filter(o => {
             const s = searchOS.toLowerCase();
@@ -3006,9 +3006,22 @@ export default function ServiceOrdersPage() {
           const totalPages = Math.ceil(totalFiltered / ITEMS_PER_PAGE);
           const safePage = Math.min(currentPage, totalPages || 1);
           const paginatedOrders = displayOrders.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
-          if (totalFiltered === 0) return (
-            <div className="p-8 text-center text-neutral-400">Nenhuma OS encontrada com os filtros selecionados</div>
-          );
+          if (totalFiltered === 0) {
+            const onlyPeriod =
+              !!filterPeriod &&
+              !searchOS.trim() &&
+              !filterStatus &&
+              !filterClient &&
+              !filterAuthorizer &&
+              !filterVehicleId;
+            return (
+              <div className="p-8 text-center text-neutral-400" data-testid="orders-empty-filtered">
+                {onlyPeriod
+                  ? "Nenhuma ordem de serviço encontrada para este período"
+                  : "Nenhuma OS encontrada com os filtros selecionados"}
+              </div>
+            );
+          }
           return (
           <div>
           <div className="overflow-x-auto">
