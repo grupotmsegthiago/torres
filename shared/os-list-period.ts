@@ -14,6 +14,11 @@ import { calendarDiariasRange, formatPeriodoBR } from "./diarias-periodo";
 
 const YM = /^(\d{4})-(\d{2})$/;
 
+/** Mês civil corrente em America/Sao_Paulo como YYYY-MM (default da listagem de OS). */
+export function currentBrtCalendarMonthYm(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+}
+
 export function osListCalendarMonthRange(ym: string): { from: string; to: string } | null {
   const match = YM.exec(String(ym || "").trim());
   if (!match) return null;
@@ -21,6 +26,28 @@ export function osListCalendarMonthRange(ym: string): { from: string; to: string
   const month = Number(match[2]);
   if (month < 1 || month > 12) return null;
   return calendarDiariasRange(year, month, "mes");
+}
+
+/** ±1 dia em torno do mês civil. Pré-filtro PostgREST; o corte fino usa osMatchesCalendarMonth. */
+export function osListCalendarMonthFetchWindow(ym: string): {
+  from: string;
+  to: string;
+  fromPad: string;
+  toPad: string;
+} | null {
+  const range = osListCalendarMonthRange(ym);
+  if (!range) return null;
+  const shift = (ymd: string, days: number): string => {
+    const d = new Date(`${ymd}T12:00:00-03:00`);
+    d.setDate(d.getDate() + days);
+    return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  };
+  return {
+    from: range.from,
+    to: range.to,
+    fromPad: shift(range.from, -1),
+    toPad: shift(range.to, 1),
+  };
 }
 
 export function formatOsListPeriodLabel(ym: string): string | null {

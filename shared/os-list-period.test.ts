@@ -2,13 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  currentBrtCalendarMonthYm,
   formatOsListPeriodLabel,
+  osListCalendarMonthFetchWindow,
   osListCalendarMonthRange,
   osMatchesCalendarMonth,
 } from "./os-list-period";
 
 test("outubro de 2026 cobre 01/10 até 31/10, inclusive os limites", () => {
   assert.deepEqual(osListCalendarMonthRange("2026-10"), { from: "2026-10-01", to: "2026-10-31" });
+  assert.deepEqual(osListCalendarMonthFetchWindow("2026-10"), {
+    from: "2026-10-01",
+    to: "2026-10-31",
+    fromPad: "2026-09-30",
+    toPad: "2026-11-01",
+  });
   assert.equal(formatOsListPeriodLabel("2026-10"), "Período: 01/10/2026 a 31/10/2026");
 
   const inside = [
@@ -88,14 +96,36 @@ test("mês combina com status, cliente, autorizador e texto antes da página", (
   assert.equal(inMonth.length, 3);
 });
 
+test("mês civil corrente em BRT é YYYY-MM estável", () => {
+  assert.equal(currentBrtCalendarMonthYm(new Date("2026-10-15T12:00:00-03:00")), "2026-10");
+  assert.equal(currentBrtCalendarMonthYm(new Date("2026-11-01T02:30:00Z")), "2026-10");
+  assert.equal(currentBrtCalendarMonthYm(new Date("2026-11-01T03:00:00Z")), "2026-11");
+  assert.match(currentBrtCalendarMonthYm(), /^\d{4}-\d{2}$/);
+});
+
 test("a tela troca o atalho por mês e filtra antes de paginar", () => {
   const src = readFileSync(new URL("../client/src/pages/admin/service-orders.tsx", import.meta.url), "utf8");
   assert.match(src, /type="month"/);
   assert.match(src, /data-testid="filter-period"/);
+  assert.match(src, /currentBrtCalendarMonthYm\(\)/);
   assert.match(src, /osMatchesCalendarMonth\(o, filterPeriod\)/);
-  assert.match(src, /setFilterPeriod\(null\)/);
+  assert.match(src, /setFilterPeriod\(defaultPeriodYm\)/);
+  assert.match(src, /\?period=\$\{encodeURIComponent\(filterPeriod\)\}/);
+  assert.match(src, /data-testid="text-period-range"/);
+  assert.match(src, /data-testid="orders-loading"/);
+  assert.match(src, /Nenhuma ordem de serviço encontrada para este período/);
   assert.doesNotMatch(src, /<option value="hoje">/);
   const filterAt = src.indexOf("osMatchesCalendarMonth(o, filterPeriod)");
   const pageAt = src.indexOf("displayOrders.slice((safePage - 1) * ITEMS_PER_PAGE");
   assert.ok(filterAt > 0 && pageAt > filterAt);
+});
+
+test("a listagem API aceita period e pagina o mês além do teto 1000", () => {
+  const src = readFileSync(new URL("../server/routes/service-orders.ts", import.meta.url), "utf8");
+  assert.match(src, /osListCalendarMonthFetchWindow/);
+  assert.match(src, /osMatchesCalendarMonth/);
+  assert.match(src, /fetchAllSupabaseRows/);
+  assert.match(src, /req\.query\.period/);
+  assert.match(src, /scheduled_date\.gte\.\$\{periodWindow\.fromPad\}/);
+  assert.match(src, /created_at\.gte\.\$\{periodWindow\.fromPad\}/);
 });

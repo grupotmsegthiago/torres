@@ -28,6 +28,8 @@ import type { Express } from "express";
     denyIfComercialClientOutOfScope,
     isComercialScoped,
   } from "../lib/comercial-scope";
+  import { fetchAllSupabaseRows } from "../lib/supabase-page";
+  import { osListCalendarMonthFetchWindow, osMatchesCalendarMonth } from "@shared/os-list-period";
   import { CLIENT_INACTIVE_BLOCK_MSG, isClientActive } from "@shared/client-duplicates";
 
   async function buildOfficialBillingPayloadForServiceOrder(so: any, createdBy: string) {
@@ -106,6 +108,8 @@ import type { Express } from "express";
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit as string) || 1000));
     const offset = (page - 1) * limit;
+    const periodYm = typeof req.query.period === "string" ? req.query.period.trim() : "";
+    const periodWindow = periodYm ? osListCalendarMonthFetchWindow(periodYm) : null;
     const allowed = await allowedClientIdsFromRequest(req);
     if (allowed && allowed.length === 0) return res.json([]);
 
@@ -113,20 +117,42 @@ import type { Express } from "express";
 
     let data: any[];
     try {
-      let query = supabaseAdmin.from("service_orders")
-        .select(SO_LIST_COLS)
-        .order("created_at", { ascending: false });
-      if (allowed) query = query.in("client_id", allowed);
-      const { data: rows, error } = await query.range(offset, offset + limit - 1);
-      if (error) throw error;
-      data = rows?.map((r: any) => toCamelObj(r)) || [];
+      if (periodWindow) {
+        // Mês civil: pagina além do teto 1000. Pré-filtro ±1 dia; corte fino com brtDateKey.
+        const orFilter =
+          `and(scheduled_date.gte.${periodWindow.fromPad},scheduled_date.lte.${periodWindow.toPad}),` +
+          `and(created_at.gte.${periodWindow.fromPad},created_at.lte.${periodWindow.toPad})`;
+        const rows = await fetchAllSupabaseRows((from, to) => {
+          let q = supabaseAdmin
+            .from("service_orders")
+            .select(SO_LIST_COLS)
+            .or(orFilter)
+            .order("created_at", { ascending: false })
+            .range(from, to);
+          if (allowed) q = q.in("client_id", allowed);
+          return q;
+        });
+        data = rows
+          .map((r: any) => toCamelObj(r))
+          .filter((o: any) => osMatchesCalendarMonth(o, periodYm));
+      } else {
+        let query = supabaseAdmin.from("service_orders")
+          .select(SO_LIST_COLS)
+          .order("created_at", { ascending: false });
+        if (allowed) query = query.in("client_id", allowed);
+        const { data: rows, error } = await query.range(offset, offset + limit - 1);
+        if (error) throw error;
+        data = rows?.map((r: any) => toCamelObj(r)) || [];
+      }
     } catch (err: any) {
       console.warn(`[so-list] supabase error, falling back: ${err.message}`);
       const all = await storage.getServiceOrders();
       const scoped = allowed
         ? all.filter((o: any) => clientIdAllowed(o.clientId ?? o.client_id, allowed))
         : all;
-      data = scoped.slice(offset, offset + limit);
+      data = periodWindow
+        ? scoped.filter((o: any) => osMatchesCalendarMonth(o, periodYm))
+        : scoped.slice(offset, offset + limit);
     }
 
     const osIds = data.map((o: any) => o.id).filter(Boolean);
