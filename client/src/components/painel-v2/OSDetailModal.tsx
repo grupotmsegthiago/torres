@@ -2,13 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { authFetch } from "@/lib/queryClient";
 import { classeDaArma } from "@shared/kit-visual";
+import { AgenteRelevo } from "./AgenteRelevo";
 import { KitRelevo } from "./KitRelevo";
+import { MapaRotaOs } from "./MapaRotaOs";
 import { StatusBadge3D, type ViaturaStatusType } from "./StatusBadge3D";
 
 export interface OsMensagemPainel {
   texto: string;
   quando: string;
   agente: string;
+}
+
+export interface AgentePainel {
+  id: number | null;
+  nome: string;
 }
 
 export interface OsDetalhePainel {
@@ -25,6 +32,7 @@ export interface OsDetalhePainel {
   kmInicial: string | null;
   kmFinal: string | null;
   equipe: string[];
+  agentes: AgentePainel[];
   equipeLinha: string | null;
   kit: string | null;
   kitId: number | null;
@@ -58,33 +66,6 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string | null }) {
 type ArmaKit = { type: string; model: string; caliber: string; photoData?: string | null };
 type KitApi = { id: number; name: string; items?: { weapon: ArmaKit | null }[] };
 
-function mapaEstatico(d: OsDetalhePainel): string | null {
-  const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-  if (!key) return null;
-  const pontos: string[] = [];
-  if (d.origemLat != null && d.origemLng != null) pontos.push(`${d.origemLat},${d.origemLng}`);
-  if (d.destinoLat != null && d.destinoLng != null) pontos.push(`${d.destinoLat},${d.destinoLng}`);
-  if (d.posLat != null && d.posLng != null) pontos.push(`${d.posLat},${d.posLng}`);
-  if (pontos.length === 0) return null;
-  const estilos = [
-    "element:geometry|color:0x0b1220",
-    "element:labels.text.fill|color:0x8aa4bf",
-    "feature:poi|visibility:off",
-    "feature:road|element:geometry|color:0x1a2744",
-    "feature:road.highway|element:geometry|color:0x155e75",
-    "feature:water|color:0x061018",
-    "feature:landscape|element:geometry|color:0x0d1726",
-  ].map((s) => `style=${encodeURIComponent(s)}`).join("&");
-  const marcas: string[] = [];
-  if (d.origemLat != null && d.origemLng != null) marcas.push(`markers=${encodeURIComponent(`color:0xef4444|label:A|${d.origemLat},${d.origemLng}`)}`);
-  if (d.destinoLat != null && d.destinoLng != null) marcas.push(`markers=${encodeURIComponent(`color:0x38bdf8|label:B|${d.destinoLat},${d.destinoLng}`)}`);
-  if (d.posLat != null && d.posLng != null) marcas.push(`markers=${encodeURIComponent(`color:0x22c55e|size:small|${d.posLat},${d.posLng}`)}`);
-  const path = d.origemLat != null && d.destinoLat != null
-    ? `&path=${encodeURIComponent(`color:0x22d3eeff|weight:4|${d.origemLat},${d.origemLng}|${d.destinoLat},${d.destinoLng}`)}`
-    : "";
-  return `https://maps.googleapis.com/maps/api/staticmap?size=480x360&scale=2&maptype=roadmap&${estilos}&${marcas.join("&")}${path}&key=${encodeURIComponent(key)}`;
-}
-
 function fotoArma(photo?: string | null): string | null {
   if (!photo) return null;
   if ((photo.startsWith("data:") || photo.startsWith("http")) && photo.length < 1_500_000) return photo;
@@ -103,7 +84,26 @@ export function OSDetailModal({ detalhe, onClose, onFocusMap }: OSDetailModalPro
     staleTime: 60_000,
   });
   const armas = (kit?.items || []).map((item) => item.weapon).filter((arma): arma is ArmaKit => !!arma);
-  const mapa = detalhe ? mapaEstatico(detalhe) : null;
+  const agentes = detalhe?.agentes?.length
+    ? detalhe.agentes
+    : (detalhe?.equipe || []).map((nome) => ({ id: null, nome }));
+  const idsFoto = agentes.map((agente) => agente.id).filter((id): id is number => !!id);
+  const { data: fotos = [] } = useQuery<{ id: number; photoUrl: string | null }[]>({
+    queryKey: ["/api/employees", "foto-painel", idsFoto.join(",")],
+    enabled: idsFoto.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const linhas = await Promise.all(idsFoto.map(async (id) => {
+        const res = await authFetch(`/api/employees/${id}`);
+        if (!res.ok) return { id, photoUrl: null as string | null };
+        const body = await res.json();
+        const bruto = body?.photoUrl ?? body?.photo_url;
+        const photo = typeof bruto === "string" && /^(data:image\/|https?:\/\/)/.test(bruto) ? bruto : null;
+        return { id, photoUrl: photo };
+      }));
+      return linhas;
+    },
+  });
   const tituloOs = detalhe?.osNumber
     ? `OS ${detalhe.osNumber} — ${detalhe.badgeText}`
     : detalhe?.plate || "";
@@ -144,24 +144,16 @@ export function OSDetailModal({ detalhe, onClose, onFocusMap }: OSDetailModalPro
                 ) : null}
               </div>
 
-              <div className="rounded-xl overflow-hidden border border-cyan-500/25 bg-[#071019] min-h-[220px] flex items-center justify-center">
-                {mapa ? (
-                  <img src={mapa} alt="Rota da origem ao destino" className="w-full h-full object-cover min-h-[220px]" />
-                ) : (
-                  <p className="text-xs text-slate-500 px-4 text-center">Rota sem coordenadas de origem e destino.</p>
-                )}
-              </div>
+              <MapaRotaOs detalhe={detalhe} />
 
               <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  {detalhe.equipe.length > 0 ? detalhe.equipe.slice(0, 3).map((nome) => (
-                    <span
-                      key={nome}
-                      title={nome}
-                      className="w-10 h-10 rounded-full border border-cyan-400/40 bg-slate-800 text-[11px] font-black text-cyan-100 flex items-center justify-center"
-                    >
-                      {nome.replace("Escoltado: ", "").slice(0, 1)}
-                    </span>
+                <div className="flex flex-wrap items-end gap-3">
+                  {agentes.length > 0 ? agentes.slice(0, 3).map((agente) => (
+                    <AgenteRelevo
+                      key={`${agente.id ?? "sem"}-${agente.nome}`}
+                      nome={agente.nome}
+                      foto={fotos.find((foto) => foto.id === agente.id)?.photoUrl}
+                    />
                   )) : (
                     <span className="text-xs text-slate-500">Sem equipe</span>
                   )}

@@ -1392,7 +1392,7 @@ function idPessoa(valor: unknown): number {
 }
 
 /** Última OS ou última identificação. Quem aparece numa viatura mais recente sai da anterior. */
-function equipeDosCards(vehicles: TrackedVehicle[], sessoes: SessaoCondutor[]): Map<number, { condutor: string | null; agente: string | null }> {
+function equipeDosCards(vehicles: TrackedVehicle[], sessoes: SessaoCondutor[]): Map<number, { condutor: string | null; agente: string | null; condutorId: number | null; agenteId: number | null }> {
   const lista = Array.isArray(sessoes) ? sessoes : [];
   const ultimaSessao = new Map<number, SessaoCondutor>();
   for (const sessao of lista) {
@@ -1456,14 +1456,21 @@ function equipeDosCards(vehicles: TrackedVehicle[], sessoes: SessaoCondutor[]): 
     if (equipe.agente) registra(equipe.agente.id, vehicleId, equipe.agente.quando, true);
   }
 
-  const resultado = new Map<number, { condutor: string | null; agente: string | null }>();
+  const resultado = new Map<number, { condutor: string | null; agente: string | null; condutorId: number | null; agenteId: number | null }>();
   for (const [vehicleId, equipe] of escolhida) {
     const fica = (slot: Slot | null) => {
       if (!slot) return null;
       const dono = melhor.get(slot.id);
-      return dono && dono.vehicleId === vehicleId && dono.quando === slot.quando ? slot.nome : null;
+      return dono && dono.vehicleId === vehicleId && dono.quando === slot.quando ? slot : null;
     };
-    resultado.set(vehicleId, { condutor: fica(equipe.condutor), agente: fica(equipe.agente) });
+    const condutor = fica(equipe.condutor);
+    const agente = fica(equipe.agente);
+    resultado.set(vehicleId, {
+      condutor: condutor?.nome ?? null,
+      agente: agente?.nome ?? null,
+      condutorId: condutor?.id ?? null,
+      agenteId: agente?.id ?? null,
+    });
   }
   return resultado;
 }
@@ -7560,8 +7567,15 @@ export default function OperationalGridPage() {
     const equipeCard = equipeFrota.get(v.id);
     const kitCasa = kitDoCard(v, kitsArmamento);
     const equipe: string[] = [];
-    if (equipeCard?.condutor) equipe.push(titleCase(equipeCard.condutor));
-    if (equipeCard?.agente) equipe.push(titleCase(equipeCard.agente));
+    const agentes: OsDetalhePainel["agentes"] = [];
+    if (equipeCard?.condutor) {
+      equipe.push(titleCase(equipeCard.condutor));
+      agentes.push({ id: equipeCard.condutorId, nome: titleCase(equipeCard.condutor) });
+    }
+    if (equipeCard?.agente) {
+      equipe.push(titleCase(equipeCard.agente));
+      agentes.push({ id: equipeCard.agenteId, nome: titleCase(equipeCard.agente) });
+    }
     if (gi?.escortedDriverName) equipe.push(`Escoltado: ${titleCase(gi.escortedDriverName)}`);
     const mensagens: OsDetalhePainel["mensagens"] = [];
     const pushMsg = (texto?: string | null, quando?: string | null, agente?: string | null) => {
@@ -7594,6 +7608,7 @@ export default function OperationalGridPage() {
       kmInicial: kmTxt(gi?.kmInicial),
       kmFinal: kmTxt(gi?.kmFinal),
       equipe,
+      agentes,
       equipeLinha: [equipeCard?.condutor, equipeCard?.agente].filter(Boolean).map((n) => primeiroNome(n as string)).join(" & ") || null,
       kit: os?.kitName ?? kitCasa?.name ?? null,
       kitId: os?.kitId ?? kitCasa?.id ?? null,

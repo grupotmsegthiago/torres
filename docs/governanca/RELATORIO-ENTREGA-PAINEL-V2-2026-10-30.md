@@ -129,3 +129,8 @@ O operador vê o cockpit novo no mesmo Painel Operacional, com os números e as 
 - Efeito: depois da gravação, o servidor avisa as telas abertas. Elas tiram essas cartas na hora e buscam de novo a lista oficial. Se o aviso falhar, a lista se atualiza sozinha a cada 5 segundos, também com a aba em segundo plano.
 - Domínio: missão (fato `mission_updates.read_by_admin`) e projeção do Painel Operacional. Sem regra de faturamento.
 - Rollback: reverter os arquivos desta entrega. A marca no banco continua `read_by_admin = 1`.
+
+### Complemento — mapa e fotos da ficha da OS (2026-10-31)
+- O quadro "Rota da origem ao destino" era uma imagem estática que não abria. A ficha passa a usar o mesmo mapa noturno do painel, com origem, destino e a viatura. Sem coordenada, tenta o endereço. Não grava rota na OS.
+- Os círculos com a inicial viram a foto do cadastro (`employees.photo_url`, lida em `GET /api/employees/:id` só ao abrir a ficha), no mesmo relevo do kit. Sem foto, fica a inicial no relevo.
+- Domínio: painel operacional, projeção. A foto é fato do cadastro de funcionário. Sem tabela nova.
