@@ -19,6 +19,7 @@ import type { Express } from "express";
   import { applyPedagioAjustes, buildPedagioConferidoLog } from "../lib/pedagio-conferencia";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
 import { checklistViaturaObrigatorio } from "../../shared/mission-checklist";
+import { avisarMensagensLidas } from "../lib/mission-lidas-broadcast";
 
   const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition" | "odometer" | "agent" | "weapon" | "scene"; expectedItem?: string }> = {
     viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
@@ -1339,15 +1340,18 @@ Responda APENAS com JSON: {"km_lido": number}`;
   app.patch("/api/mission/updates/mark-read", requireAuth, requireAdminRole, async (req, res) => {
     try {
       const { ids } = req.body;
+      let corte: number[] | null = null;
       if (ids && Array.isArray(ids)) {
         const reais = ids.map(Number).filter((id) => Number.isInteger(id) && id > 0);
         if (reais.length === 0) return res.json({ success: true, updated: 0 });
         const { error } = await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).in("id", reais);
         if (error) throw error;
+        corte = reais;
       } else {
         const { error } = await supabaseAdmin.from("mission_updates").update({ read_by_admin: 1 }).eq("read_by_admin", 0);
         if (error) throw error;
       }
+      void avisarMensagensLidas(corte);
       res.json({ success: true });
     } catch (err: any) {
       console.error("[mission-updates] mark-read error:", err.message);

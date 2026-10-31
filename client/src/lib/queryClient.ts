@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { interpretarPayloadLidas, MISSION_LIDAS_EVENT, MISSION_LIDAS_TOPIC, semMensagensLidas } from "@shared/mission-lidas";
 import { supabase, supabaseOpsRealtime, setOpsRealtimeAuth, isSupabaseConfigured } from "./supabase";
 
 const CACHE_VERSION = "20260521-realtime-trim-v3";
@@ -700,6 +701,51 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
       });
   }
 
+  const UNREAD_MESSAGES_KEY = ["/api/mission/updates", "unread"];
+  let _lidasGen = 0;
+  let _lidasChannel: ReturnType<typeof supabase.channel> | null = null;
+  let _lidasRetry: ReturnType<typeof setTimeout> | null = null;
+
+  async function aplicarLidasRemotas(payload: unknown) {
+    const corte = interpretarPayloadLidas(payload);
+    if (!corte) return;
+    await queryClient.cancelQueries({ queryKey: UNREAD_MESSAGES_KEY });
+    queryClient.setQueryData(UNREAD_MESSAGES_KEY, (atual: unknown) => {
+      if (!Array.isArray(atual)) return atual;
+      return semMensagensLidas(atual, corte);
+    });
+    await queryClient.invalidateQueries({ queryKey: UNREAD_MESSAGES_KEY });
+  }
+
+  function _subscribeLidas() {
+    const gen = ++_lidasGen;
+    if (_lidasRetry) {
+      clearTimeout(_lidasRetry);
+      _lidasRetry = null;
+    }
+    if (_lidasChannel) {
+      const anterior = _lidasChannel;
+      _lidasChannel = null;
+      try { supabase.removeChannel(anterior); } catch {}
+    }
+    const canal = supabase.channel(MISSION_LIDAS_TOPIC, {
+      config: { private: false, broadcast: { self: false } },
+    })
+      .on("broadcast", { event: MISSION_LIDAS_EVENT }, (mensagem) => {
+        if (gen !== _lidasGen) return;
+        void aplicarLidasRemotas(mensagem?.payload);
+      })
+      .subscribe((status) => {
+        if (gen !== _lidasGen) return;
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          _lidasRetry = setTimeout(() => {
+            if (gen === _lidasGen) _subscribeLidas();
+          }, 3000);
+        }
+      });
+    _lidasChannel = canal;
+  }
+
   supabase.auth.getSession().then(async ({ data }) => {
     _opsToken = data.session?.access_token ?? null;
     if (_opsToken) {
@@ -707,6 +753,7 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
     }
     _subscribeRealtime();
     _subscribeOpsRealtime(_opsToken);
+    _subscribeLidas();
   });
   supabase.auth.onAuthStateChange(async (_event, session) => {
     const next = session?.access_token ?? null;
@@ -722,6 +769,7 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
     _reconnecting = false;
     _subscribeRealtime();
     _subscribeOpsRealtime(next);
+    _subscribeLidas();
   });
 
   setInterval(_ensureRealtimeAlive, 60_000);
@@ -736,12 +784,14 @@ if (typeof window !== "undefined" && isSupabaseConfigured) {
     _reconnecting = false;
     setTimeout(_subscribeRealtime, 1000);
     setTimeout(() => _subscribeOpsRealtime(_opsToken), 1000);
+    setTimeout(_subscribeLidas, 1000);
   });
 
   window.addEventListener("offline", () => {
     console.log("[Network] Offline detected");
     if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
     if (_opsRetryTimer) { clearTimeout(_opsRetryTimer); _opsRetryTimer = null; }
+    if (_lidasRetry) { clearTimeout(_lidasRetry); _lidasRetry = null; }
     _opsConnected = false;
     _reconnecting = false;
   });

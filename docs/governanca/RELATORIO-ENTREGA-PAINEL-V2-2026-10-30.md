@@ -121,3 +121,11 @@ O operador vê o cockpit novo no mesmo Painel Operacional, com os números e as 
 - Modo TV (`?tv=1` ou o botão no cabeçalho) tira o menu lateral e deixa o painel na tela inteira. O conteúdo do grid permanece.
 - Mensagem marcada como lida sai na hora da coluna. O id fica de fora mesmo se a lista não lida chegar atrasada. A gravação continua `read_by_admin = 1` em `/api/mission/updates/mark-read`.
 - A simulação SIM9E99 saiu do painel e da coluna de mensagens. Ao lado da placa fica o código da VTR. O campo `vehicles.frota` manda; hoje está vazio, então o número sai do kit (`KIT TORRES - 01` vira VTR-01). Embaixo da placa, menor, fica Mobi, Polo ou Virtus, pelo modelo do cadastro. Viatura sem frota e sem kit não ganha número inventado. `/api/vehicle-tracking` passou a devolver `frota`, coluna que a listagem de veículos já lia.
+
+### Complemento — leitura vale para todas as telas (2026-10-31)
+- Problema: quem marcava a carta como lida via ela sumir só no próprio navegador. TV e os outros usuários continuavam com a fila.
+- Causa: `read_by_admin` já é fato único em `mission_updates`, mas o outro navegador dependia do `postgres_changes` da tabela. Esse canal entra anônimo e a RLS engole o evento (a mesma razão do canal autenticado de OS/billing). O plano B era um refetch de 30s, pausado com a aba em segundo plano. O conjunto `lidasNaTela` só existe na memória de quem clicou.
+- Reutilização: o mesmo `PATCH /api/mission/updates/mark-read` e a mesma lista `GET /api/mission/updates?unread=true`. Não há tabela, política de RLS nem API nova. O aviso é um broadcast público só com ids, para não abrir `mission_updates` no navegador.
+- Efeito: depois da gravação, o servidor avisa as telas abertas. Elas tiram essas cartas na hora e buscam de novo a lista oficial. Se o aviso falhar, a lista se atualiza sozinha a cada 5 segundos, também com a aba em segundo plano.
+- Domínio: missão (fato `mission_updates.read_by_admin`) e projeção do Painel Operacional. Sem regra de faturamento.
+- Rollback: reverter os arquivos desta entrega. A marca no banco continua `read_by_admin = 1`.
