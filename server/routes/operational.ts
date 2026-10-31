@@ -136,13 +136,17 @@ import type { Express } from "express";
 
     const rangeFrom = qFrom || new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const rangeTo = qTo || rangeFrom;
+    // L002 / RULES.md: vehicleFuelCache SEMPRE filtra só o dia de hoje (BRT).
+    // Nunca usar qFrom/qTo do grid — range largo herdava abastecimentos de
+    // outras missões e congelava combustível fantasma (ex.: TOR-0783 ~R$ 91k).
     const vehicleFuelCache = new Map<string, number>();
     try {
+      const todayFuel = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
       const { data: allFuelRecords } = await supabaseAdmin.from("financial_transactions")
         .select("amount, description, created_at")
         .eq("origin_type", "fueling")
-        .gte("created_at", rangeFrom + "T00:00:00")
-        .lte("created_at", rangeTo + "T23:59:59")
+        .gte("created_at", todayFuel + "T00:00:00")
+        .lte("created_at", todayFuel + "T23:59:59")
         .order("created_at", { ascending: false })
         .limit(200);
       if (allFuelRecords) {
@@ -706,12 +710,18 @@ import type { Express } from "express";
 
             const frozenFat = Math.round(resultado.faturamento.total * 100) / 100;
             const frozenPag = Math.round(resultado.pagamento.total * 100) / 100;
-            const frozenComb = Math.round(custoCombustivel * 100) / 100;
+            // Congelar combustível SÓ a partir de mission_costs desta OS.
+            // Nunca persistir vehicleFuelCache (fallback live do dia) — L002/TOR-0783.
+            const osMissionCostsForFreeze = missionCostsByOS.get(o.id) || [];
+            const splitFreeze = splitMissionCostsForBilling(osMissionCostsForFreeze);
+            const frozenComb = Math.round(splitFreeze.despesas_combustivel * 100) / 100;
             const frozenPed = Math.round(custoPedagio * 100) / 100;
             const frozenOut = Math.round(custoOutros * 100) / 100;
-            const frozenCustoTotal = Math.round(custoTotal * 100) / 100;
-            const frozenLucro = Math.round(resultadoComCustos * 100) / 100;
-            const frozenMargem = Math.round(margemComCustos * 100) / 100;
+            const frozenCustoTotal = Math.round((resultado.pagamento.total + frozenComb + frozenPed + frozenOut) * 100) / 100;
+            const frozenLucro = Math.round((resultado.faturamento.total - frozenCustoTotal) * 100) / 100;
+            const frozenMargem = resultado.faturamento.total > 0
+              ? Math.round((frozenLucro / resultado.faturamento.total) * 10000) / 100
+              : 0;
             const frozenHoras = Math.round(horasCalc * 100) / 100;
             const frozenKm = billing.km_total;
 
