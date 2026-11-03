@@ -1,14 +1,15 @@
 /**
- * Helpers puros da NFS-e Focus NFe (São Paulo / Nota Fiscal Paulistana).
+ * Helpers puros da NFS-e Focus NFe.
+ * Emissão nova: Ambiente Nacional (/v2/nfsen), JSON plano da DPS.
  * Sem I/O — o HTTP e a persistência ficam em focus-nfe.ts.
  *
  * Reutiliza discriminacao, ISS/INSS e CNPJ oficiais de asaas-helpers.
+ * O item municipal 07870 não vai na DPS. O código nacional da escolta é 110201 (LC 116 11.02.01).
  */
 
 import {
   TORRES_CNPJ,
   CODIGO_SERVICO_MUNICIPAL_CODE,
-  ISS_ALIQUOTA,
   ISS_RETAIN,
   buildServicoDiscriminacao,
   inssAliquotaEfetiva,
@@ -22,12 +23,19 @@ import { isValidCnpj, sanitizeComplement } from "../../shared/nfse-tomador";
 
 export { isValidCnpj, sanitizeComplement };
 
-/** Paulistana: item da lista municipal (Focus SP usa 7870; Torres homologou 07870). LC 116 11.02 não é aceito como 1102. */
+/** Item municipal da Paulistana. A DPS nacional não envia este código. */
 export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
+/** LC 116 11.02.01 — vigilância, segurança ou monitoramento (escolta). */
+export const FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS = "110201";
 export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
-export const FOCUS_NATUREZA_OPERACAO = "1";
-export const FOCUS_NATUREZA_FORA_MUNICIPIO = "2";
-export const FOCUS_REGIME_SIMPLES_ME_EPP = "6";
+/** 3 = optante ME/EPP. 1 = não optante. Campo oficial: codigo_opcao_simples_nacional. */
+export const FOCUS_OPCAO_SIMPLES_ME_EPP = 3;
+export const FOCUS_OPCAO_SIMPLES_NAO_OPTANTE = 1;
+/** 0 = nenhum. No padrão nacional, 6 é sociedade de profissionais, não o Simples. */
+export const FOCUS_REGIME_ESPECIAL_NENHUM = 0;
+export const FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL = 1;
+export const FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO = 1;
+export const FOCUS_TIPO_RETENCAO_ISS_TOMADOR = 2;
 export const FOCUS_PROVIDER = "focus";
 export const FOCUS_REF_PREFIX = "torres-inv-";
 export const FOCUS_API_PRODUCTION_URL = "https://api.focusnfe.com.br";
@@ -69,6 +77,52 @@ export function resolveFocusApiBaseUrl(
   if (isFocusProdLabel(node) && !isFocusHomologLabel(env)) return FOCUS_API_PRODUCTION_URL;
   if (isFocusHomologLabel(env)) return FOCUS_API_HOMOLOG_URL;
   return FOCUS_API_HOMOLOG_URL;
+}
+
+export function focusNfsenEmitPath(ref: string): string {
+  const r = String(ref || "").trim();
+  if (!r) throw new Error("Referência Focus ausente");
+  return `/nfsen?ref=${encodeURIComponent(r)}`;
+}
+
+export function focusNfsenResourcePath(ref: string): string {
+  const r = String(ref || "").trim();
+  if (!r) throw new Error("Referência Focus ausente");
+  return `/nfsen/${encodeURIComponent(r)}`;
+}
+
+/** Notas já autorizadas na Paulistana. Emissão nova não usa este caminho. */
+export function focusNfseMunicipalResourcePath(ref: string): string {
+  const r = String(ref || "").trim();
+  if (!r) throw new Error("Referência Focus ausente");
+  return `/nfse/${encodeURIComponent(r)}`;
+}
+
+/** Data da DPS no horário de Brasília. O ambiente nacional pede ISO com fuso e competência AAAA-MM-DD. */
+export function focusDpsTimestamps(input?: string | Date): { data_emissao: string; data_competencia: string } {
+  const date = input == null || input === ""
+    ? new Date()
+    : input instanceof Date
+      ? input
+      : new Date(input);
+  if (Number.isNaN(date.getTime())) throw new Error("Data de emissão da NFS-e inválida");
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const pick = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  const hour = pick("hour") === "24" ? "00" : pick("hour");
+  const data_competencia = `${pick("year")}-${pick("month")}-${pick("day")}`;
+  return {
+    data_emissao: `${data_competencia}T${hour}:${pick("minute")}:${pick("second")}-03:00`,
+    data_competencia,
+  };
 }
 
 export function focusNfseRef(invoiceId: number): string {
@@ -396,63 +450,47 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
   const cep = onlyDigits(opts.tomador.zip);
   if (cep.length !== 8) throw new Error("CEP do tomador deve ter 8 dígitos");
 
-  const issValor = Number((value * ISS_ALIQUOTA / 100).toFixed(2));
   const inssAliq = inssAliquotaEfetiva(!!opts.retemInss, opts.inssAliquota ?? 11);
   const inssValor = Number((value * inssAliq / 100).toFixed(2));
   const ccmTomador = normalizeMunicipalInscriptionForAsaas(opts.tomador.inscricaoMunicipal);
   const phone = onlyDigits(opts.tomador.phone).slice(0, 11);
-
-  const tomador: Record<string, any> = {
-    razao_social: String(opts.tomador.name || "").trim().slice(0, 115),
-    email: focusTomadorEmail(opts.tomador.email),
-    endereco: {
-      logradouro: String(opts.tomador.address || "").trim().slice(0, 125),
-      numero: extractStreetNumber(opts.tomador.address, opts.tomador.addressNumber) || "S/N",
-      complemento: sanitizeComplement(opts.tomador.complement),
-      bairro: String(opts.tomador.bairro || "Centro").trim().slice(0, 60),
-      codigo_municipio: ibgeTomador,
-      uf: String(opts.tomador.state || "").trim().toUpperCase().slice(0, 2),
-      cep,
-    },
-  };
-  if (digits.length === 14) tomador.cnpj = digits;
-  else tomador.cpf = digits;
   const tomadorInSp = ibgeTomador === FOCUS_CODIGO_MUNICIPIO_SP;
-  if (tomadorInSp && ccmTomador) tomador.inscricao_municipal = ccmTomador;
-  if (phone.length >= 10) tomador.telefone = phone;
-
   const municipioPrestacao = tomadorInSp ? FOCUS_CODIGO_MUNICIPIO_SP : ibgeTomador;
-  const natureza = tomadorInSp ? FOCUS_NATUREZA_OPERACAO : FOCUS_NATUREZA_FORA_MUNICIPIO;
-
-  const servico: Record<string, any> = {
-    valor_servicos: value,
-    iss_retido: ISS_RETAIN,
-    item_lista_servico: FOCUS_ITEM_LISTA_SERVICO,
-    codigo_tributario_municipio: CODIGO_SERVICO_MUNICIPAL_CODE,
-    discriminacao: buildServicoDiscriminacao({ description: opts.description }),
-    codigo_municipio: municipioPrestacao,
-    aliquota: ISS_ALIQUOTA,
-    base_calculo: value,
-    valor_iss: issValor,
-  };
-  if (ISS_RETAIN) servico.valor_iss_retido = issValor;
-  if (inssValor > 0) servico.valor_inss = inssValor;
-
   const optante = opts.optanteSimplesNacional !== false;
-  return {
-    data_emissao: opts.dataEmissaoIso || new Date().toISOString(),
-    natureza_operacao: natureza,
-    optante_simples_nacional: optante,
-    incentivador_cultural: false,
-    regime_especial_tributacao: optante ? FOCUS_REGIME_SIMPLES_ME_EPP : undefined,
-    prestador: {
-      cnpj: cleanCnpj(opts.prestadorCnpj || TORRES_CNPJ),
-      inscricao_municipal: prestadorIm,
-      codigo_municipio: FOCUS_CODIGO_MUNICIPIO_SP,
-    },
-    tomador,
-    servico,
+  const when = focusDpsTimestamps(opts.dataEmissaoIso);
+
+  const payload: Record<string, any> = {
+    data_emissao: when.data_emissao,
+    data_competencia: when.data_competencia,
+    codigo_municipio_emissora: FOCUS_CODIGO_MUNICIPIO_SP,
+    cnpj_prestador: cleanCnpj(opts.prestadorCnpj || TORRES_CNPJ),
+    inscricao_municipal_prestador: prestadorIm,
+    codigo_municipio_prestador: FOCUS_CODIGO_MUNICIPIO_SP,
+    codigo_opcao_simples_nacional: optante ? FOCUS_OPCAO_SIMPLES_ME_EPP : FOCUS_OPCAO_SIMPLES_NAO_OPTANTE,
+    regime_especial_tributacao: FOCUS_REGIME_ESPECIAL_NENHUM,
+    razao_social_tomador: String(opts.tomador.name || "").trim().slice(0, 150),
+    codigo_municipio_tomador: ibgeTomador,
+    cep_tomador: cep,
+    logradouro_tomador: String(opts.tomador.address || "").trim().slice(0, 255),
+    numero_tomador: extractStreetNumber(opts.tomador.address, opts.tomador.addressNumber) || "S/N",
+    bairro_tomador: String(opts.tomador.bairro || "Centro").trim().slice(0, 60),
+    codigo_municipio_prestacao: municipioPrestacao,
+    codigo_tributacao_nacional_iss: FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS,
+    descricao_servico: buildServicoDiscriminacao({ description: opts.description }),
+    valor_servico: value,
+    tributacao_iss: FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
+    tipo_retencao_iss: ISS_RETAIN ? FOCUS_TIPO_RETENCAO_ISS_TOMADOR : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO,
   };
+  if (digits.length === 14) payload.cnpj_tomador = digits;
+  else payload.cpf_tomador = digits;
+  const email = focusTomadorEmail(opts.tomador.email);
+  if (email) payload.email_tomador = email;
+  const complemento = sanitizeComplement(opts.tomador.complement);
+  if (complemento) payload.complemento_tomador = complemento;
+  if (tomadorInSp && ccmTomador) payload.inscricao_municipal_tomador = ccmTomador;
+  if (phone.length >= 10) payload.telefone_tomador = phone;
+  if (inssValor > 0) payload.valor_cp = inssValor;
+  return payload;
 }
 
 export function focusCancelJustification(reason?: string | null): string {

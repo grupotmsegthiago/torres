@@ -1,5 +1,7 @@
 /**
- * Satélite Focus NFe — emissão, consulta e cancelamento de NFS-e (São Paulo).
+ * Satélite Focus NFe — emissão, consulta e cancelamento de NFS-e.
+ * Emissão nova: Ambiente Nacional POST /v2/nfsen. Consulta e cancelamento
+ * usam /v2/nfsen e, só em 404, a Paulistana /v2/nfse (notas já emitidas).
  * Camada 0: não altera valor comercial da invoice (boletim/billing).
  */
 
@@ -25,7 +27,10 @@ import {
   extractFocusErrorMessage,
   focusCancelJustification,
   focusNfseConsultRef,
+  focusNfseMunicipalResourcePath,
   focusNfseRef,
+  focusNfsenEmitPath,
+  focusNfsenResourcePath,
   focusPdfUrl,
   focusTomadorEmail,
   ibgeMunicipioFromCityUf,
@@ -149,18 +154,31 @@ export async function consultFocusNfse(ref: string): Promise<any | null> {
   const r = String(ref || "").trim();
   if (!r) return null;
   try {
-    return await focusRequest("GET", `/nfse/${encodeURIComponent(r)}`);
+    return await focusRequest("GET", focusNfsenResourcePath(r));
   } catch (e: any) {
-    if (e?.status === 404) return null;
+    if (e?.status === 404) {
+      try {
+        return await focusRequest("GET", focusNfseMunicipalResourcePath(r));
+      } catch (legacy: any) {
+        if (legacy?.status === 404) return null;
+        if (isFocusConnectivityError(legacy?.message)) return null;
+        throw legacy;
+      }
+    }
     if (isFocusConnectivityError(e?.message)) return null;
     throw e;
   }
 }
 
 export async function cancelFocusNfse(ref: string, reason?: string | null): Promise<any> {
-  return focusRequest("DELETE", `/nfse/${encodeURIComponent(ref)}`, {
-    justificativa: focusCancelJustification(reason),
-  });
+  const body = { justificativa: focusCancelJustification(reason) };
+  const r = String(ref || "").trim();
+  try {
+    return await focusRequest("DELETE", focusNfsenResourcePath(r), body);
+  } catch (e: any) {
+    if (e?.status !== 404) throw e;
+    return await focusRequest("DELETE", focusNfseMunicipalResourcePath(r), body);
+  }
 }
 
 function focusAssetNeedsAuth(url: string): boolean {
@@ -406,7 +424,7 @@ export async function emitFocusNfseForInvoice(
 
   let result: any;
   try {
-    result = await focusRequest("POST", `/nfse?ref=${encodeURIComponent(emitRef)}`, buildFocusNfsePayload({
+    result = await focusRequest("POST", focusNfsenEmitPath(emitRef), buildFocusNfsePayload({
       value: parseFloat(invoice.value),
       description: invoice.description || DESCRICAO_SERVICO_FIXA,
       tomador,

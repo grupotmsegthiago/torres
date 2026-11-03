@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — NFS-e Ambiente Nacional (Focus /v2/nfsen)
+
+- Emissão nova sai por `POST /v2/nfsen` (DPS). Consulta e cancelamento usam `/v2/nfsen`. Nota já emitida na Paulistana (`/v2/nfse`) só é consultada ou cancelada se o nacional responder 404.
+- Código nacional da escolta: `110201`. Simples ME/EPP: `codigo_opcao_simples_nacional` 3. Regime especial: 0. ISS continua sem retenção (`ISS_RETAIN`).
+- As mesmas colunas de `invoices` recebem status, número, código de verificação, DANFSe e XML. Boleto segue no Asaas.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-NACIONAL-2026-11-03.md`.
+
 ## 2026-10-13 — Protocolo de assinatura de volta na listagem
 
 - O botão **4-PROT ?** da listagem de contas a pagar voltou. Lançamento pago ou aprovado volta a aceitar a foto das contas assinadas.

@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CODIGO_SERVICO_MUNICIPAL_CODE,
-  ISS_ALIQUOTA,
+  ISS_RETAIN,
   TORRES_CNPJ,
   NF_INSS_ANEXO_IV_TEXTO,
   NF_SIMPLES_NACIONAL_TEXTO,
 } from "./asaas-helpers";
 import {
   FOCUS_CODIGO_MUNICIPIO_SP,
-  FOCUS_ITEM_LISTA_SERVICO,
+  FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS,
+  FOCUS_OPCAO_SIMPLES_ME_EPP,
+  FOCUS_OPCAO_SIMPLES_NAO_OPTANTE,
+  FOCUS_REGIME_ESPECIAL_NENHUM,
   FOCUS_PROVIDER,
+  FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO,
+  FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
   FOCUS_API_HOMOLOG_URL,
   FOCUS_API_PRODUCTION_URL,
   buildFocusNfsePayload,
@@ -18,8 +22,12 @@ import {
   extractFocusErrorMessage,
   focusCancelJustification,
   focusMunicipalNumber,
+  focusDpsTimestamps,
   focusNfseConsultRef,
+  focusNfseMunicipalResourcePath,
   focusNfseRef,
+  focusNfsenEmitPath,
+  focusNfsenResourcePath,
   ibgeMunicipioFromCityUf,
   isFocusConnectivityError,
   isFocusManagedInvoice,
@@ -103,6 +111,32 @@ test("shouldEmitNfseViaFocus: legado Asaas vivo não migra", () => {
   assert.equal(isFocusManagedInvoice({ nfse_number: "inv_x" }), false);
 });
 
+test("rotas Focus da NFS-e nacional", () => {
+  assert.equal(focusNfsenEmitPath("torres-inv-9"), "/nfsen?ref=torres-inv-9");
+  assert.equal(focusNfsenResourcePath("torres-inv-9"), "/nfsen/torres-inv-9");
+  assert.equal(focusNfseMunicipalResourcePath("torres-inv-9"), "/nfse/torres-inv-9");
+  assert.equal(focusNfsenEmitPath("a b"), "/nfsen?ref=a%20b");
+});
+
+test("competência da DPS fica no horário de Brasília", () => {
+  const night = focusDpsTimestamps("2026-11-04T02:30:00.000Z");
+  assert.equal(night.data_competencia, "2026-11-03");
+  assert.equal(night.data_emissao, "2026-11-03T23:30:00-03:00");
+});
+
+test("não optante do Simples manda código 1 e regime nenhum", () => {
+  const p = buildFocusNfsePayload({
+    value: 10,
+    prestadorIm: "1",
+    optanteSimplesNacional: false,
+    retemInss: false,
+    tomador: tomadorOk,
+  });
+  assert.equal(p.codigo_opcao_simples_nacional, FOCUS_OPCAO_SIMPLES_NAO_OPTANTE);
+  assert.equal(p.regime_especial_tributacao, FOCUS_REGIME_ESPECIAL_NENHUM);
+  assert.equal("valor_cp" in p, false);
+});
+
 test("mapFocusStatusToTorres", () => {
   assert.equal(mapFocusStatusToTorres("autorizado"), "AUTHORIZED");
   assert.equal(mapFocusStatusToTorres("autorizada"), "AUTHORIZED");
@@ -112,36 +146,43 @@ test("mapFocusStatusToTorres", () => {
   assert.equal(mapFocusStatusToTorres("AUTHORIZED"), "AUTHORIZED");
 });
 
-test("buildFocusNfsePayload: SP, 07870, ISS sem retenção, discriminacao escolta+legais", () => {
+test("buildFocusNfsePayload: DPS nacional, 110201, ISS sem retenção, discriminacao escolta+legais", () => {
   const p = buildFocusNfsePayload({
     value: 1000,
     description: "Referente aos serviços de Escolta Armada - Período: 16/09/2026 a 30/09/2026 (Setembro/2026)",
     prestadorIm: "12345",
+    dataEmissaoIso: "2026-11-03T15:00:00.000Z",
     tomador: tomadorOk,
     retemInss: true,
     inssAliquota: 11,
   });
-  assert.equal(p.prestador.cnpj, TORRES_CNPJ);
-  assert.equal(p.prestador.codigo_municipio, FOCUS_CODIGO_MUNICIPIO_SP);
-  assert.equal(p.tomador.cnpj, "07504505000132");
-  assert.equal(p.tomador.cpf, undefined);
-  assert.equal(p.tomador.endereco.codigo_municipio, FOCUS_CODIGO_MUNICIPIO_SP);
-  assert.equal(p.tomador.endereco.cep, "01310100");
-  assert.equal(p.servico.item_lista_servico, FOCUS_ITEM_LISTA_SERVICO);
-  assert.equal(p.servico.item_lista_servico, "07870");
-  assert.equal(p.servico.codigo_tributario_municipio, CODIGO_SERVICO_MUNICIPAL_CODE);
-  assert.match(p.servico.discriminacao, /Escolta Armada/);
-  assert.match(p.servico.discriminacao, /16\/09\/2026/);
-  assert.ok(p.servico.discriminacao.includes(NF_INSS_ANEXO_IV_TEXTO));
-  assert.ok(p.servico.discriminacao.includes(NF_SIMPLES_NACIONAL_TEXTO));
-  assert.equal(p.servico.iss_retido, false);
-  assert.equal(p.servico.aliquota, ISS_ALIQUOTA);
-  assert.equal(p.servico.valor_iss, 50);
-  assert.equal("valor_iss_retido" in p.servico, false);
-  assert.equal(p.servico.valor_inss, 110);
-  assert.equal(p.optante_simples_nacional, true);
-  assert.equal(p.natureza_operacao, "1");
-  assert.equal(p.servico.codigo_municipio, FOCUS_CODIGO_MUNICIPIO_SP);
+  assert.equal(p.cnpj_prestador, TORRES_CNPJ);
+  assert.equal(p.codigo_municipio_emissora, FOCUS_CODIGO_MUNICIPIO_SP);
+  assert.equal(p.codigo_municipio_prestador, FOCUS_CODIGO_MUNICIPIO_SP);
+  assert.equal(p.inscricao_municipal_prestador, "12345");
+  assert.equal(p.cnpj_tomador, "07504505000132");
+  assert.equal(p.cpf_tomador, undefined);
+  assert.equal(p.codigo_municipio_tomador, FOCUS_CODIGO_MUNICIPIO_SP);
+  assert.equal(p.cep_tomador, "01310100");
+  assert.equal(p.codigo_tributacao_nacional_iss, FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS);
+  assert.equal(p.codigo_tributacao_nacional_iss, "110201");
+  assert.equal("item_lista_servico" in p, false);
+  assert.equal("prestador" in p, false);
+  assert.equal("servico" in p, false);
+  assert.match(p.descricao_servico, /Escolta Armada/);
+  assert.match(p.descricao_servico, /16\/09\/2026/);
+  assert.ok(p.descricao_servico.includes(NF_INSS_ANEXO_IV_TEXTO));
+  assert.ok(p.descricao_servico.includes(NF_SIMPLES_NACIONAL_TEXTO));
+  assert.equal(p.tipo_retencao_iss, ISS_RETAIN ? 2 : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO);
+  assert.equal(p.tributacao_iss, FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL);
+  assert.equal(p.valor_servico, 1000);
+  assert.equal("valor_iss" in p, false);
+  assert.equal(p.valor_cp, 110);
+  assert.equal(p.codigo_opcao_simples_nacional, FOCUS_OPCAO_SIMPLES_ME_EPP);
+  assert.equal(p.regime_especial_tributacao, FOCUS_REGIME_ESPECIAL_NENHUM);
+  assert.equal(p.codigo_municipio_prestacao, FOCUS_CODIGO_MUNICIPIO_SP);
+  assert.equal(p.data_emissao, "2026-11-03T12:00:00-03:00");
+  assert.equal(p.data_competencia, "2026-11-03");
   assert.equal("payment" in p, false);
 });
 
@@ -158,9 +199,9 @@ test("buildFocusNfsePayload: discriminação MULTILOG leva OS e SM sem alterar o
     retemInss: true,
     inssAliquota: 11,
   });
-  assert.match(p.servico.discriminacao, /OS\. 1312/);
-  assert.match(p.servico.discriminacao, /SM\. 41128477/);
-  assert.equal(p.tomador.cnpj, "07504505000132");
+  assert.match(p.descricao_servico, /OS\. 1312/);
+  assert.match(p.descricao_servico, /SM\. 41128477/);
+  assert.equal(p.cnpj_tomador, "07504505000132");
 });
 
 test("buildFocusNfsePayload: tomador fora de SP não envia CCM paulistana", () => {
@@ -176,16 +217,16 @@ test("buildFocusNfsePayload: tomador fora de SP não envia CCM paulistana", () =
       inscricaoMunicipal: "4372204",
     },
   });
-  assert.equal(fora.tomador.inscricao_municipal, undefined);
-  assert.equal(fora.tomador.endereco.codigo_municipio, "3205002");
-  assert.equal(fora.natureza_operacao, "2");
-  assert.equal(fora.servico.codigo_municipio, "3205002");
+  assert.equal(fora.inscricao_municipal_tomador, undefined);
+  assert.equal(fora.codigo_municipio_tomador, "3205002");
+  assert.equal(fora.codigo_municipio_prestacao, "3205002");
+  assert.equal(fora.codigo_municipio_emissora, FOCUS_CODIGO_MUNICIPIO_SP);
   const sp = buildFocusNfsePayload({
     value: 550,
     prestadorIm: "65831527",
     tomador: { ...tomadorOk, inscricaoMunicipal: "1234567" },
   });
-  assert.equal(sp.tomador.inscricao_municipal, "1234567");
+  assert.equal(sp.inscricao_municipal_tomador, "1234567");
 });
 
 test("buildFocusNfsePayload: CPF no tomador e CCM só se ≤8 dígitos", () => {
@@ -194,9 +235,9 @@ test("buildFocusNfsePayload: CPF no tomador e CCM só se ≤8 dígitos", () => {
     prestadorIm: "99",
     tomador: { ...tomadorOk, cpfCnpj: "390.533.447-05", inscricaoMunicipal: "188201912119" },
   });
-  assert.equal(p.tomador.cpf, "39053344705");
-  assert.equal(p.tomador.cnpj, undefined);
-  assert.equal(p.tomador.inscricao_municipal, undefined);
+  assert.equal(p.cpf_tomador, "39053344705");
+  assert.equal(p.cnpj_tomador, undefined);
+  assert.equal(p.inscricao_municipal_tomador, undefined);
 });
 
 test("buildFocusNfsePayload falha sem IM do prestador ou IBGE", () => {
@@ -227,8 +268,8 @@ test("focusTomadorEmail: um e-mail curto, nunca a lista inteira", () => {
     prestadorIm: "65831527",
     tomador: { ...tomadorOk, email: lista, city: "Serra", state: "ES", codigoMunicipioIbge: "3205002" },
   });
-  assert.equal(p.tomador.email, "igor@nimbusexpress.com.br");
-  assert.ok(String(p.tomador.email).length <= 75);
+  assert.equal(p.email_tomador, "igor@nimbusexpress.com.br");
+  assert.ok(String(p.email_tomador).length <= 75);
 });
 
 test("nfseUpdatesFromFocusObject: autorizada prefere DANFSe PDF à página HTML da prefeitura", () => {
@@ -311,7 +352,7 @@ test("buildFocusNfsePayload: complemento da nota tem no máximo 30", () => {
       complement: "COND PROLOGIS CCP PARK IIQUADRAAREA REMANESCENTE BLOCO PREDIO 100",
     },
   });
-  assert.equal(p.tomador.endereco.complemento, "COND PROLOGIS CCP PARK");
-  assert.ok(p.tomador.endereco.complemento.length <= 30);
+  assert.equal(p.complemento_tomador, "COND PROLOGIS CCP PARK");
+  assert.ok(p.complemento_tomador.length <= 30);
 });
 
