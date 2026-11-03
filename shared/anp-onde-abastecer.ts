@@ -6,20 +6,25 @@
 
 export const ONDE_ABASTECER_STATION_KEY = "torres.ondeAbastecer.stationName";
 /** `not_loaded` é a base ainda não sincronizada. Os outros são raio, cidade ou CEP ainda sem coordenada. */
-export type OndeAbastecerEmptyReason = "not_loaded" | "no_city" | "no_station" | "locating";
+export type EmptyReason = "not_loaded" | "no_city" | "no_station" | "locating";
+export type OndeAbastecerEmptyReason = EmptyReason;
 
 /**
- * Âmbar só para base ainda não sincronizada.
- * `mode === "empty"` também é cidade não identificada, raio sem posto ou CEP em localização.
+ * Âmbar só com resposta vazia e base ainda não sincronizada.
+ * `mode === "empty"` sozinho também é cidade, raio ou CEP em localização.
  * Sem `emptyReason` (resposta antiga), cai na frase que a API já usava.
+ * Cartão com preço ou posto mais próximo nunca é âmbar.
  */
-export function isAnpBaseNotLoaded(
-  emptyReason: OndeAbastecerEmptyReason | null | undefined,
-  message?: string | null,
-): boolean {
-  if (emptyReason) return emptyReason === "not_loaded";
-  return (message ?? "").includes("ainda não foi carregado");
+export function isAnpBaseNotLoaded(payload: {
+  mode: "priced" | "nearest" | "empty";
+  emptyReason?: EmptyReason | null;
+  message?: string | null;
+} | null | undefined): boolean {
+  if (!payload || payload.mode !== "empty") return false;
+  if (payload.emptyReason) return payload.emptyReason === "not_loaded";
+  return Boolean(payload.message?.includes("ainda não foi carregado"));
 }
+
 export const ONDE_ABASTECER_RADIUS_KM = 5;
 export const ANP_YEAR_PAGE = "https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan";
 export const ANP_FISCAL_XLSX_URL =

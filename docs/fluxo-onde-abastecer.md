@@ -292,7 +292,7 @@ A carga de qualidade lê a planilha pública de fiscalização. Se ela vier sem 
 
 O campo Posto do lançamento começa com o nome guardado nesta tela, na mesma sessão. O preço da pesquisa não preenche o R$/litro.
 
-A volta da tela é `/mobile`. A API manda `emptyReason`. A tela usa o aviso âmbar só quando esse valor é `not_loaded` (base ainda não sincronizada). Cidade não identificada, raio sem posto e CEP ainda sendo localizado ficam no aviso neutro, com a frase da própria resposta. `mode === "empty"` cobre os quatro casos e não decide o título.
+A volta da tela é `/mobile`. A API manda `emptyReason`. O aviso âmbar só sai de `isAnpBaseNotLoaded`: a resposta precisa estar em `mode === "empty"` e o motivo ser `not_loaded`. Sem o campo, a frase "ainda não foi carregado" ainda vale. Cidade, raio e CEP em localização ficam no aviso neutro. Cartão com preço ou posto mais próximo nunca usa o âmbar.
 
 ## 13. Pontos úteis para a comparação
 

@@ -53,4 +53,9 @@ O agente ganha um botão que indica posto perto, com os dois preços da última 
 ### Riscos remanescentes
 - O CSV não traz coordenada. O raio usa o CEP, até 40 endereços novos por abertura.
 - "Cerca de X min" é estimativa a 25 km/h, não o trânsito da hora.
-- A primeira carga só acontece na segunda de manhã, ou quando um admin chamar a sincronização. Antes disso, e só nesse caso (`emptyReason = not_loaded`), a tela avisa que o histórico ainda não foi carregado. Cidade não identificada ou raio sem posto usa o outro aviso.
+- A primeira carga só acontece na segunda de manhã, ou quando um admin chamar a sincronização. O âmbar só aparece com `mode === "empty"` e `emptyReason = not_loaded`. Cidade, raio e CEP em localização usam o outro aviso.
+
+### Status consolidado
+- Isolamento de domínio: satélite de consulta. Sem efeito em `vehicle_fueling`, conciliação TicketLog, boletim ou balanço.
+- Cobertura: 8 testes passando. Incluem reprovação recente no XLSX (coleta simples fica de fora), descarte de gasolina aditivada com o preço mais recente de comum e etanol, semana de domingo a sábado, exigência dos dois preços com desempate por distância, e a distinção de `emptyReason` (cartão com preço não acende o âmbar).
+- Homologação: disparar `POST /api/admin/anp-stations/sync` ou esperar o cron de segunda às 04:20 no horário de Brasília, e abrir `/mobile/onde-abastecer` com login de agente. A tela não foi aberta neste ambiente.
