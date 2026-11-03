@@ -25,6 +25,27 @@ export function isAnpBaseNotLoaded(payload: {
   return Boolean(payload.message?.includes("ainda não foi carregado"));
 }
 
+/**
+ * Cidade sem nenhuma linha.
+ * Zero postos com qualidade conhecida no país = a carga ainda não rodou (`not_loaded`).
+ * Base já carregada e esta cidade sem posto = `no_station`.
+ */
+export function emptyReasonForUnmatchedCity(qualityKnownStations: number): "not_loaded" | "no_station" {
+  return qualityKnownStations > 0 ? "no_station" : "not_loaded";
+}
+
+/** Endereço da pesquisa ANP para achar o ponto do posto. O CEP sozinho, em cidade grande, cai no centro do município. */
+export function stationGeocodeQuery(
+  address: string | null | undefined,
+  city: string | null | undefined,
+  state: string | null | undefined,
+): string {
+  return [address, city, state, "Brasil"]
+    .map((part) => (part ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
 export const ONDE_ABASTECER_RADIUS_KM = 5;
 export const ANP_YEAR_PAGE = "https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan";
 export const ANP_FISCAL_XLSX_URL =

@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   digitsCnpj,
+  emptyReasonForUnmatchedCity,
+  stationGeocodeQuery,
   estimateDriveMinutes,
   isAnpBaseNotLoaded,
   isDesinterdiction,
@@ -120,6 +122,19 @@ test("infração de qualidade e interdição total", () => {
   assert.equal(flags.has("11111111000111"), false);
   assert.equal(flags.get("22222222000122")?.isInterdicted, true);
   assert.equal(flags.has("33333333000133"), false);
+});
+
+test("cidade sem linha com a base nacional vazia é histórico não carregado", () => {
+  assert.equal(emptyReasonForUnmatchedCity(0), "not_loaded");
+  assert.equal(emptyReasonForUnmatchedCity(5825), "no_station");
+});
+
+test("busca do posto usa o endereço, não só o CEP", () => {
+  assert.equal(
+    stationGeocodeQuery("AVENIDA X, 100 - CENTRO", "São Paulo", "SP"),
+    "AVENIDA X, 100 - CENTRO, São Paulo, SP, Brasil",
+  );
+  assert.equal(stationGeocodeQuery("", null, "SP"), "SP, Brasil");
 });
 
 test("base não sincronizada não se confunde com raio vazio ou cidade", () => {

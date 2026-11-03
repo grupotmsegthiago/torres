@@ -4,12 +4,14 @@ import {
   ANP_FISCAL_XLSX_URL,
   ANP_YEAR_PAGE,
   ONDE_ABASTECER_RADIUS_KM,
+  emptyReasonForUnmatchedCity,
   haversineKm,
   latestGasolinaEtanolHref,
   latestPricesByStation,
   normalizePlace,
   parseAnpPriceCsv,
   rankStations,
+  stationGeocodeQuery,
   type AnpPriceRow,
   type OndeAbastecerEmptyReason,
   type RankResult,
@@ -146,6 +148,7 @@ interface StationRow {
   cnpj: string;
   station_name: string | null;
   address: string | null;
+  city: string | null;
   latitude: number | string | null;
   longitude: number | string | null;
   cep: string | null;
@@ -171,7 +174,39 @@ async function reverseCity(lat: number, lng: number): Promise<{ city: string; st
   return { city: normalizePlace(city), state: state.toUpperCase() };
 }
 
-async function geocodeCeps(ceps: string[]): Promise<Map<string, { lat: number; lng: number } | null>> {
+async function photonPoint(query: string): Promise<{ lat: number; lng: number } | null> {
+  if (!query) return null;
+  try {
+    const res = await fetch(`https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`, {
+      headers: { "User-Agent": UA, Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const body = await res.json() as {
+      features?: { geometry?: { coordinates?: number[] }; properties?: { countrycode?: string } }[];
+    };
+    const feature = body.features?.[0];
+    if (!feature || feature.properties?.countrycode !== "BR") return null;
+    const [lng, lat] = feature.geometry?.coordinates ?? [];
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  } catch {
+    return null;
+  }
+}
+
+async function brasilApiCep(cep: string): Promise<{ lat: number; lng: number } | null> {
+  const res = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`, { headers: { "User-Agent": UA } });
+  if (!res.ok) return null;
+  const body = await res.json() as { location?: { coordinates?: { latitude?: string; longitude?: string } } };
+  const lat = Number(body.location?.coordinates?.latitude);
+  const lng = Number(body.location?.coordinates?.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+async function geocodeCeps(
+  ceps: string[],
+  queryByCep: Map<string, string>,
+): Promise<Map<string, { lat: number; lng: number } | null>> {
   const unique = [...new Set(ceps.filter((cep) => cep.length === 8))].slice(0, GEO_BUDGET);
   const out = new Map<string, { lat: number; lng: number } | null>();
   if (!unique.length) return out;
@@ -190,16 +225,7 @@ async function geocodeCeps(ceps: string[]): Promise<Map<string, { lat: number; l
     const slice = missing.slice(i, i + 8);
     await Promise.all(slice.map(async (cep) => {
       try {
-        const res = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`, { headers: { "User-Agent": UA } });
-        if (!res.ok) {
-          out.set(cep, null);
-          looked.push({ cep, latitude: null, longitude: null, looked_up_at: now });
-          return;
-        }
-        const body = await res.json() as { location?: { coordinates?: { latitude?: string; longitude?: string } } };
-        const lat = Number(body.location?.coordinates?.latitude);
-        const lng = Number(body.location?.coordinates?.longitude);
-        const point = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+        const point = await photonPoint(queryByCep.get(cep) ?? "") ?? await brasilApiCep(cep);
         out.set(cep, point);
         looked.push({ cep, latitude: point?.lat ?? null, longitude: point?.lng ?? null, looked_up_at: now });
       } catch {
@@ -239,13 +265,24 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
 
   const { data: cityRows, error } = await supabaseAdmin
     .from("anp_station_quality")
-    .select("cnpj, station_name, address, latitude, longitude, cep, anp_score, has_quality_infraction_last_2_years, is_authorized, is_interdicted, quality_known, city_norm, state")
+    .select("cnpj, station_name, address, city, latitude, longitude, cep, anp_score, has_quality_infraction_last_2_years, is_authorized, is_interdicted, quality_known, city_norm, state")
     .eq("state", place.state)
     .eq("city_norm", place.city)
     .limit(5000);
   if (error) throw new Error(error.message);
   const inCity = (cityRows ?? []) as StationRow[];
-  if (inCity.length === 0) return empty("no_station", "Nenhum posto com histórico limpo neste raio.", place.city, place.state);
+  if (inCity.length === 0) {
+    const { count, error: knownError } = await supabaseAdmin
+      .from("anp_station_quality")
+      .select("cnpj", { count: "exact", head: true })
+      .eq("quality_known", true);
+    if (knownError) throw new Error(knownError.message);
+    const reason = emptyReasonForUnmatchedCity(count ?? 0);
+    const message = reason === "not_loaded"
+      ? "O histórico de qualidade da ANP ainda não foi carregado."
+      : "Nenhum posto com histórico limpo neste raio.";
+    return empty(reason, message, place.city, place.state);
+  }
   if (inCity.every((row) => !row.quality_known)) {
     return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state);
   }
@@ -254,7 +291,7 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
   const dLng = ONDE_ABASTECER_RADIUS_KM / (111 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
   const { data: boxRows } = await supabaseAdmin
     .from("anp_station_quality")
-    .select("cnpj, station_name, address, latitude, longitude, cep, anp_score, has_quality_infraction_last_2_years, is_authorized, is_interdicted, quality_known, city_norm, state")
+    .select("cnpj, station_name, address, city, latitude, longitude, cep, anp_score, has_quality_infraction_last_2_years, is_authorized, is_interdicted, quality_known, city_norm, state")
     .eq("quality_known", true)
     .eq("is_authorized", true)
     .eq("is_interdicted", false)
@@ -276,7 +313,13 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
   for (const row of (boxRows ?? []) as StationRow[]) merged.set(row.cnpj, row);
 
   const pending = [...merged.values()].filter((row) => num(row.latitude) === null || num(row.longitude) === null);
-  const geo = await geocodeCeps(pending.map((row) => (row.cep ?? "").replace(/\D/g, "")));
+  const queryByCep = new Map<string, string>();
+  for (const row of pending) {
+    const cep = (row.cep ?? "").replace(/\D/g, "");
+    if (cep.length !== 8 || queryByCep.has(cep)) continue;
+    queryByCep.set(cep, stationGeocodeQuery(row.address, row.city || row.city_norm, row.state));
+  }
+  const geo = await geocodeCeps([...queryByCep.keys()], queryByCep);
   const locatedUpdates: Record<string, unknown>[] = [];
   for (const row of pending) {
     const cep = (row.cep ?? "").replace(/\D/g, "");

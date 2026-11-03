@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Onde abastecer distinguia base vazia de raio sem posto
+
+- Com as tabelas da ANP em zero linhas, a cidade do GPS caía em "Nenhum posto com histórico limpo neste raio".
+- Sem nenhum posto com `quality_known` no país, a resposta é `not_loaded` (cartão âmbar). Cidade sem posto, depois da carga, continua `no_station`.
+- Posto ainda sem coordenada é buscado pelo endereço. O CEP da BrasilAPI fica como reserva: em São Paulo ele repete o centro do município e o raio de 5 km em Pirituba ficava vazio.
+- A carga em si não muda: segunda às 04:20 (America/Sao_Paulo) ou `POST /api/admin/anp-stations/sync`. Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Onde abastecer com a ANP publicado
 
 - O botão **Onde abastecer** entra na home do agente, com preço e histórico de qualidade da ANP.
