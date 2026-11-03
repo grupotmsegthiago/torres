@@ -3,7 +3,7 @@
 **Data:** 3 de novembro de 2026, horário de Brasília
 **Branch:** `cursor/fluxo-onde-abastecer-b534`
 **Ambiente validado:** local, só na regra e nos arquivos públicos da ANP. A tela não foi aberta: neste ambiente não há `.env` nem login.
-**Publicou?** Não
+**Publicou?** Sim — `main` e `dev` em 03/11/2026, depois de integrar a NFS-e e a apólice do Mobi que já estavam no ar.
 
 ### Reutilização (D11 / P13)
 - Busca realizada: abastecimento mobile, GPS, botões de rota da missão, `ticketlog_postos`, `haversineDistanceKm`
