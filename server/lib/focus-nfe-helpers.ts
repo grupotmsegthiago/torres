@@ -68,16 +68,6 @@ export const FOCUS_SERVICO_FISCAL: Record<FocusServicoCategoria, {
   },
 };
 export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
-/**
- * Endereço da emissora já impresso no boletim e no contrato.
- * A DPS exige CEP e logradouro do prestador; o cadastro da Focus não os levava no XML.
- */
-export const FOCUS_PRESTADOR_ENDERECO = {
-  cep: "02938000",
-  logradouro: "Avenida Raimundo Pereira de Magalhães",
-  numero: "5720",
-  bairro: "Pirituba",
-} as const;
 /** indTotTrib=0: não informa estimativa de tributos (Decreto 8.264/2014). */
 export const FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA = 0;
 /** 3 = optante ME/EPP. 1 = não optante. Campo oficial: codigo_opcao_simples_nacional. */
@@ -613,11 +603,6 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     codigo_municipio_emissora: FOCUS_CODIGO_MUNICIPIO_SP,
     cnpj_prestador: cleanCnpj(opts.prestadorCnpj || TORRES_CNPJ),
     inscricao_municipal_prestador: prestadorIm,
-    codigo_municipio_prestador: FOCUS_CODIGO_MUNICIPIO_SP,
-    cep_prestador: FOCUS_PRESTADOR_ENDERECO.cep,
-    logradouro_prestador: FOCUS_PRESTADOR_ENDERECO.logradouro,
-    numero_prestador: FOCUS_PRESTADOR_ENDERECO.numero,
-    bairro_prestador: FOCUS_PRESTADOR_ENDERECO.bairro,
     codigo_opcao_simples_nacional: optante ? FOCUS_OPCAO_SIMPLES_ME_EPP : FOCUS_OPCAO_SIMPLES_NAO_OPTANTE,
     regime_especial_tributacao: FOCUS_REGIME_ESPECIAL_NENHUM,
     razao_social_tomador: String(opts.tomador.name || "").trim().slice(0, 150),

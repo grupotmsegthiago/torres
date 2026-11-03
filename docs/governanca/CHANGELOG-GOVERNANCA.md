@@ -1,5 +1,9 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — DPS sem endereço do prestador
+
+- A Sefin recusou a fatura 241: o endereço nacional do prestador não pode ir na DPS quando a própria Torres emite. Saíram município, CEP, logradouro, número e bairro do prestador. O município da emissão continua `3550308`.
+
 ## 2026-11-03 — Sefin recusou a DPS da fatura 241
 
 - O XML saía sem CEP e sem logradouro do prestador. A DPS agora manda o endereço já impresso no boletim: Avenida Raimundo Pereira de Magalhães, 5720, Pirituba, CEP 02938-000.

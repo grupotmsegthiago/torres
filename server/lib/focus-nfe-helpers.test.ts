@@ -17,7 +17,6 @@ import {
   FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
   FOCUS_API_HOMOLOG_URL,
   FOCUS_API_PRODUCTION_URL,
-  FOCUS_PRESTADOR_ENDERECO,
   FOCUS_SERVICO_FISCAL,
   FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA,
   buildDefaultNfseDescription,
@@ -222,7 +221,9 @@ test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, d
   });
   assert.equal(p.cnpj_prestador, TORRES_CNPJ);
   assert.equal(p.codigo_municipio_emissora, FOCUS_CODIGO_MUNICIPIO_SP);
-  assert.equal(p.codigo_municipio_prestador, FOCUS_CODIGO_MUNICIPIO_SP);
+  assert.equal("codigo_municipio_prestador" in p, false);
+  assert.equal("cep_prestador" in p, false);
+  assert.equal("logradouro_prestador" in p, false);
   assert.equal(p.inscricao_municipal_prestador, "12345");
   assert.equal(p.cnpj_tomador, "07504505000132");
   assert.equal(p.cpf_tomador, undefined);
@@ -231,12 +232,6 @@ test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, d
   assert.equal(p.codigo_tributacao_nacional_iss, FOCUS_SERVICO_FISCAL.escolta.codigo_tributacao_nacional_iss);
   assert.equal(p.codigo_nbs, "118023000");
   assert.equal("codigo_tributacao_municipal_iss" in p, false);
-  assert.equal(p.cep_prestador, FOCUS_PRESTADOR_ENDERECO.cep);
-  assert.equal(typeof p.cep_prestador, "string");
-  assert.equal(p.cep_prestador.length, 8);
-  assert.equal(p.logradouro_prestador, FOCUS_PRESTADOR_ENDERECO.logradouro);
-  assert.equal(p.numero_prestador, FOCUS_PRESTADOR_ENDERECO.numero);
-  assert.equal(p.bairro_prestador, FOCUS_PRESTADOR_ENDERECO.bairro);
   assert.equal(p.indicador_total_tributacao, FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA);
   assert.equal(p.percentual_aliquota_relativa_municipio, ISS_ALIQUOTA);
   assert.equal("item_lista_servico" in p, false);
