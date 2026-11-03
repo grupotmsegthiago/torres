@@ -2,7 +2,16 @@
  * Texto da DPS nacional (`descricao_servico` / xDescServ).
  * Não altera a descrição comercial da fatura nem o boleto.
  * A Sefin aceita até 2.000 caracteres e recusa `<`, `>`, `&` e controles ASCII.
+ *
+ * A sugestão não lista os números da OS Torres. Referência do cliente só entra
+ * quando o código já exige: OS/SM da MULTILOG e processo da Omega Solutions.
  */
+
+import {
+  isMultilogClient,
+  multilogDiscriminacaoLines,
+  multilogLinesFromDescription,
+} from "./multilog-refs";
 
 export const NFSE_DESCRICAO_MAX = 2000;
 export const NFSE_DESCRICAO_MIN = 10;
@@ -27,10 +36,12 @@ export type NfseDescriptionInput = {
   dueDate?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
-  osNumbers?: Array<string | number | null | undefined>;
-  controles?: Array<string | number | null | undefined>;
-  poNumbers?: Array<string | number | null | undefined>;
-  smNumbers?: Array<string | number | null | undefined>;
+  /** Nome do cliente. Decide se a nota leva a referência que o código já exige. */
+  clientName?: string | null;
+  /** OS e SM da MULTILOG (`service_orders.multilog_os` / `multilog_sm`). */
+  multilogItems?: Array<{ os?: string | null; sm?: string | null }>;
+  /** `service_orders.processo_omega`. Só entra se o cliente for Omega Solutions. */
+  processosOmega?: Array<string | number | null | undefined>;
   /** INSS já retido na fatura. A linha do Anexo IV só entra se este valor for maior que zero. */
   valorInssRetido?: number | string | null;
   /** Torres é optante. Sem este campo, a sugestão leva a frase do Simples. */
@@ -143,41 +154,20 @@ function uniqueTokens(values: Array<string | number | null | undefined>): string
   return out;
 }
 
-function extractList(text: string, pattern: RegExp): string[] {
-  const out: string[] = [];
-  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
-  const re = new RegExp(pattern.source, flags);
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text))) {
-    const tail = String(match[1] || "").split(/\s+-\s+/)[0];
-    for (const part of tail.split(/[,;]/)) {
-      const token = part.trim().replace(/^#/, "");
-      if (token && /^[A-Za-z0-9][\w./-]*$/.test(token)) out.push(token);
-    }
-  }
-  return out;
-}
-
 function sourceText(input: NfseDescriptionInput): string {
   return `${input.description || ""}\n${input.notes || ""}`;
 }
 
-function isBoilerplate(chunk: string): boolean {
-  const s = chunk.replace(/\s+/g, " ").trim();
-  if (!s) return true;
-  if (/^referente aos servi[cç]os de escolta armada\.?$/i.test(s)) return true;
-  if (/^per[ií]odo:/i.test(s)) return true;
-  if (/^\([A-Za-zçãéíóúâêô]+\/\d{4}\)$/i.test(s)) return true;
-  if (/^vigil[aâ]ncia, seguran[cç]a ou monitoramento/i.test(s)) return true;
-  if (/anexo iv/i.test(s)) return true;
-  if (/simples nacional/i.test(s)) return true;
-  if (/^retenc[aã]o de inss/i.test(s)) return true;
-  if (/^empresa optante pelo simples/i.test(s)) return true;
-  if (/^(OS|SM)\.?\s*[:#]?\s*\S/i.test(s)) return true;
-  if (/^controle\b/i.test(s)) return true;
-  if (/^(pedido de compra|p\.?o\.?)\b/i.test(s)) return true;
-  if (/^ref\. (escolta armada|vigil[aâ]ncia)\b/i.test(s)) return true;
-  return false;
+/** Mesma condição do cabeçalho do boletim (`boletim-approval`). */
+function isOmegaSolutionsClient(name: string | null | undefined): boolean {
+  return String(name || "").toUpperCase().includes("OMEGA SOLUTIONS");
+}
+
+function omegaProcessoLine(values: Array<string | number | null | undefined> | undefined): string | null {
+  const processos = uniqueTokens(values || []);
+  if (processos.length === 1) return `PROCESSO ${processos[0]}`;
+  if (processos.length > 1) return `PROCESSOS ${processos.join(", ")}`;
+  return null;
 }
 
 function isBankLine(s: string): boolean {
@@ -222,46 +212,17 @@ function joinNfseDescription(head: string, suffixLines: string[]): string {
   return sanitizeNfseDescription(combined);
 }
 
-function extraClientLines(text: string): string[] {
-  const chunks = String(text || "")
-    .split(/\n+/)
-    .flatMap((line) => (/^referente aos servi/i.test(line.trim()) ? line.split(/\s+-\s+/) : [line]))
-    .map((part) => part.replace(/\s+/g, " ").trim())
-    .filter((part) => part && !isBoilerplate(part));
-  return uniqueTokens(chunks);
-}
-
 export function buildDefaultNfseDescription(input: NfseDescriptionInput): string {
   const periodo = nfsePeriodoLabel(input);
   const prefix = nfseCategoryPrefix(input.category, periodo);
   const blob = sourceText(input);
-  const os = uniqueTokens([
-    ...(input.osNumbers || []),
-    ...extractList(blob, /\bOS\b\s*[#.:]?\s*([^\n]+)/gi),
-  ]);
-  const sm = uniqueTokens([
-    ...(input.smNumbers || []),
-    ...extractList(blob, /\bSM\b\s*[#.:]?\s*([^\n]+)/gi),
-  ]);
-  const controles = uniqueTokens([
-    ...(input.controles || []),
-    ...extractList(blob, /controle(?:\s+cliente)?\s*[:#]\s*([^\n]+)/gi),
-  ]);
-  const pos = uniqueTokens([
-    ...(input.poNumbers || []),
-    ...extractList(blob, /\b(?:pedido de compra(?:\s*\/\s*po)?|p\.?o\.?)\s*[:#]\s*([^\n]+)/gi),
-  ]);
-  const extras = extraClientLines(blob).filter((line) => {
-    if (isBankLine(line) || isInssLine(line) || isSimplesLine(line)) return false;
-    const folded = line.toLowerCase();
-    return ![...os, ...sm, ...controles, ...pos].some((token) => folded === token.toLowerCase());
-  });
-  const parts = [prefix];
-  if (os.length) parts.push(`OS: ${os.join(", ")}`);
-  if (sm.length) parts.push(`SM: ${sm.join(", ")}`);
-  if (controles.length) parts.push(`Controle: ${controles.join(", ")}`);
-  if (pos.length) parts.push(`PO: ${pos.join(", ")}`);
-  if (extras.length) parts.push(extras.join(" | "));
+  const head = [prefix];
+  if (isMultilogClient(input.clientName)) {
+    head.push(...multilogDiscriminacaoLines(input.multilogItems || []));
+  }
+  head.push(...multilogLinesFromDescription(blob));
+  const omega = isOmegaSolutionsClient(input.clientName) ? omegaProcessoLine(input.processosOmega) : null;
+  if (omega) head.push(omega);
 
   const stored = linesOf(blob).filter((line) => !/^referente aos servi/i.test(line) && !/^ref\. (escolta armada|vigil[aâ]ncia)\b/i.test(line));
   const inssGuardado = stored.filter(isInssLine);
@@ -273,5 +234,5 @@ export function buildDefaultNfseDescription(input: NfseDescriptionInput): string
   const simples = input.incluirSimples === false
     ? simplesGuardado
     : (simplesGuardado.length ? simplesGuardado : [NF_SIMPLES_NACIONAL_TEXTO]);
-  return joinNfseDescription(parts.join(" - "), [...banco, ...inss, ...simples]);
+  return joinNfseDescription(uniqueLines(head).join("\n"), [...banco, ...inss, ...simples]);
 }

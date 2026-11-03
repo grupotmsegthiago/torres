@@ -529,10 +529,9 @@ export type FocusNfsePayloadOpts = {
   dueDate?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
-  osNumbers?: NfseDescriptionInput["osNumbers"];
-  controles?: NfseDescriptionInput["controles"];
-  poNumbers?: NfseDescriptionInput["poNumbers"];
-  smNumbers?: NfseDescriptionInput["smNumbers"];
+  clientName?: NfseDescriptionInput["clientName"];
+  multilogItems?: NfseDescriptionInput["multilogItems"];
+  processosOmega?: NfseDescriptionInput["processosOmega"];
 };
 
 export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string, any> {
@@ -579,10 +578,9 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
       dueDate: opts.dueDate,
       periodStart: opts.periodStart,
       periodEnd: opts.periodEnd,
-      osNumbers: opts.osNumbers,
-      controles: opts.controles,
-      poNumbers: opts.poNumbers,
-      smNumbers: opts.smNumbers,
+      clientName: opts.clientName,
+      multilogItems: opts.multilogItems,
+      processosOmega: opts.processosOmega,
       valorInssRetido: opts.valorInssRetido,
       incluirSimples: opts.optanteSimplesNacional !== false,
     });

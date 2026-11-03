@@ -1,5 +1,13 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Descrição da NFS-e sem a lista de OS
+
+- A sugestão da nota fica em `Ref. escolta armada (período)` ou `Ref. vigilância (período)`, mais a linha do Anexo IV quando há INSS retido e a frase do Simples.
+- Número de OS da Torres, vínculo GTM e pedido de compra não entram nesse texto.
+- MULTILOG continua com `OS.` e `SM.`. Omega Solutions continua com `PROCESSO` / `PROCESSOS`. As duas regras já existiam no boleto e no boletim.
+- A descrição comercial da fatura e o boleto não mudam.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-DESCRICAO-CURTA-2026-11-03.md`.
+
 ## 2026-11-03 — Regime do Simples na DPS
 
 - A fatura 241 parou na regra E0166: ME/EPP tem de informar o regime de apuração. A Torres vai com o regime 1, tributos federais e ISS pelo Simples, coerente com o regime especial nenhum.
@@ -25,7 +33,7 @@
 ## 2026-11-03 — Conferência da NFS-e antes de emitir
 
 - O botão Emitir NFS-e abre um modal. A Beatriz confirma Escolta (`110301`) ou Vigilância (`110201`) e edita a descrição.
-- A sugestão é `Ref. escolta armada (período)` ou `Ref. vigilância (período)`, com OS, SM, controle e PO que já existem na fatura e na OS. Não há coluna de controle do cliente.
+- A sugestão daquela entrega listava OS, SM, controle e PO. A entrada de 2026-11-03 “Descrição da NFS-e sem a lista de OS” substitui essa parte: o texto padrão não lista mais a OS da Torres.
 - `POST /api/invoices/:id/emit-nfse` aceita `{ category, descricao_servico }`. Sem esses campos, a emissão automática segue com a regra já gravada.
 - A descrição comercial da fatura não é reescrita. O boleto continua com o texto anterior.
 - Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-PRE-EMISSAO-2026-11-03.md`.

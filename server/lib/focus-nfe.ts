@@ -343,11 +343,9 @@ function tomadorFrom(invoice: any, client: any, emailOverride?: string): FocusTo
 }
 
 type InvoiceOsRef = {
-  osNumber: string;
   type: string;
   scheduledDate: string | null;
   processoOmega: string;
-  gtmNumber: string;
   multilogOs: string;
   multilogSm: string;
 };
@@ -355,11 +353,9 @@ type InvoiceOsRef = {
 function mapServiceOrder(row: any): InvoiceOsRef {
   const multilog = multilogRefsForOrder(row || {});
   return {
-    osNumber: String(row?.os_number || "").trim(),
     type: String(row?.type || "").trim(),
     scheduledDate: row?.scheduled_date ? String(row.scheduled_date) : null,
     processoOmega: String(row?.processo_omega || "").trim(),
-    gtmNumber: String(row?.gtm_number || "").trim(),
     multilogOs: multilog.os,
     multilogSm: multilog.sm,
   };
@@ -382,7 +378,7 @@ async function loadInvoiceServiceOrders(invoice: { id: number; service_order_id?
   if (osIds.size === 0) return { orders: [], vinculados: (bills || []).length };
   const { data: orders, error: osError } = await supabaseAdmin
     .from("service_orders")
-    .select("id, os_number, type, scheduled_date, processo_omega, gtm_number, multilog_os, multilog_sm")
+    .select("id, type, scheduled_date, processo_omega, multilog_os, multilog_sm")
     .in("id", Array.from(osIds));
   if (osError) throw new Error(osError.message || "Falha ao ler o tipo da OS");
   return { orders: (orders || []).map(mapServiceOrder), vinculados: (bills || []).length };
@@ -405,9 +401,9 @@ function descriptionContext(invoice: any, orders: InvoiceOsRef[]) {
     dueDate: invoice?.due_date || null,
     periodStart: bounds.periodStart,
     periodEnd: bounds.periodEnd,
-    osNumbers: orders.flatMap((order) => [order.osNumber, order.multilogOs]),
-    controles: orders.flatMap((order) => [order.processoOmega, order.gtmNumber]),
-    smNumbers: orders.map((order) => order.multilogSm),
+    clientName: invoice?.client_name || null,
+    multilogItems: orders.map((order) => ({ os: order.multilogOs, sm: order.multilogSm })),
+    processosOmega: orders.map((order) => order.processoOmega),
     valorInssRetido: invoice?.valor_inss_retido,
   };
 }
@@ -437,7 +433,7 @@ export function buildNfsePreview(invoice: any, orders: InvoiceOsRef[], opts?: { 
 export async function previewFocusNfseForInvoice(invoiceId: number): Promise<{ ok: true; preview: ReturnType<typeof buildNfsePreview> } | { ok: false; message: string }> {
   const id = Number(invoiceId);
   if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
-  const { data: invoice } = await supabaseAdmin.from("invoices").select("id, description, notes, due_date, service_order_id, valor_inss_retido").eq("id", id).maybeSingle();
+  const { data: invoice } = await supabaseAdmin.from("invoices").select("id, client_name, description, notes, due_date, service_order_id, valor_inss_retido").eq("id", id).maybeSingle();
   if (!invoice) return { ok: false, message: "Fatura não encontrada" };
   try {
     const loaded = await loadInvoiceServiceOrders(invoice);
@@ -577,9 +573,9 @@ export async function emitFocusNfseForInvoice(
       dueDate: texto.dueDate,
       periodStart: texto.periodStart,
       periodEnd: texto.periodEnd,
-      osNumbers: texto.osNumbers,
-      controles: texto.controles,
-      smNumbers: texto.smNumbers,
+      clientName: texto.clientName,
+      multilogItems: texto.multilogItems,
+      processosOmega: texto.processosOmega,
     }));
   } catch (e: any) {
     const code = String(e?.body?.codigo || "").toLowerCase();

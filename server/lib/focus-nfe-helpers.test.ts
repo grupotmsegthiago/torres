@@ -274,24 +274,34 @@ test("buildFocusNfsePayload: discriminação MULTILOG leva OS e SM sem alterar o
     retemInss: true,
     inssAliquota: 11,
   });
-  assert.match(p.descricao_servico, /OS: 1312/);
-  assert.match(p.descricao_servico, /SM: 41128477/);
+  assert.match(p.descricao_servico, /OS\. 1312/);
+  assert.match(p.descricao_servico, /SM\. 41128477/);
+  assert.equal(p.descricao_servico.includes("TOR-"), false);
   assert.equal(p.cnpj_tomador, "07504505000132");
 });
 
-test("buildDefaultNfseDescription preserva período, OS e controle do cliente", () => {
+test("buildDefaultNfseDescription leva período e legais, sem a lista de OS", () => {
   const text = buildDefaultNfseDescription({
     category: "escolta",
-    description: "Referente aos serviços de Escolta Armada - Período: 01/10/2026 a 31/10/2026 (Outubro/2026)\nControle Cliente: 99812",
+    clientName: "TM SEGURANCA CONSULTORIA & TECNOLOGIA INTEGRADA LTDA",
+    description: "Referente aos serviços de Escolta Armada - Período: 16/10/2026 a 31/10/2026 (Outubro/2026)\nControle Cliente: 99812",
     notes: "Pedido de Compra / PO: 555",
-    osNumbers: ["1234", "1235"],
-    controles: ["ABC"],
+    processosOmega: ["8632", "8642"],
+    multilogItems: [{ os: "1312", sm: "41128477" }],
+    valorInssRetido: 16872.49,
   });
   assert.equal(
     text,
-    `Ref. escolta armada (01/10/2026 a 31/10/2026) - OS: 1234, 1235 - Controle: ABC, 99812 - PO: 555\n${NF_SIMPLES_NACIONAL_TEXTO}`,
+    [
+      "Ref. escolta armada (16/10/2026 a 31/10/2026)",
+      NF_INSS_ANEXO_IV_TEXTO,
+      NF_SIMPLES_NACIONAL_TEXTO,
+    ].join("\n"),
   );
-  assert.equal(text.includes(NF_INSS_ANEXO_IV_TEXTO), false);
+  assert.equal(text.includes("99812"), false);
+  assert.equal(text.includes("8632"), false);
+  assert.equal(text.includes("1312"), false);
+  assert.equal(text.includes("555"), false);
   const posto = buildDefaultNfseDescription({
     category: "vigilancia",
     periodStart: "2026-10-01",
@@ -321,10 +331,49 @@ test("buildDefaultNfseDescription preserva período, OS e controle do cliente", 
   const longa = buildDefaultNfseDescription({
     category: "escolta",
     dueDate: "2026-10-15",
-    notes: "A".repeat(2500),
+    clientName: "MULTILOG BRASIL S.A",
+    multilogItems: Array.from({ length: 400 }, (_, i) => ({ os: String(100000 + i), sm: String(200000 + i) })),
   });
   assert.equal(longa.length, 2000);
+  assert.ok(longa.startsWith("Ref. escolta armada (10/2026)"));
   assert.ok(longa.endsWith(NF_SIMPLES_NACIONAL_TEXTO));
+  const multilog = buildDefaultNfseDescription({
+    category: "escolta",
+    clientName: "MULTILOG BRASIL S.A",
+    description: "Referente aos serviços de Escolta Armada - Período: 16/09/2026 a 30/09/2026",
+    multilogItems: [{ os: "1312", sm: "41128477" }, { os: "1312", sm: "41128477" }],
+  });
+  assert.equal(
+    multilog,
+    [
+      "Ref. escolta armada (16/09/2026 a 30/09/2026)",
+      "OS. 1312",
+      "SM. 41128477",
+      NF_SIMPLES_NACIONAL_TEXTO,
+    ].join("\n"),
+  );
+  const omega = buildDefaultNfseDescription({
+    category: "escolta",
+    clientName: "OMEGA SOLUTIONS LTDA",
+    periodStart: "2026-10-16",
+    periodEnd: "2026-10-31",
+    processosOmega: ["8632", "8642", "8632"],
+  });
+  assert.equal(
+    omega,
+    [
+      "Ref. escolta armada (16/10/2026 a 31/10/2026)",
+      "PROCESSOS 8632, 8642",
+      NF_SIMPLES_NACIONAL_TEXTO,
+    ].join("\n"),
+  );
+  const omegaUm = buildDefaultNfseDescription({
+    category: "escolta",
+    clientName: "OMEGA SOLUTIONS LTDA",
+    dueDate: "2026-10-15",
+    processosOmega: ["8632"],
+  });
+  assert.match(omegaUm, /^Ref\. escolta armada \(10\/2026\)\nPROCESSO 8632\n/);
   const escolta = "Ref. escolta armada (01/10/2026 a 31/10/2026)";
   const vigilancia = "Ref. vigilância (01/10/2026 a 31/10/2026)";
   const comOs = `${escolta} - OS: 1234`;
