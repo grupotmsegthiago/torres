@@ -4,15 +4,15 @@
  * Sem I/O — o HTTP e a persistência ficam em focus-nfe.ts.
  *
  * Reutiliza discriminacao, ISS/INSS e CNPJ oficiais de asaas-helpers.
- * O item municipal 07870 não vai na DPS. O código nacional da escolta é 110201 (LC 116 11.02.01).
+ * Vigilância (posto) e Escolta têm códigos nacionais, NBS e complemento municipal diferentes.
  */
 
 import {
   TORRES_CNPJ,
   CODIGO_SERVICO_MUNICIPAL_CODE,
+  ISS_ALIQUOTA,
   ISS_RETAIN,
   buildServicoDiscriminacao,
-  inssAliquotaEfetiva,
   normalizeMunicipalInscriptionForAsaas,
   cleanCnpj,
   extractStreetNumber,
@@ -23,10 +23,25 @@ import { isValidCnpj, sanitizeComplement } from "../../shared/nfse-tomador";
 
 export { isValidCnpj, sanitizeComplement };
 
-/** Item municipal da Paulistana. A DPS nacional não envia este código. */
+/** Item municipal histórico da Paulistana (vigilância). A DPS usa a trinca por categoria. */
 export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
-/** LC 116 11.02.01 — vigilância, segurança ou monitoramento (escolta). */
-export const FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS = "110201";
+export type FocusServicoCategoria = "vigilancia" | "escolta";
+export const FOCUS_SERVICO_FISCAL: Record<FocusServicoCategoria, {
+  codigo_tributacao_nacional_iss: string;
+  codigo_nbs: string;
+  codigo_tributacao_municipal_iss: string;
+}> = {
+  vigilancia: {
+    codigo_tributacao_nacional_iss: "110201",
+    codigo_nbs: "118025000",
+    codigo_tributacao_municipal_iss: "07870",
+  },
+  escolta: {
+    codigo_tributacao_nacional_iss: "110301",
+    codigo_nbs: "118023000",
+    codigo_tributacao_municipal_iss: "07897",
+  },
+};
 export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
 /** 3 = optante ME/EPP. 1 = não optante. Campo oficial: codigo_opcao_simples_nacional. */
 export const FOCUS_OPCAO_SIMPLES_ME_EPP = 3;
@@ -415,16 +430,67 @@ export type FocusTomadorInput = {
   codigoMunicipioIbge?: string | null;
 };
 
+function foldFiscal(raw: string): string {
+  return String(raw || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function tokenCategoria(raw: string | null | undefined): FocusServicoCategoria | null {
+  const t = foldFiscal(String(raw || ""));
+  if (!t) return null;
+  if (t === "vigilancia" || t === "posto" || t === "posto fisico" || t.startsWith("vigilancia ")) return "vigilancia";
+  if (t === "escolta" || t === "escolta armada" || t.startsWith("escolta ")) return "escolta";
+  return null;
+}
+
+/**
+ * A fatura não tem coluna de categoria. A OS guarda `service_orders.type` (hoje "escolta").
+ * Sem tipo na OS, a descrição decide: "vigilância" sem "escolta" vira posto; o restante fica escolta,
+ * que é o texto padrão da nota (`Referente aos serviços de Escolta Armada`).
+ */
+export function resolveFocusServicoCategoria(input?: {
+  categoria?: string | null;
+  serviceOrderTypes?: Array<string | null | undefined> | null;
+  description?: string | null;
+} | null): { categoria: FocusServicoCategoria; conflito: boolean } {
+  const explicit = tokenCategoria(input?.categoria);
+  if (explicit) return { categoria: explicit, conflito: false };
+  const fromOs = new Set<FocusServicoCategoria>();
+  for (const tipo of input?.serviceOrderTypes || []) {
+    const categoria = tokenCategoria(tipo);
+    if (categoria) fromOs.add(categoria);
+  }
+  if (fromOs.size > 1) return { categoria: "escolta", conflito: true };
+  if (fromOs.size === 1) return { categoria: [...fromOs][0], conflito: false };
+  const text = foldFiscal(String(input?.description || ""));
+  const hasEscolta = /\bescolta\b/.test(text);
+  const hasVigilancia = /\bvigilancia\b/.test(text);
+  if (hasVigilancia && !hasEscolta) return { categoria: "vigilancia", conflito: false };
+  return { categoria: "escolta", conflito: false };
+}
+
 export type FocusNfsePayloadOpts = {
   value: number;
   description?: string | null;
   tomador: FocusTomadorInput;
-  retemInss?: boolean;
-  inssAliquota?: number;
+  /** Categoria explícita. Sem ela, a descrição classifica. */
+  categoria?: FocusServicoCategoria | string | null;
+  /** Tipos das OS da fatura (`service_orders.type`). */
+  serviceOrderTypes?: Array<string | null | undefined> | null;
+  /** Valor de INSS já retido na fatura. Só vira `valor_cp` se for maior que zero. */
+  valorInssRetido?: number | string | null;
   prestadorIm: string;
   prestadorCnpj?: string;
   dataEmissaoIso?: string;
   optanteSimplesNacional?: boolean;
+  /** Alíquota efetiva do Simples. Sem ela, o optante usa `ISS_ALIQUOTA`. */
+  aliquotaSimples?: number | null;
+  /** IBGE do local da prestação, quando for diferente do município do tomador. */
+  codigoMunicipioPrestacao?: string | null;
 };
 
 export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string, any> {
@@ -450,13 +516,31 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
   const cep = onlyDigits(opts.tomador.zip);
   if (cep.length !== 8) throw new Error("CEP do tomador deve ter 8 dígitos");
 
-  const inssAliq = inssAliquotaEfetiva(!!opts.retemInss, opts.inssAliquota ?? 11);
-  const inssValor = Number((value * inssAliq / 100).toFixed(2));
   const ccmTomador = normalizeMunicipalInscriptionForAsaas(opts.tomador.inscricaoMunicipal);
   const phone = onlyDigits(opts.tomador.phone).slice(0, 11);
+  const fiscal = resolveFocusServicoCategoria({
+    categoria: opts.categoria,
+    serviceOrderTypes: opts.serviceOrderTypes,
+    description: opts.description,
+  });
+  if (fiscal.conflito) {
+    throw new Error("A fatura mistura Vigilância e Escolta. Separe a NFS-e.");
+  }
+  const servico = FOCUS_SERVICO_FISCAL[fiscal.categoria];
   const tomadorInSp = ibgeTomador === FOCUS_CODIGO_MUNICIPIO_SP;
-  const municipioPrestacao = tomadorInSp ? FOCUS_CODIGO_MUNICIPIO_SP : ibgeTomador;
+  const prestacaoInformada = onlyDigits(opts.codigoMunicipioPrestacao || "");
+  const municipioPrestacao = prestacaoInformada.length === 7
+    ? prestacaoInformada
+    : (tomadorInSp ? FOCUS_CODIGO_MUNICIPIO_SP : ibgeTomador);
   const optante = opts.optanteSimplesNacional !== false;
+  const aliquotaInformada = Number(opts.aliquotaSimples);
+  const aliquotaSimples = optante
+    ? (Number.isFinite(aliquotaInformada) && aliquotaInformada > 0 && aliquotaInformada <= 100
+      ? Number(aliquotaInformada.toFixed(2))
+      : ISS_ALIQUOTA)
+    : null;
+  const inssRetido = Number(opts.valorInssRetido);
+  const valorCp = Number.isFinite(inssRetido) && inssRetido > 0 ? Number(inssRetido.toFixed(2)) : null;
   const when = focusDpsTimestamps(opts.dataEmissaoIso);
 
   const payload: Record<string, any> = {
@@ -475,12 +559,15 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     numero_tomador: extractStreetNumber(opts.tomador.address, opts.tomador.addressNumber) || "S/N",
     bairro_tomador: String(opts.tomador.bairro || "Centro").trim().slice(0, 60),
     codigo_municipio_prestacao: municipioPrestacao,
-    codigo_tributacao_nacional_iss: FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS,
+    codigo_tributacao_nacional_iss: servico.codigo_tributacao_nacional_iss,
+    codigo_nbs: servico.codigo_nbs,
+    codigo_tributacao_municipal_iss: servico.codigo_tributacao_municipal_iss,
     descricao_servico: buildServicoDiscriminacao({ description: opts.description }),
     valor_servico: value,
     tributacao_iss: FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
     tipo_retencao_iss: ISS_RETAIN ? FOCUS_TIPO_RETENCAO_ISS_TOMADOR : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO,
   };
+  if (aliquotaSimples != null) payload.percentual_aliquota_relativa_municipio = aliquotaSimples;
   if (digits.length === 14) payload.cnpj_tomador = digits;
   else payload.cpf_tomador = digits;
   const email = focusTomadorEmail(opts.tomador.email);
@@ -489,7 +576,7 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
   if (complemento) payload.complemento_tomador = complemento;
   if (tomadorInSp && ccmTomador) payload.inscricao_municipal_tomador = ccmTomador;
   if (phone.length >= 10) payload.telefone_tomador = phone;
-  if (inssValor > 0) payload.valor_cp = inssValor;
+  if (valorCp != null) payload.valor_cp = valorCp;
   return payload;
 }
 

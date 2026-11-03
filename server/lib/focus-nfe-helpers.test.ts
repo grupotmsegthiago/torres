@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  ISS_ALIQUOTA,
   ISS_RETAIN,
   TORRES_CNPJ,
   NF_INSS_ANEXO_IV_TEXTO,
@@ -8,7 +9,6 @@ import {
 } from "./asaas-helpers";
 import {
   FOCUS_CODIGO_MUNICIPIO_SP,
-  FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS,
   FOCUS_OPCAO_SIMPLES_ME_EPP,
   FOCUS_OPCAO_SIMPLES_NAO_OPTANTE,
   FOCUS_REGIME_ESPECIAL_NENHUM,
@@ -17,7 +17,9 @@ import {
   FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
   FOCUS_API_HOMOLOG_URL,
   FOCUS_API_PRODUCTION_URL,
+  FOCUS_SERVICO_FISCAL,
   buildFocusNfsePayload,
+  resolveFocusServicoCategoria,
   sanitizeComplement,
   extractFocusErrorMessage,
   focusCancelJustification,
@@ -124,6 +126,60 @@ test("competência da DPS fica no horário de Brasília", () => {
   assert.equal(night.data_emissao, "2026-11-03T23:30:00-03:00");
 });
 
+test("vigilância e escolta levam a trinca fiscal e a alíquota do Simples", () => {
+  const vigilancia = buildFocusNfsePayload({
+    value: 2000,
+    description: "Posto de vigilância patrimonial",
+    prestadorIm: "12345",
+    tomador: tomadorOk,
+    categoria: "vigilancia",
+    valorInssRetido: 220,
+    aliquotaSimples: 2.55,
+    codigoMunicipioPrestacao: "3509502",
+  });
+  assert.equal(vigilancia.codigo_tributacao_nacional_iss, "110201");
+  assert.equal(vigilancia.codigo_nbs, "118025000");
+  assert.equal(vigilancia.codigo_tributacao_municipal_iss, "07870");
+  assert.equal(vigilancia.valor_cp, 220);
+  assert.equal(vigilancia.percentual_aliquota_relativa_municipio, 2.55);
+  assert.equal(vigilancia.tipo_retencao_iss, 1);
+  assert.equal(vigilancia.codigo_municipio_prestacao, "3509502");
+
+  const escolta = buildFocusNfsePayload({
+    value: 800,
+    description: "Serviço genérico",
+    prestadorIm: "12345",
+    tomador: { ...tomadorOk, city: "Serra", state: "ES", codigoMunicipioIbge: "3205002" },
+    serviceOrderTypes: ["escolta"],
+  });
+  assert.equal(escolta.codigo_tributacao_nacional_iss, "110301");
+  assert.equal(escolta.codigo_nbs, "118023000");
+  assert.equal(escolta.codigo_tributacao_municipal_iss, "07897");
+  assert.equal("valor_cp" in escolta, false);
+  assert.equal(escolta.percentual_aliquota_relativa_municipio, ISS_ALIQUOTA);
+  assert.equal(escolta.codigo_municipio_prestacao, "3205002");
+  assert.equal(escolta.codigo_municipio_emissora, FOCUS_CODIGO_MUNICIPIO_SP);
+
+  assert.equal(resolveFocusServicoCategoria({
+    description: "Torres Vigilância Patrimonial — Escolta Armada",
+  }).categoria, "escolta");
+  assert.equal(resolveFocusServicoCategoria({
+    description: "Vigilância patrimonial em posto físico",
+  }).categoria, "vigilancia");
+  assert.equal(resolveFocusServicoCategoria({
+    serviceOrderTypes: ["escolta", "vigilancia"],
+  }).conflito, true);
+  assert.throws(
+    () => buildFocusNfsePayload({
+      value: 10,
+      prestadorIm: "1",
+      tomador: tomadorOk,
+      serviceOrderTypes: ["escolta", "vigilancia"],
+    }),
+    /mistura/,
+  );
+});
+
 test("não optante do Simples manda código 1 e regime nenhum", () => {
   const p = buildFocusNfsePayload({
     value: 10,
@@ -134,6 +190,7 @@ test("não optante do Simples manda código 1 e regime nenhum", () => {
   });
   assert.equal(p.codigo_opcao_simples_nacional, FOCUS_OPCAO_SIMPLES_NAO_OPTANTE);
   assert.equal(p.regime_especial_tributacao, FOCUS_REGIME_ESPECIAL_NENHUM);
+  assert.equal("percentual_aliquota_relativa_municipio" in p, false);
   assert.equal("valor_cp" in p, false);
 });
 
@@ -146,15 +203,14 @@ test("mapFocusStatusToTorres", () => {
   assert.equal(mapFocusStatusToTorres("AUTHORIZED"), "AUTHORIZED");
 });
 
-test("buildFocusNfsePayload: DPS nacional, 110201, ISS sem retenção, discriminacao escolta+legais", () => {
+test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, discriminacao escolta+legais", () => {
   const p = buildFocusNfsePayload({
     value: 1000,
     description: "Referente aos serviços de Escolta Armada - Período: 16/09/2026 a 30/09/2026 (Setembro/2026)",
     prestadorIm: "12345",
     dataEmissaoIso: "2026-11-03T15:00:00.000Z",
     tomador: tomadorOk,
-    retemInss: true,
-    inssAliquota: 11,
+    valorInssRetido: 0,
   });
   assert.equal(p.cnpj_prestador, TORRES_CNPJ);
   assert.equal(p.codigo_municipio_emissora, FOCUS_CODIGO_MUNICIPIO_SP);
@@ -164,8 +220,10 @@ test("buildFocusNfsePayload: DPS nacional, 110201, ISS sem retenção, discrimin
   assert.equal(p.cpf_tomador, undefined);
   assert.equal(p.codigo_municipio_tomador, FOCUS_CODIGO_MUNICIPIO_SP);
   assert.equal(p.cep_tomador, "01310100");
-  assert.equal(p.codigo_tributacao_nacional_iss, FOCUS_CODIGO_TRIBUTACAO_NACIONAL_ISS);
-  assert.equal(p.codigo_tributacao_nacional_iss, "110201");
+  assert.equal(p.codigo_tributacao_nacional_iss, FOCUS_SERVICO_FISCAL.escolta.codigo_tributacao_nacional_iss);
+  assert.equal(p.codigo_nbs, "118023000");
+  assert.equal(p.codigo_tributacao_municipal_iss, "07897");
+  assert.equal(p.percentual_aliquota_relativa_municipio, ISS_ALIQUOTA);
   assert.equal("item_lista_servico" in p, false);
   assert.equal("prestador" in p, false);
   assert.equal("servico" in p, false);
@@ -177,7 +235,7 @@ test("buildFocusNfsePayload: DPS nacional, 110201, ISS sem retenção, discrimin
   assert.equal(p.tributacao_iss, FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL);
   assert.equal(p.valor_servico, 1000);
   assert.equal("valor_iss" in p, false);
-  assert.equal(p.valor_cp, 110);
+  assert.equal("valor_cp" in p, false);
   assert.equal(p.codigo_opcao_simples_nacional, FOCUS_OPCAO_SIMPLES_ME_EPP);
   assert.equal(p.regime_especial_tributacao, FOCUS_REGIME_ESPECIAL_NENHUM);
   assert.equal(p.codigo_municipio_prestacao, FOCUS_CODIGO_MUNICIPIO_SP);

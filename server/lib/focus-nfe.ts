@@ -12,6 +12,7 @@ import { CLIENT_EMAIL_COLUMNS, nfseTomadorEmail } from "../../shared/client-emai
 import { maybeSendInvoiceReadyEmail } from "./invoice-billing-email";
 import {
   DESCRICAO_SERVICO_FIXA,
+  ISS_ALIQUOTA,
   MISSING_EMAIL_NF_MSG,
   assertFiscalAddressForNf,
   shouldBlockNfEmission,
@@ -32,6 +33,7 @@ import {
   focusNfsenEmitPath,
   focusNfsenResourcePath,
   focusPdfUrl,
+  resolveFocusServicoCategoria,
   focusTomadorEmail,
   ibgeMunicipioFromCityUf,
   isFocusConnectivityError,
@@ -68,6 +70,13 @@ export function resolveFocusPrestadorIm(): string {
 function focusOptanteSimples(): boolean {
   const raw = String(process.env.FOCUS_OPTANTE_SIMPLES || "true").trim().toLowerCase();
   return raw !== "false" && raw !== "0" && raw !== "nao" && raw !== "não";
+}
+
+function focusAliquotaSimples(): number {
+  const raw = String(process.env.FOCUS_ALIQUOTA_SIMPLES || "").trim().replace(",", ".");
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0 && n <= 100) return n;
+  return ISS_ALIQUOTA;
 }
 
 function basicAuthHeader(token: string): string {
@@ -408,30 +417,55 @@ export async function emitFocusNfseForInvoice(
     : ref;
 
   let osVinculadas = 0;
+  let serviceOrderTypes: string[] = [];
   try {
-    const { count, error } = await supabaseAdmin
+    const { data: bills, error } = await supabaseAdmin
       .from("escort_billings")
-      .select("id", { count: "exact", head: true })
+      .select("service_order_id")
       .eq("invoice_id", id)
       .not("service_order_id", "is", null);
     if (error) throw new Error(error.message || "Falha ao conferir OS da fatura");
-    osVinculadas = count || 0;
+    osVinculadas = (bills || []).length;
+    const osIds = new Set<number>();
+    const direct = Number(invoice.service_order_id);
+    if (Number.isFinite(direct) && direct > 0) osIds.add(direct);
+    for (const bill of bills || []) {
+      const osId = Number(bill.service_order_id);
+      if (Number.isFinite(osId) && osId > 0) osIds.add(osId);
+    }
+    if (osIds.size > 0) {
+      const { data: orders, error: osError } = await supabaseAdmin
+        .from("service_orders")
+        .select("type")
+        .in("id", [...osIds]);
+      if (osError) throw new Error(osError.message || "Falha ao ler o tipo da OS");
+      serviceOrderTypes = (orders || []).map((order: { type?: string | null }) => String(order.type || ""));
+    }
   } catch (e: any) {
     return { ok: false, message: e?.message || "Não foi possível conferir as OS desta fatura. A NF não foi emitida." };
   }
   const semOs = bloqueioNfSemOs(osVinculadas);
   if (semOs) return { ok: false, message: semOs };
+  const fiscal = resolveFocusServicoCategoria({
+    serviceOrderTypes,
+    description: invoice.description,
+  });
+  if (fiscal.conflito) {
+    return { ok: false, message: "A fatura mistura OS de Vigilância e Escolta. A NFS-e não foi emitida." };
+  }
 
   let result: any;
   try {
+    const optante = focusOptanteSimples();
     result = await focusRequest("POST", focusNfsenEmitPath(emitRef), buildFocusNfsePayload({
       value: parseFloat(invoice.value),
       description: invoice.description || DESCRICAO_SERVICO_FIXA,
       tomador,
-      retemInss: true,
-      inssAliquota: Number(client?.inss_aliquota ?? 11),
+      categoria: fiscal.categoria,
+      valorInssRetido: invoice.valor_inss_retido,
       prestadorIm,
-      optanteSimplesNacional: focusOptanteSimples(),
+      optanteSimplesNacional: optante,
+      aliquotaSimples: optante ? focusAliquotaSimples() : null,
     }));
   } catch (e: any) {
     const code = String(e?.body?.codigo || "").toLowerCase();

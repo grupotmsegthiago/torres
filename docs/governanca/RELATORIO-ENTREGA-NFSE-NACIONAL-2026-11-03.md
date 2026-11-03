@@ -27,12 +27,16 @@
   - `regime_especial_tributacao`: 0
   - prestador: `cnpj_prestador`, `inscricao_municipal_prestador`
   - tomador: `cnpj_tomador` ou `cpf_tomador`, `razao_social_tomador`, `email_tomador`, endereço com `codigo_municipio_tomador`
-  - serviço: `codigo_municipio_prestacao`, `codigo_tributacao_nacional_iss` `110201`, `descricao_servico`, `valor_servico`, `tributacao_iss` 1, `tipo_retencao_iss` 1 (ISS sem retenção). INSS que já ia na nota vai em `valor_cp`
+  - serviço: a trinca da categoria. Vigilância (posto): `110201`, NBS `118025000`, municipal `07870`. Escolta: `110301`, NBS `118023000`, municipal `07897`. A fatura não tem coluna de categoria. A OS usa `service_orders.type`. Sem tipo, a descrição decide; "Escolta Armada" fica escolta. OS dos dois tipos na mesma fatura bloqueia a emissão
+  - `descricao_servico`, `valor_servico`, `tributacao_iss` 1, `tipo_retencao_iss` 1
+  - optante do Simples envia `percentual_aliquota_relativa_municipio`. O valor vem de `FOCUS_ALIQUOTA_SIMPLES`; se a variável não existir, usa a alíquota 5 já gravada em `ISS_ALIQUOTA`
+  - `valor_cp` só quando `invoices.valor_inss_retido` é maior que zero
+  - `codigo_municipio_prestacao`: 3550308 quando o tomador é de São Paulo; fora, o IBGE do tomador
 - A resposta continua em `nfseUpdatesFromFocusObject`: `status`, `numero`, `codigo_verificacao`, `url_danfse`, `caminho_xml_nota_fiscal`
 
 ### O que NÃO foi alterado
 - Valor da fatura, boleto Asaas, regra dos 70%, boletim, balanço
-- `ISS_RETAIN` continua falso. A alíquota de 5% não é mais enviada: no Ambiente Nacional o município informa a alíquota
+- `ISS_RETAIN` continua falso (`tipo_retencao_iss` 1). A alíquota enviada é a do Simples do optante, não uma retenção
 - Colunas de `invoices` e telas de faturas / relatório
 
 ### Arquivos modificados
@@ -46,7 +50,7 @@
 ### Testes executados
 | Comando / arquivo | Resultado |
 |---|---|
-| `npx tsx --test server/lib/focus-nfe-helpers.test.ts` | 24 pass |
+| `npx tsx --test server/lib/focus-nfe-helpers.test.ts` | 25 pass |
 
 ### Resultados (negócio)
 A próxima NFS-e da Torres sai no Ambiente Nacional da Focus, com o código 110201 da escolta, sem criar outra nota em paralelo e sem mudar o que a tela já lê.
@@ -70,5 +74,5 @@ A próxima NFS-e da Torres sai no Ambiente Nacional da Focus, com o código 1102
 
 ### Resumo executivo
 1. A rota da fatura continua a mesma. O satélite Focus passa a emitir em `/v2/nfsen`.
-2. O JSON é o da DPS nacional, com código 110201 e Simples ME/EPP.
+2. O JSON é o da DPS nacional: escolta 110301 e vigilância 110201, com NBS, complemento municipal e alíquota do Simples.
 3. A tela lê as mesmas colunas. A Paulistana antiga só entra se o nacional não achar a nota.

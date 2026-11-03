@@ -3,7 +3,8 @@
 ## 2026-11-03 — NFS-e Ambiente Nacional (Focus /v2/nfsen)
 
 - Emissão nova sai por `POST /v2/nfsen` (DPS). Consulta e cancelamento usam `/v2/nfsen`. Nota já emitida na Paulistana (`/v2/nfse`) só é consultada ou cancelada se o nacional responder 404.
-- Código nacional da escolta: `110201`. Simples ME/EPP: `codigo_opcao_simples_nacional` 3. Regime especial: 0. ISS continua sem retenção (`ISS_RETAIN`).
+- Vigilância: `110201` / NBS `118025000` / municipal `07870`. Escolta: `110301` / NBS `118023000` / municipal `07897`. A categoria sai de `service_orders.type`; sem tipo, da descrição. Sem sinal, fica escolta.
+- Optante do Simples envia `percentual_aliquota_relativa_municipio` (`FOCUS_ALIQUOTA_SIMPLES` ou a alíquota 5 já usada na NFS-e). `valor_cp` só quando `invoices.valor_inss_retido` é maior que zero.
 - As mesmas colunas de `invoices` recebem status, número, código de verificação, DANFSe e XML. Boleto segue no Asaas.
 - Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-NACIONAL-2026-11-03.md`.
 
