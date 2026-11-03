@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Régua de raio no Onde abastecer
+
+- A busca não para mais em 5 km. Os degraus são 5, 10, 15 e 25 km. Vale o menor degrau que já tem posto localizado com histórico limpo.
+- Sem posto nesse teto, e ainda com CEP por consultar, a tela continua em localização. O vazio só fecha em "até 25 km".
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Onde abastecer só fala "neste raio" depois de localizar
 
 - A tela dizia "Nenhum posto com histórico limpo neste raio" com `anp_cep_geo` em zero linhas e nenhuma latitude gravada. O nome da cidade, se não batia, encerrava a consulta antes de qualquer endereço.

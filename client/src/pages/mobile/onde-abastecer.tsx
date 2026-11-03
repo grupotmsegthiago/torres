@@ -1,6 +1,6 @@
 import MobileLayout from "@/components/mobile/layout";
 import { authFetch } from "@/lib/queryClient";
-import { isAnpBaseNotLoaded, ONDE_ABASTECER_STATION_KEY, type EmptyReason } from "@shared/anp-onde-abastecer";
+import { isAnpBaseNotLoaded, ONDE_ABASTECER_RADIUS_STEPS_KM, ONDE_ABASTECER_STATION_KEY, type EmptyReason } from "@shared/anp-onde-abastecer";
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { AlertCircle, ArrowLeft, Loader2, MapPin, ShieldCheck } from "lucide-react";
@@ -26,6 +26,30 @@ interface Payload {
   message: string | null;
   stations: StationCard[];
   pendingGeo: number;
+  radiusKm?: number;
+}
+
+function RadiusRuler({ activeKm, opening }: { activeKm: number | null; opening: boolean }) {
+  return (
+    <div className="px-4 pt-4" data-testid="radius-ruler">
+      <div className="flex items-end gap-1">
+        {ONDE_ABASTECER_RADIUS_STEPS_KM.map((step) => {
+          const reached = !opening && activeKm !== null && step <= activeKm;
+          return (
+            <div key={step} className="flex-1">
+              <div
+                className={`h-1.5 rounded-full ${reached ? "bg-emerald-600" : "bg-neutral-200"} ${opening ? "animate-pulse" : ""}`}
+              />
+              <p className={`mt-1 text-center text-[10px] font-bold ${reached && step === activeKm ? "text-emerald-800" : "text-neutral-400"}`}>
+                {step}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-0.5 text-center text-[10px] font-medium text-neutral-400">km</p>
+    </div>
+  );
 }
 
 function money(value: number | null): string {
@@ -108,7 +132,7 @@ export default function OndeAbastecerPage() {
             setPayload(data);
             const first = data.stations?.[0];
             if (first?.name) rememberStation(first.name);
-            if (data.emptyReason === "locating" && attempt < 4) {
+            if (data.emptyReason === "locating" && attempt < 6) {
               setLocating(true);
               timer = window.setTimeout(() => ask(attempt + 1), 900);
               return;
@@ -149,12 +173,19 @@ export default function OndeAbastecerPage() {
           <h1 className="text-base font-bold text-neutral-900">Onde abastecer</h1>
         </div>
 
+        {!isAnpBaseNotLoaded(payload) && (
+          <RadiusRuler
+            activeKm={payload?.radiusKm ?? null}
+            opening={loading || payload?.emptyReason === "locating"}
+          />
+        )}
+
         <div className="p-4 flex-1 space-y-4">
           {loading && (
             <div className="flex flex-col items-center justify-center py-20 space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
               <p className="text-sm text-neutral-500 font-medium">
-                {locating ? "Localizando o endereço dos postos perto de você..." : "Buscando postos no raio de 5 km..."}
+                {locating ? "Abrindo a régua de 5 até 25 km..." : "Buscando postos no raio de 5 km..."}
               </p>
             </div>
           )}
@@ -211,6 +242,7 @@ export default function OndeAbastecerPage() {
                 <h2 className="text-lg font-bold text-neutral-900">{primary.name}</h2>
                 <p className="text-xs text-neutral-500 mt-0.5">
                   {primary.distanceKm.toFixed(1)} km · cerca de {primary.driveMinutes} min
+                  {payload?.radiusKm && payload.radiusKm > 5 ? ` · régua em ${payload.radiusKm} km` : ""}
                 </p>
                 {primary.address && <p className="text-xs text-neutral-400 mt-1">{primary.address}</p>}
               </div>

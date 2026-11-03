@@ -141,7 +141,38 @@ export function classifyFoundPoint(input: {
   return "coarse";
 }
 
+/** Primeiro degrau. A régua sobe só quando este raio não tem posto localizado. */
 export const ONDE_ABASTECER_RADIUS_KM = 5;
+/** Degraus da régua, em km. O último é o teto da busca. */
+export const ONDE_ABASTECER_RADIUS_STEPS_KM = [5, 10, 15, 25] as const;
+
+export function maxRadiusStepKm(steps: readonly number[] = ONDE_ABASTECER_RADIUS_STEPS_KM): number {
+  return steps[steps.length - 1] ?? ONDE_ABASTECER_RADIUS_KM;
+}
+
+/** Menor degrau que ainda alcança esta distância. Passou do teto, null. */
+export function radiusStepForDistance(distanceKm: number, steps: readonly number[] = ONDE_ABASTECER_RADIUS_STEPS_KM): number | null {
+  if (!Number.isFinite(distanceKm) || distanceKm < 0) return null;
+  for (const step of steps) {
+    if (distanceKm <= step) return step;
+  }
+  return null;
+}
+
+/** Menor degrau que já contém algum posto. Sem posto na régua, null. */
+export function pickRadiusStep(distancesKm: number[], steps: readonly number[] = ONDE_ABASTECER_RADIUS_STEPS_KM): number | null {
+  let best: number | null = null;
+  for (const distance of distancesKm) {
+    const step = radiusStepForDistance(distance, steps);
+    if (step === null) continue;
+    if (best === null || step < best) best = step;
+  }
+  return best;
+}
+
+export function noStationMessage(radiusKm: number): string {
+  return `Nenhum posto com histórico limpo em até ${radiusKm} km.`;
+}
 export const ANP_YEAR_PAGE = "https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan";
 export const ANP_FISCAL_XLSX_URL =
   "https://www.gov.br/anp/pt-br/centrais-de-conteudo/paineis-dinamicos-da-anp/arquivos-dados-brutos-do-painel-dinamico-da-fiscalizacao-do-abastecimento-da-sfi/dados-fisc-a-partir-2019.xlsx";
@@ -391,9 +422,9 @@ export function latestPricesByStation(rows: Pick<AnpPriceRow, "cnpj" | "fuelDate
   return out;
 }
 
-export function rankStations(list: StationCandidate[]): RankResult {
+export function rankStations(list: StationCandidate[], radiusKm = ONDE_ABASTECER_RADIUS_KM): RankResult {
   const stations = list
-    .filter((s) => Number.isFinite(s.distanceKm) && s.distanceKm <= ONDE_ABASTECER_RADIUS_KM)
+    .filter((s) => Number.isFinite(s.distanceKm) && s.distanceKm <= radiusKm)
     .map((s): RankedStation => {
       const priced = s.gasolinePrice !== null && s.ethanolPrice !== null;
       return {
@@ -416,7 +447,7 @@ export function rankStations(list: StationCandidate[]): RankResult {
     });
 
   if (stations.length === 0) {
-    return { mode: "empty", message: "Nenhum posto com histórico limpo neste raio.", stations: [] };
+    return { mode: "empty", message: noStationMessage(radiusKm), stations: [] };
   }
   return {
     mode: stations[0].priced ? "priced" : "nearest",

@@ -61,3 +61,7 @@ O aplicativo não declara o raio vazio antes de buscar o endereço dos postos da
 ### Pendências
 - A faixa de CEP não é distância. Um posto perto, com CEP fora dos 80 mil números, espera outra abertura com coordenada já gravada.
 - Login do agente no aparelho não foi refeito daqui.
+
+### Régua de raio (mesmo dia)
+- Degraus 5, 10, 15 e 25 km. O cartão usa o menor degrau que já tem posto localizado.
+- O vazio de "até 25 km" só fecha quando não sobrou CEP candidato.

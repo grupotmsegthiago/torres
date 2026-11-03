@@ -9,7 +9,11 @@ import {
   emptyReasonForUnmatchedCity,
   isCepInBand,
   isMunicipalCentroid,
+  maxRadiusStepKm,
+  noStationMessage,
   orderCepsByProximity,
+  pickRadiusStep,
+  radiusStepForDistance,
   stationGeocodeQuery,
   streetGeocodeQuery,
   estimateDriveMinutes,
@@ -147,6 +151,28 @@ test("busca do posto usa o endereço, não só o CEP", () => {
     streetGeocodeQuery("11823", "Avenida Raimundo Pereira de Magalhães", "São Paulo", "SP"),
     "11823 Avenida Raimundo Pereira de Magalhães, São Paulo, SP, Brasil",
   );
+});
+
+test("a régua sobe ao menor degrau que já tem posto", () => {
+  assert.equal(radiusStepForDistance(4.8), 5);
+  assert.equal(radiusStepForDistance(5), 5);
+  assert.equal(radiusStepForDistance(8), 10);
+  assert.equal(radiusStepForDistance(25), 25);
+  assert.equal(radiusStepForDistance(25.1), null);
+  assert.equal(pickRadiusStep([12, 4.2, 18]), 5);
+  assert.equal(pickRadiusStep([8, 14]), 10);
+  assert.equal(pickRadiusStep([30, 40]), null);
+  assert.equal(maxRadiusStepKm(), 25);
+  assert.equal(noStationMessage(25), "Nenhum posto com histórico limpo em até 25 km.");
+  const opened = rankStations([
+    station({ cnpj: "6", name: "A 8 km", distanceKm: 8, gasolinePrice: 5.5, ethanolPrice: 3.4, researchDate: "2026-09-08" }),
+    station({ cnpj: "7", name: "A 22 km", distanceKm: 22, gasolinePrice: 5, ethanolPrice: 3, researchDate: "2026-09-08" }),
+  ], 10);
+  assert.equal(opened.stations.length, 1);
+  assert.equal(opened.stations[0].name, "A 8 km");
+  assert.equal(rankStations([
+    station({ cnpj: "6", name: "A 8 km", distanceKm: 8, gasolinePrice: 5.5, ethanolPrice: 3.4 }),
+  ]).stations.length, 0);
 });
 
 test("o raio vazio só fecha depois que o CEP da faixa foi localizado", () => {

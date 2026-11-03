@@ -3,7 +3,6 @@ import { log } from "./logger";
 import {
   ANP_FISCAL_XLSX_URL,
   ANP_YEAR_PAGE,
-  ONDE_ABASTECER_RADIUS_KM,
   addressHouseNumber,
   cepBandBounds,
   cepDigits,
@@ -11,12 +10,14 @@ import {
   emptyReasonAfterGeo,
   emptyReasonForUnmatchedCity,
   haversineKm,
-  isCepInBand,
   latestGasolinaEtanolHref,
   latestPricesByStation,
+  maxRadiusStepKm,
+  noStationMessage,
   normalizePlace,
   orderCepsByProximity,
   parseAnpPriceCsv,
+  pickRadiusStep,
   rankStations,
   stationGeocodeQuery,
   streetGeocodeQuery,
@@ -347,12 +348,13 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     city: string | null = null,
     state: string | null = null,
     pendingGeo = 0,
+    radiusKm = maxRadiusStepKm(),
   ): OndeAbastecerPayload => ({
     mode: "empty",
     emptyReason,
     message,
     stations: [],
-    radiusKm: ONDE_ABASTECER_RADIUS_KM,
+    radiusKm,
     city,
     state,
     pendingGeo,
@@ -394,15 +396,16 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     const reason = emptyReasonForUnmatchedCity(count ?? 0);
     const message = reason === "not_loaded"
       ? "O histórico de qualidade da ANP ainda não foi carregado."
-      : "Nenhum posto com histórico limpo neste raio.";
+      : noStationMessage(maxRadiusStepKm());
     return empty(reason, message, place.city, place.state);
   }
   if ([...pool.values()].every((row) => !row.quality_known)) {
     return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state);
   }
 
-  const dLat = ONDE_ABASTECER_RADIUS_KM / 111;
-  const dLng = ONDE_ABASTECER_RADIUS_KM / (111 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+  const searchKm = maxRadiusStepKm();
+  const dLat = searchKm / 111;
+  const dLng = searchKm / (111 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
   const { data: boxRows } = await supabaseAdmin
     .from("anp_station_quality")
     .select("cnpj, station_name, address, city, latitude, longitude, cep, anp_score, has_quality_infraction_last_2_years, is_authorized, is_interdicted, quality_known, city_norm, state")
@@ -434,7 +437,6 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
   for (const row of pending) {
     const cep = cepDigits(row.cep);
     if (!cep || queryByCep.has(cep)) continue;
-    if (place.cep && !isCepInBand(place.cep, cep)) continue;
     blocking.push(cep);
     queryByCep.set(cep, stationGeocodeQuery(row.address, row.city || row.city_norm, row.state));
     houseByCep.set(cep, addressHouseNumber(row.address));
@@ -468,22 +470,25 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     located.push(row);
   }
 
-  const near = located
-    .map((row) => ({ row, distanceKm: haversineKm(lat, lng, num(row.latitude) as number, num(row.longitude) as number) }))
-    .filter((item) => item.distanceKm <= ONDE_ABASTECER_RADIUS_KM);
-
-  if (near.length === 0) {
+  const measured = located.map((row) => ({
+    row,
+    distanceKm: haversineKm(lat, lng, num(row.latitude) as number, num(row.longitude) as number),
+  }));
+  const step = pickRadiusStep(measured.map((item) => item.distanceKm));
+  if (step === null) {
     const reason = emptyReasonAfterGeo(pendingLeft);
     return empty(
       reason,
       reason === "locating"
-        ? "Localizando o endereço dos postos perto de você."
-        : "Nenhum posto com histórico limpo neste raio.",
+        ? "Abrindo a régua de 5 até 25 km para achar um posto."
+        : noStationMessage(searchKm),
       place.city,
       place.state,
       pendingLeft,
+      searchKm,
     );
   }
+  const near = measured.filter((item) => item.distanceKm <= step);
 
   const cnpjs = near.map((item) => item.row.cnpj);
   const { data: priceRows, error: priceError } = await supabaseAdmin
@@ -519,10 +524,10 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     };
   });
 
-  const ranked = rankStations(candidates);
+  const ranked = rankStations(candidates, step);
   return {
     ...ranked,
-    radiusKm: ONDE_ABASTECER_RADIUS_KM,
+    radiusKm: step,
     city: place.city,
     state: place.state,
     pendingGeo: pendingLeft,
