@@ -4,14 +4,22 @@ import {
   ANP_FISCAL_XLSX_URL,
   ANP_YEAR_PAGE,
   ONDE_ABASTECER_RADIUS_KM,
+  addressHouseNumber,
+  cepBandBounds,
+  cepDigits,
+  classifyFoundPoint,
+  emptyReasonAfterGeo,
   emptyReasonForUnmatchedCity,
   haversineKm,
+  isCepInBand,
   latestGasolinaEtanolHref,
   latestPricesByStation,
   normalizePlace,
+  orderCepsByProximity,
   parseAnpPriceCsv,
   rankStations,
   stationGeocodeQuery,
+  streetGeocodeQuery,
   type AnpPriceRow,
   type OndeAbastecerEmptyReason,
   type RankResult,
@@ -20,7 +28,8 @@ import {
 import { fiscalFlagsFromXlsx } from "./anp-fiscal-xlsx";
 
 const UA = "TorresSeguranca/onde-abastecer";
-const GEO_BUDGET = 40;
+const GEO_BUDGET = 24;
+const NOMINATIM_BUDGET = 8;
 
 export interface OndeAbastecerPayload extends RankResult {
   radiusKm: number;
@@ -163,7 +172,7 @@ interface StationRow {
   state: string | null;
 }
 
-async function reverseCity(lat: number, lng: number): Promise<{ city: string; state: string } | null> {
+async function reverseCity(lat: number, lng: number): Promise<{ city: string; state: string; cep: string } | null> {
   const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`;
   const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
   if (!res.ok) return null;
@@ -173,10 +182,12 @@ async function reverseCity(lat: number, lng: number): Promise<{ city: string; st
   const iso = address["ISO3166-2-lvl4"] || "";
   const state = iso.includes("-") ? iso.split("-").pop() || "" : "";
   if (!city || !state) return null;
-  return { city: normalizePlace(city), state: state.toUpperCase() };
+  return { city: normalizePlace(city), state: state.toUpperCase(), cep: cepDigits(address.postcode) };
 }
 
-async function photonPoint(query: string): Promise<{ lat: number; lng: number } | null> {
+type FoundPoint = { lat: number; lng: number; houseNumber: string | null; street: string | null };
+
+async function photonPoint(query: string): Promise<FoundPoint | null> {
   if (!query) return null;
   try {
     const res = await fetch(`https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`, {
@@ -184,56 +195,141 @@ async function photonPoint(query: string): Promise<{ lat: number; lng: number } 
     });
     if (!res.ok) return null;
     const body = await res.json() as {
-      features?: { geometry?: { coordinates?: number[] }; properties?: { countrycode?: string } }[];
+      features?: {
+        geometry?: { coordinates?: number[] };
+        properties?: { countrycode?: string; housenumber?: string; street?: string; name?: string };
+      }[];
     };
     const feature = body.features?.[0];
     if (!feature || feature.properties?.countrycode !== "BR") return null;
     const [lng, lat] = feature.geometry?.coordinates ?? [];
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng };
+    const props = feature.properties ?? {};
+    return {
+      lat,
+      lng,
+      houseNumber: props.housenumber ?? null,
+      street: props.street || props.name || null,
+    };
   } catch {
     return null;
   }
 }
 
-async function brasilApiCep(cep: string): Promise<{ lat: number; lng: number } | null> {
-  const res = await fetch(`https://brasilapi.com.br/api/cep/v2/${cep}`, { headers: { "User-Agent": UA } });
+async function nominatimPoint(query: string): Promise<FoundPoint | null> {
+  if (!query) return null;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&addressdetails=1&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
+  if (res.status === 429 || res.status >= 500) throw new Error(`nominatim ${res.status}`);
   if (!res.ok) return null;
-  const body = await res.json() as { location?: { coordinates?: { latitude?: string; longitude?: string } } };
-  const lat = Number(body.location?.coordinates?.latitude);
-  const lng = Number(body.location?.coordinates?.longitude);
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  const body = await res.json() as { lat?: string; lon?: string; address?: { house_number?: string; road?: string } }[];
+  const hit = body[0];
+  if (!hit) return null;
+  const lat = Number(hit.lat);
+  const lng = Number(hit.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return {
+    lat,
+    lng,
+    houseNumber: hit.address?.house_number ?? null,
+    street: hit.address?.road ?? null,
+  };
+}
+
+type CachedPoint = { precision: "street"; lat: number; lng: number } | { precision: "coarse" };
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function geocodeCeps(
   ceps: string[],
   queryByCep: Map<string, string>,
-): Promise<Map<string, { lat: number; lng: number } | null>> {
-  const unique = [...new Set(ceps.filter((cep) => cep.length === 8))].slice(0, GEO_BUDGET);
-  const out = new Map<string, { lat: number; lng: number } | null>();
+  houseByCep: Map<string, string | null>,
+  placeByCep: Map<string, { city: string | null; state: string | null }>,
+): Promise<Map<string, CachedPoint>> {
+  const unique = [...new Set(ceps.filter((cep) => cep.length === 8))];
+  const out = new Map<string, CachedPoint>();
   if (!unique.length) return out;
   const { data } = await supabaseAdmin.from("anp_cep_geo").select("cep, latitude, longitude").in("cep", unique);
   const known = new Set<string>();
   for (const row of data ?? []) {
     known.add(row.cep);
-    const lat = Number(row.latitude);
-    const lng = Number(row.longitude);
-    out.set(row.cep, Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null);
+    const lat = row.latitude === null || row.latitude === undefined || row.latitude === "" ? null : Number(row.latitude);
+    const lng = row.longitude === null || row.longitude === undefined || row.longitude === "" ? null : Number(row.longitude);
+    out.set(
+      row.cep,
+      lat !== null && lng !== null && Number.isFinite(lat) && Number.isFinite(lng)
+        ? { precision: "street", lat, lng }
+        : { precision: "coarse" },
+    );
   }
-  const missing = unique.filter((cep) => !known.has(cep));
+  const missing = unique.filter((cep) => !known.has(cep)).slice(0, GEO_BUDGET);
   const now = new Date().toISOString();
   const looked: Record<string, unknown>[] = [];
+  const needStreet: { cep: string; street: string | null }[] = [];
+  const remember = (cep: string, point: CachedPoint) => {
+    out.set(cep, point);
+    looked.push({
+      cep,
+      latitude: point.precision === "street" ? point.lat : null,
+      longitude: point.precision === "street" ? point.lng : null,
+      looked_up_at: now,
+    });
+  };
   for (let i = 0; i < missing.length; i += 8) {
     const slice = missing.slice(i, i + 8);
     await Promise.all(slice.map(async (cep) => {
       try {
-        const point = await photonPoint(queryByCep.get(cep) ?? "") ?? await brasilApiCep(cep);
-        out.set(cep, point);
-        looked.push({ cep, latitude: point?.lat ?? null, longitude: point?.lng ?? null, looked_up_at: now });
+        const house = houseByCep.get(cep) ?? null;
+        const photon = await photonPoint(queryByCep.get(cep) ?? "");
+        if (!photon) {
+          needStreet.push({ cep, street: null });
+          return;
+        }
+        const kind = classifyFoundPoint({
+          queryHouseNumber: house,
+          foundHouseNumber: photon.houseNumber,
+          lat: photon.lat,
+          lng: photon.lng,
+        });
+        if (kind === "street") {
+          remember(cep, { precision: "street", lat: photon.lat, lng: photon.lng });
+          return;
+        }
+        needStreet.push({ cep, street: photon.street });
       } catch {
-        out.set(cep, null);
+        /* falha de rede não conta como CEP consultado */
       }
     }));
+  }
+  let nominatimUsed = 0;
+  for (const item of needStreet) {
+    if (nominatimUsed >= NOMINATIM_BUDGET) break;
+    if (nominatimUsed > 0) await sleep(1100);
+    nominatimUsed += 1;
+    try {
+      const house = houseByCep.get(item.cep) ?? null;
+      const place = placeByCep.get(item.cep);
+      const query = item.street
+        ? streetGeocodeQuery(house, item.street, place?.city, place?.state)
+        : (queryByCep.get(item.cep) ?? "");
+      const hit = await nominatimPoint(query);
+      if (!hit) {
+        remember(item.cep, { precision: "coarse" });
+        continue;
+      }
+      const kind = classifyFoundPoint({
+        queryHouseNumber: house,
+        foundHouseNumber: hit.houseNumber,
+        lat: hit.lat,
+        lng: hit.lng,
+      });
+      if (kind === "street") remember(item.cep, { precision: "street", lat: hit.lat, lng: hit.lng });
+      else remember(item.cep, { precision: "coarse" });
+    } catch {
+      /* a próxima abertura tenta de novo */
+    }
   }
   if (looked.length) await upsertChunks("anp_cep_geo", looked, "cep");
   return out;
@@ -265,15 +361,31 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
   const place = await reverseCity(lat, lng);
   if (!place) return empty("no_city", "Não foi possível identificar a cidade desta localização.");
 
+  const stationColumns = "cnpj, station_name, address, city, latitude, longitude, cep, anp_score, has_quality_infraction_last_2_years, is_authorized, is_interdicted, quality_known, city_norm, state";
   const { data: cityRows, error } = await supabaseAdmin
     .from("anp_station_quality")
-    .select("cnpj, station_name, address, city, latitude, longitude, cep, anp_score, has_quality_infraction_last_2_years, is_authorized, is_interdicted, quality_known, city_norm, state")
+    .select(stationColumns)
     .eq("state", place.state)
     .eq("city_norm", place.city)
     .limit(5000);
   if (error) throw new Error(error.message);
-  const inCity = (cityRows ?? []) as StationRow[];
-  if (inCity.length === 0) {
+  const bounds = cepBandBounds(place.cep);
+  let bandRows: StationRow[] = [];
+  if (bounds) {
+    const { data: bandData, error: bandError } = await supabaseAdmin
+      .from("anp_station_quality")
+      .select(stationColumns)
+      .eq("state", place.state)
+      .gte("cep", bounds.from)
+      .lte("cep", bounds.to)
+      .limit(500);
+    if (bandError) throw new Error(bandError.message);
+    bandRows = (bandData ?? []) as StationRow[];
+  }
+  const pool = new Map<string, StationRow>();
+  for (const row of (cityRows ?? []) as StationRow[]) pool.set(row.cnpj, row);
+  for (const row of bandRows) pool.set(row.cnpj, row);
+  if (pool.size === 0) {
     const { count, error: knownError } = await supabaseAdmin
       .from("anp_station_quality")
       .select("cnpj", { count: "exact", head: true })
@@ -285,7 +397,7 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
       : "Nenhum posto com histórico limpo neste raio.";
     return empty(reason, message, place.city, place.state);
   }
-  if (inCity.every((row) => !row.quality_known)) {
+  if ([...pool.values()].every((row) => !row.quality_known)) {
     return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state);
   }
 
@@ -311,39 +423,43 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     row.has_quality_infraction_last_2_years !== true;
 
   const merged = new Map<string, StationRow>();
-  for (const row of inCity.filter(clean)) merged.set(row.cnpj, row);
+  for (const row of pool.values()) if (clean(row)) merged.set(row.cnpj, row);
   for (const row of (boxRows ?? []) as StationRow[]) merged.set(row.cnpj, row);
 
   const pending = [...merged.values()].filter((row) => num(row.latitude) === null || num(row.longitude) === null);
   const queryByCep = new Map<string, string>();
+  const houseByCep = new Map<string, string | null>();
+  const placeByCep = new Map<string, { city: string | null; state: string | null }>();
+  const blocking: string[] = [];
   for (const row of pending) {
-    const cep = (row.cep ?? "").replace(/\D/g, "");
-    if (cep.length !== 8 || queryByCep.has(cep)) continue;
+    const cep = cepDigits(row.cep);
+    if (!cep || queryByCep.has(cep)) continue;
+    if (place.cep && !isCepInBand(place.cep, cep)) continue;
+    blocking.push(cep);
     queryByCep.set(cep, stationGeocodeQuery(row.address, row.city || row.city_norm, row.state));
+    houseByCep.set(cep, addressHouseNumber(row.address));
+    placeByCep.set(cep, { city: row.city || row.city_norm, state: row.state });
   }
-  const geo = await geocodeCeps([...queryByCep.keys()], queryByCep);
+  const ordered = orderCepsByProximity(place.cep, blocking);
+  const geo = await geocodeCeps(ordered, queryByCep, houseByCep, placeByCep);
   const locatedUpdates: Record<string, unknown>[] = [];
   for (const row of pending) {
-    const cep = (row.cep ?? "").replace(/\D/g, "");
-    const point = geo.get(cep);
-    if (!point) continue;
+    const point = geo.get(cepDigits(row.cep));
+    if (!point || point.precision !== "street") continue;
     row.latitude = point.lat;
     row.longitude = point.lng;
     locatedUpdates.push({ cnpj: row.cnpj, latitude: point.lat, longitude: point.lng, updated_at: new Date().toISOString() });
   }
   if (locatedUpdates.length) await upsertChunks("anp_station_quality", locatedUpdates, "cnpj").catch(() => {});
-  const pendingLeft = pending.filter((row) => {
-    const cep = (row.cep ?? "").replace(/\D/g, "");
-    return cep.length === 8 && !geo.has(cep);
-  }).length;
+  const pendingLeft = ordered.filter((cep) => !geo.has(cep)).length;
 
   const located: StationRow[] = [];
   for (const row of merged.values()) {
     let latitude = num(row.latitude);
     let longitude = num(row.longitude);
     if (latitude === null || longitude === null) {
-      const point = geo.get((row.cep ?? "").replace(/\D/g, ""));
-      if (!point) continue;
+      const point = geo.get(cepDigits(row.cep));
+      if (!point || point.precision !== "street") continue;
       latitude = point.lat;
       longitude = point.lng;
       row.latitude = latitude;
@@ -357,10 +473,11 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     .filter((item) => item.distanceKm <= ONDE_ABASTECER_RADIUS_KM);
 
   if (near.length === 0) {
+    const reason = emptyReasonAfterGeo(pendingLeft);
     return empty(
-      pendingLeft > 0 ? "locating" : "no_station",
-      pendingLeft > 0
-        ? "Localizando os postos desta cidade. Abra de novo em instantes."
+      reason,
+      reason === "locating"
+        ? "Localizando o endereço dos postos perto de você."
         : "Nenhum posto com histórico limpo neste raio.",
       place.city,
       place.state,

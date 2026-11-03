@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Onde abastecer só fala "neste raio" depois de localizar
+
+- A tela dizia "Nenhum posto com histórico limpo neste raio" com `anp_cep_geo` em zero linhas e nenhuma latitude gravada. O nome da cidade, se não batia, encerrava a consulta antes de qualquer endereço.
+- O CEP da BrasilAPI para a Avenida Raimundo Pereira de Magalhães devolve o centro de São Paulo (`-23.5475, -46.63611`). Photon sem o número cola a avenida inteira num extremo, a cerca de 9 km do escritório. Nenhum dos dois prova que o posto está fora dos 5 km.
+- A consulta agora pega o CEP do mesmo GPS, localiza primeiro a faixa de 80 mil números ao redor e só aceita ponto com o número da casa. Centro do município e avenida sem número não entram no raio. Enquanto sobrar CEP nessa faixa, a resposta é `locating` e o aplicativo tenta de novo.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Carga da ANP a cada 30 minutos
 
 - O bucket `thirty-min` já existia (Vercel Cron e `node-cron`). Ele passa a chamar `syncAnpReference`, a mesma carga do `POST /api/admin/anp-stations/sync`.

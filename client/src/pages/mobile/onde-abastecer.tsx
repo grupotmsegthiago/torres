@@ -80,6 +80,7 @@ function RouteButtons({ station }: { station: StationCard }) {
 
 export default function OndeAbastecerPage() {
   const [loading, setLoading] = useState(true);
+  const [locating, setLocating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -90,30 +91,49 @@ export default function OndeAbastecerPage() {
       setLoading(false);
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const { latitude, longitude } = position.coords;
-          const res = await authFetch(`/api/mobile/onde-abastecer?lat=${latitude}&lng=${longitude}`);
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.message || "Erro ao buscar postos próximos.");
+    let cancelled = false;
+    let timer = 0;
+    const ask = (attempt: number) => {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          if (cancelled) return;
+          try {
+            const { latitude, longitude } = position.coords;
+            const res = await authFetch(`/api/mobile/onde-abastecer?lat=${latitude}&lng=${longitude}`);
+            const data = await res.json();
+            if (!res.ok) {
+              throw new Error(data.message || "Erro ao buscar postos próximos.");
+            }
+            if (cancelled) return;
+            setPayload(data);
+            const first = data.stations?.[0];
+            if (first?.name) rememberStation(first.name);
+            if (data.emptyReason === "locating" && attempt < 4) {
+              setLocating(true);
+              timer = window.setTimeout(() => ask(attempt + 1), 900);
+              return;
+            }
+            setLocating(false);
+            setLoading(false);
+          } catch (err: any) {
+            if (cancelled) return;
+            setErrorMsg(err.message || "Erro de conexão ao buscar postos.");
+            setLoading(false);
           }
-          setPayload(data);
-          const first = data.stations?.[0];
-          if (first?.name) rememberStation(first.name);
-        } catch (err: any) {
-          setErrorMsg(err.message || "Erro de conexão ao buscar postos.");
-        } finally {
+        },
+        () => {
+          if (cancelled) return;
+          setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
           setLoading(false);
-        }
-      },
-      () => {
-        setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
-        setLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    );
+        },
+        { enableHighAccuracy: attempt === 0, timeout: 15000, maximumAge: 60000 },
+      );
+    };
+    ask(0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   const primary = payload?.stations?.[0];
@@ -133,7 +153,9 @@ export default function OndeAbastecerPage() {
           {loading && (
             <div className="flex flex-col items-center justify-center py-20 space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
-              <p className="text-sm text-neutral-500 font-medium">Buscando postos no raio de 5 km...</p>
+              <p className="text-sm text-neutral-500 font-medium">
+                {locating ? "Localizando o endereço dos postos perto de você..." : "Buscando postos no raio de 5 km..."}
+              </p>
             </div>
           )}
 
@@ -144,7 +166,20 @@ export default function OndeAbastecerPage() {
             </div>
           )}
 
-          {!loading && !errorMsg && !primary && (
+          {!loading && !errorMsg && !primary && payload?.emptyReason === "locating" && (
+            <div
+              className="bg-neutral-50 border border-neutral-200 rounded-2xl p-6 text-center space-y-2"
+              data-testid="empty-locating"
+            >
+              <Loader2 className="w-8 h-8 mx-auto animate-spin text-emerald-600" />
+              <h2 className="text-base font-bold text-neutral-800">Localizando os postos</h2>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                {payload.message || "O endereço ainda está sendo buscado. Abra de novo em instantes."}
+              </p>
+            </div>
+          )}
+
+          {!loading && !errorMsg && !primary && payload?.emptyReason !== "locating" && (
             isAnpBaseNotLoaded(payload) ? (
               <div
                 className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-2"

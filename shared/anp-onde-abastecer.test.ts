@@ -2,8 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   digitsCnpj,
+  addressHouseNumber,
+  cepBandBounds,
+  classifyFoundPoint,
+  emptyReasonAfterGeo,
   emptyReasonForUnmatchedCity,
+  isCepInBand,
+  isMunicipalCentroid,
+  orderCepsByProximity,
   stationGeocodeQuery,
+  streetGeocodeQuery,
   estimateDriveMinutes,
   isAnpBaseNotLoaded,
   isDesinterdiction,
@@ -135,6 +143,51 @@ test("busca do posto usa o endereço, não só o CEP", () => {
     "AVENIDA X, 100 - CENTRO, São Paulo, SP, Brasil",
   );
   assert.equal(stationGeocodeQuery("", null, "SP"), "SP, Brasil");
+  assert.equal(
+    streetGeocodeQuery("11823", "Avenida Raimundo Pereira de Magalhães", "São Paulo", "SP"),
+    "11823 Avenida Raimundo Pereira de Magalhães, São Paulo, SP, Brasil",
+  );
+});
+
+test("o raio vazio só fecha depois que o CEP da faixa foi localizado", () => {
+  assert.equal(addressHouseNumber("AVENIDA RAIMUNDO P DE MAGALHAES, 11860 - JD PIRITUBA"), "11860");
+  assert.equal(addressHouseNumber("AVENIDA OTAVIANO ALVES DE LIMA, 3926 - NOSSA SRA DO O"), "3926");
+  assert.equal(addressHouseNumber("RUA SEM NUMERO - CENTRO"), null);
+  assert.equal(isMunicipalCentroid(-23.5475, -46.63611), true);
+  assert.equal(
+    classifyFoundPoint({
+      queryHouseNumber: "11823",
+      foundHouseNumber: null,
+      lat: -23.4021232,
+      lng: -46.721206,
+    }),
+    "coarse",
+  );
+  assert.equal(
+    classifyFoundPoint({
+      queryHouseNumber: "3926",
+      foundHouseNumber: "3926",
+      lat: -23.5069068,
+      lng: -46.6955805,
+    }),
+    "street",
+  );
+  assert.equal(
+    classifyFoundPoint({
+      queryHouseNumber: "5720",
+      foundHouseNumber: "5720",
+      lat: -23.5475,
+      lng: -46.63611,
+    }),
+    "reject",
+  );
+  assert.equal(emptyReasonAfterGeo(11), "locating");
+  assert.equal(emptyReasonAfterGeo(0), "no_station");
+  const ordered = orderCepsByProximity("02939040", ["04506000", "02938000", "02924000"]);
+  assert.deepEqual(ordered, ["02938000", "02924000", "04506000"]);
+  assert.equal(isCepInBand("02939040", "02901000"), true);
+  assert.equal(isCepInBand("02939040", "04506000"), false);
+  assert.deepEqual(cepBandBounds("02939040"), { from: "02859040", to: "03019040" });
 });
 
 test("base não sincronizada não se confunde com raio vazio ou cidade", () => {

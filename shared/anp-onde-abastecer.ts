@@ -46,6 +46,101 @@ export function stationGeocodeQuery(
     .join(", ");
 }
 
+/** Segunda busca, com o nome de rua que o primeiro geocoder reconheceu e o número da ANP. */
+export function streetGeocodeQuery(
+  houseNumber: string | null | undefined,
+  street: string | null | undefined,
+  city: string | null | undefined,
+  state: string | null | undefined,
+): string {
+  const line = [houseNumber, street]
+    .map((part) => (part ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" ");
+  return [line, city, state, "Brasil"].filter(Boolean).join(", ");
+}
+
+/** Número no endereço da ANP (`RUA X, 100 - BAIRRO`). Sem número, a busca não prova o ponto. */
+export function addressHouseNumber(address: string | null | undefined): string | null {
+  const head = (address ?? "").split(" - ")[0] ?? "";
+  const match = head.match(/(\d{1,6})\s*$/);
+  return match ? match[1] : null;
+}
+
+export function cepDigits(value: string | null | undefined): string {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length >= 8 ? digits.slice(0, 8) : "";
+}
+
+/** Faixa numérica de CEP em volta do usuário. Não é quilometragem: só escolhe quem localizar primeiro. */
+export const ONDE_ABASTECER_CEP_BAND = 80_000;
+
+export function cepDistance(userCep: string, stationCep: string): number {
+  const user = cepDigits(userCep);
+  const station = cepDigits(stationCep);
+  if (!user || !station) return Number.POSITIVE_INFINITY;
+  return Math.abs(Number(user) - Number(station));
+}
+
+export function isCepInBand(userCep: string, stationCep: string, band = ONDE_ABASTECER_CEP_BAND): boolean {
+  const distance = cepDistance(userCep, stationCep);
+  return Number.isFinite(distance) && distance <= band;
+}
+
+export function cepBandBounds(userCep: string, band = ONDE_ABASTECER_CEP_BAND): { from: string; to: string } | null {
+  const cep = cepDigits(userCep);
+  if (!cep) return null;
+  const n = Number(cep);
+  const from = Math.max(0, n - band);
+  const to = Math.min(99_999_999, n + band);
+  return {
+    from: String(from).padStart(8, "0"),
+    to: String(to).padStart(8, "0"),
+  };
+}
+
+export function orderCepsByProximity(userCep: string, ceps: Iterable<string>): string[] {
+  return [...new Set(ceps)].sort((a, b) => cepDistance(userCep, a) - cepDistance(userCep, b) || a.localeCompare(b));
+}
+
+/**
+ * `no_station` só quando não sobrou CEP da faixa para localizar.
+ * CEP ainda sem consulta fica em `locating`.
+ */
+export function emptyReasonAfterGeo(unresolvedCeps: number): "locating" | "no_station" {
+  return unresolvedCeps > 0 ? "locating" : "no_station";
+}
+
+/** Centro que a BrasilAPI repete para vários CEPs de São Paulo. Não é o posto. */
+export const SAO_PAULO_MUNICIPAL_CENTROID = { lat: -23.5475, lng: -46.63611 };
+
+export function isMunicipalCentroid(lat: number, lng: number): boolean {
+  return Math.abs(lat - SAO_PAULO_MUNICIPAL_CENTROID.lat) < 0.0002
+    && Math.abs(lng - SAO_PAULO_MUNICIPAL_CENTROID.lng) < 0.0002;
+}
+
+export type GeoPrecision = "street" | "coarse";
+
+/**
+ * Ponto com o número da ANP pode entrar no raio.
+ * Photon sem número cola a avenida inteira num extremo e não serve para excluir o posto.
+ * O centro do município também não.
+ */
+export function classifyFoundPoint(input: {
+  queryHouseNumber: string | null;
+  foundHouseNumber: string | null;
+  lat: number;
+  lng: number;
+}): GeoPrecision | "reject" {
+  if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) return "reject";
+  if (isMunicipalCentroid(input.lat, input.lng)) return "reject";
+  if (!input.queryHouseNumber) return "street";
+  const found = (input.foundHouseNumber ?? "").replace(/\D/g, "");
+  const wanted = input.queryHouseNumber.replace(/\D/g, "");
+  if (found && Number(found) === Number(wanted)) return "street";
+  return "coarse";
+}
+
 export const ONDE_ABASTECER_RADIUS_KM = 5;
 export const ANP_YEAR_PAGE = "https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan";
 export const ANP_FISCAL_XLSX_URL =

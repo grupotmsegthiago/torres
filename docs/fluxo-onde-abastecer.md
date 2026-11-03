@@ -286,7 +286,7 @@ A tela e a carga seguem a regra da seção 4. O pacote de exemplo que comparava 
 | Carga manual da diretoria | `POST /api/admin/anp-stations/sync` |
 | Botão e tela | home mobile e `/mobile/onde-abastecer` |
 
-O CSV da ANP traz endereço e CEP, sem latitude. O posto entra no raio de 5 km depois que o CEP é localizado e guardado. Até 40 CEPs novos por abertura, para a tela não esperar a cidade inteira. Os minutos são estimativa a 25 km/h e a tela diz "cerca de". A frase "Nota ANP 5" só aparece se `anp_score` for 5. A carga não calcula essa nota. Com histórico limpo e sem nota oficial, o texto é "Sem infração de qualidade registrada nos últimos 2 anos."
+O CSV da ANP traz endereço e CEP, sem latitude. O posto entra no raio de 5 km depois que o endereço é localizado com o número da casa e guardado. A frase "neste raio" só sai quando os CEPs da faixa em volta do usuário já foram consultados. Até lá a tela fica em localização e tenta de novo sozinha. O CEP da BrasilAPI não entra nessa conta: em São Paulo ele repete o centro do município. Photon sem o número da casa também não exclui o posto. Os minutos são estimativa a 25 km/h e a tela diz "cerca de". A frase "Nota ANP 5" só aparece se `anp_score` for 5. A carga não calcula essa nota. Com histórico limpo e sem nota oficial, o texto é "Sem infração de qualidade registrada nos últimos 2 anos."
 
 A carga de qualidade lê a planilha pública de fiscalização. Se ela vier sem nenhum evento reconhecido, a carga para e não marca todo mundo como limpo. Coleta de amostra sem reprovação não é infração.
 
