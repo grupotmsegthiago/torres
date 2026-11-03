@@ -264,6 +264,43 @@ async function ensureFinancialOriginColumns() {
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_cidpunch_device_external ON control_id_punches(device_id, external_id)",
     "CREATE INDEX IF NOT EXISTS idx_cidpunch_employee_time ON control_id_punches(employee_id, punch_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_cidpunch_device_time ON control_id_punches(device_id, punch_at DESC)",
+    `CREATE TABLE IF NOT EXISTS anp_station_quality (
+       id SERIAL PRIMARY KEY,
+       cnpj VARCHAR(14) NOT NULL UNIQUE,
+       station_name TEXT,
+       address TEXT,
+       city TEXT,
+       city_norm TEXT,
+       state VARCHAR(2),
+       cep VARCHAR(8),
+       latitude DECIMAL(10,7),
+       longitude DECIMAL(11,7),
+       is_authorized BOOLEAN DEFAULT TRUE,
+       is_interdicted BOOLEAN DEFAULT FALSE,
+       anp_score INTEGER,
+       has_quality_infraction_last_2_years BOOLEAN DEFAULT FALSE,
+       quality_known BOOLEAN DEFAULT FALSE,
+       last_inspection_date DATE,
+       updated_at TIMESTAMP DEFAULT NOW()
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_anp_station_city ON anp_station_quality(state, city_norm)",
+    "CREATE INDEX IF NOT EXISTS idx_anp_station_geo ON anp_station_quality(latitude, longitude)",
+    `CREATE TABLE IF NOT EXISTS anp_fuel_prices (
+       id SERIAL PRIMARY KEY,
+       cnpj VARCHAR(14) NOT NULL,
+       fuel_date DATE NOT NULL,
+       product_name VARCHAR(20) NOT NULL,
+       price DECIMAL(6,3) NOT NULL,
+       created_at TIMESTAMP DEFAULT NOW(),
+       UNIQUE (cnpj, fuel_date, product_name)
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_anp_prices_cnpj_date ON anp_fuel_prices(cnpj, fuel_date DESC)",
+    `CREATE TABLE IF NOT EXISTS anp_cep_geo (
+       cep VARCHAR(8) PRIMARY KEY,
+       latitude DECIMAL(10,7),
+       longitude DECIMAL(11,7),
+       looked_up_at TIMESTAMP DEFAULT NOW()
+     )`,
   ];
 
   let ok = false;
@@ -664,6 +701,7 @@ async function ensureSystemSettingsTable() {
   import { registerHRRoutes } from "./routes/hr";
   import { registerEscortRoutes } from "./routes/escort";
   import { registerMobileRoutes } from "./routes/mobile";
+  import { registerAnpStationRoutes } from "./routes/anp-stations";
   import { registerChatRoutes } from "./routes/chat";
   import { registerBoletimApprovalRoutes } from "./routes/boletim-approval";
   import { registerLeadRoutes } from "./routes/leads";
@@ -1417,6 +1455,7 @@ async function ensureSystemSettingsTable() {
     registerHRRoutes(app);
     registerEscortRoutes(app);
     registerMobileRoutes(app);
+    registerAnpStationRoutes(app);
     registerProbationContractRoutes(app);
     registerPermanentContractRoutes(app);
     registerPendenciasRoutes(app);

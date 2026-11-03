@@ -1,4 +1,5 @@
 import { parseBRL, maskBRL } from "@/lib/utils";
+import { ONDE_ABASTECER_STATION_KEY } from "@shared/anp-onde-abastecer";
 import { compressImageFile } from "@/lib/image-compress";
 import MobileLayout from "@/components/mobile/layout";
 import { useGeolocation } from "@/hooks/use-geolocation";
@@ -41,7 +42,13 @@ export default function MobileAbastecimentoPage() {
   const [acrescimo, setAcrescimo] = useState("");
   const [etanolPrice, setEtanolPrice] = useState("");
   const [gasolinaPrice, setGasolinaPrice] = useState("");
-  const [station, setStation] = useState("");
+  const [station, setStation] = useState(() => {
+    try {
+      return sessionStorage.getItem(ONDE_ABASTECER_STATION_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
 
   useEffect(() => {
     if (!gasolinaPrice || !etanolPrice) return;

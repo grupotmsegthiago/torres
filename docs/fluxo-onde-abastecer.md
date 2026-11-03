@@ -269,11 +269,30 @@ Casamento do posto com o mapa: CNPJ quando os dois lados tiverem. Sem CNPJ, nome
 | Teste mínimo futuro | GPS negado; raio vazio; histórico limpo sem preço; com preço; infração recente excluída; empate de preço fica o mais próximo; lançamento sem passar pela sugestão; lançamento com posto preenchido e preço digitado diferente da pesquisa |
 | Rollback | Remover o card da home e desligar o job. Lançamentos já gravados não dependem da tabela satélite. |
 
-Implementar só depois de a comparação confirmar a regra da seção 4. Publicar em produção é outro passo, pelo fluxo já existente de publicação, e não faz parte deste arquivo.
+A regra da seção 4 está no código descrito na seção 12. Publicar em produção continua sendo outro passo, pelo fluxo já existente de publicação.
 
 ---
 
-## 11. Pontos úteis para a comparação
+## 12. O que foi montado no código
+
+A tela e a carga seguem a regra da seção 4. O pacote de exemplo que comparava com outro gerador não entrou como está, porque o aplicativo usa `wouter` (não React Router), o layout mobile já existente, e a consulta SQL daquele exemplo era inválida no Postgres (`HAVING` sem agrupamento) e pegava as duas últimas linhas de preço, que podem ser duas gasolinas.
+
+| Peça | Onde |
+|---|---|
+| Regra pura (preço, raio, texto da nota, semana, infração) | `shared/anp-onde-abastecer.ts` |
+| Tabelas satélite | `anp_fuel_prices`, `anp_station_quality`, `anp_cep_geo` |
+| Carga semanal, segunda 04:20 BRT | `runAnpStationsCron` |
+| Leitura do agente | `GET /api/mobile/onde-abastecer` |
+| Carga manual da diretoria | `POST /api/admin/anp-stations/sync` |
+| Botão e tela | home mobile e `/mobile/onde-abastecer` |
+
+O CSV da ANP traz endereço e CEP, sem latitude. O posto entra no raio de 5 km depois que o CEP é localizado e guardado. Até 40 CEPs novos por abertura, para a tela não esperar a cidade inteira. Os minutos são estimativa a 25 km/h e a tela diz "cerca de". A frase "Nota ANP 5" só aparece se `anp_score` for 5. A carga não calcula essa nota. Com histórico limpo e sem nota oficial, o texto é "Sem infração de qualidade registrada nos últimos 2 anos."
+
+A carga de qualidade lê a planilha pública de fiscalização. Se ela vier sem nenhum evento reconhecido, a carga para e não marca todo mundo como limpo. Coleta de amostra sem reprovação não é infração.
+
+O campo Posto do lançamento começa com o nome guardado nesta tela, na mesma sessão. O preço da pesquisa não preenche o R$/litro.
+
+## 13. Pontos úteis para a comparação
 
 Quem ler este arquivo em outra ferramenta pode discordar destes pontos. Estão explícitos para não serem relidos como lacuna:
 

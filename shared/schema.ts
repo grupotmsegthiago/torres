@@ -476,6 +476,43 @@ export const insertTicketlogPostoSchema = createInsertSchema(ticketlogPostos).om
 export type InsertTicketlogPosto = z.infer<typeof insertTicketlogPostoSchema>;
 export type TicketlogPosto = typeof ticketlogPostos.$inferSelect;
 
+/** Satélite da ANP. Não é custo e não entra no balanço. */
+export const anpStationQuality = pgTable("anp_station_quality", {
+  id: serial("id").primaryKey(),
+  cnpj: varchar("cnpj", { length: 14 }).notNull().unique(),
+  stationName: text("station_name"),
+  address: text("address"),
+  city: text("city"),
+  cityNorm: text("city_norm"),
+  state: varchar("state", { length: 2 }),
+  cep: varchar("cep", { length: 8 }),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 11, scale: 7 }),
+  isAuthorized: boolean("is_authorized").default(true),
+  isInterdicted: boolean("is_interdicted").default(false),
+  anpScore: integer("anp_score"),
+  hasQualityInfractionLast2Years: boolean("has_quality_infraction_last_2_years").default(false),
+  qualityKnown: boolean("quality_known").default(false),
+  lastInspectionDate: date("last_inspection_date"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const anpFuelPrices = pgTable("anp_fuel_prices", {
+  id: serial("id").primaryKey(),
+  cnpj: varchar("cnpj", { length: 14 }).notNull(),
+  fuelDate: date("fuel_date").notNull(),
+  productName: varchar("product_name", { length: 20 }).notNull(),
+  price: decimal("price", { precision: 6, scale: 3 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const anpCepGeo = pgTable("anp_cep_geo", {
+  cep: varchar("cep", { length: 8 }).primaryKey(),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 11, scale: 7 }),
+  lookedUpAt: timestamp("looked_up_at").defaultNow(),
+});
+
 // ─── Control iD: aparelho biométrico (iDFace/iDClass/REP-C via Cloud ou LAN) ───
 export const controlIdDevices = pgTable("control_id_devices", {
   id: serial("id").primaryKey(),

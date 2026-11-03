@@ -109,6 +109,7 @@ async function runBrtScheduledJobs(brt: BrtClock): Promise<void> {
   if (hour === 16 && minute === 30 && isWeekday) await jobs.runRodizioCron();
   if (hour === 18 && minute === 0 && isWeekday) await jobs.runResumoFinanceiroCron();
   if (minute === 0 && hour % 6 === 0) await jobs.runComissaoTmSegSyncCron();
+  if (hour === 4 && minute === 20 && weekday === 1) await jobs.runAnpStationsCron();
 }
 
 async function runBillingWithMeta(): Promise<void> {

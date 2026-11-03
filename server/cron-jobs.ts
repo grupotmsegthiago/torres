@@ -1063,6 +1063,19 @@ export async function runAgentCentralEscalationCron(): Promise<void> {
   });
 }
 
+/** Segunda 04:20 BRT. Preço semanal e fiscalização da ANP. Fail-soft. */
+export async function runAnpStationsCron(): Promise<void> {
+  await withCronLock("anp-stations", async () => {
+    try {
+      const { syncAnpReference } = await import("./lib/anp-onde-abastecer");
+      const r = await syncAnpReference();
+      log(`[anp] carga ok preços=${r.prices} postos=${r.stations} marcados=${r.flagged}`, "cron");
+    } catch (e: any) {
+      log(`[anp] carga interrompida: ${e?.message || e}`, "cron");
+    }
+  });
+}
+
 /** Lotes: base64 inline → Storage (não apaga evidências). */
 export async function runMigrateMediaCron(): Promise<void> {
   await withCronLock("migrate-media", async () => {
