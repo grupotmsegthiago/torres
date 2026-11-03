@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Posição confirmada na missão, no ponto operacional e no abastecimento
+
+- O mapa e a frase "Posição confirmada", com a precisão em metros, saem do Onde abastecer e entram na missão, no ponto operacional e no formulário de abastecimento.
+- A leitura é a mesma: GPS fino, uma vez, sem um segundo acompanhamento contínuo.
+- O lançamento do abastecimento continua gravando a coordenada na hora de salvar. Se essa leitura falhar, vale a posição já confirmada na tela.
+- Não entra no custo do abastecimento nem nas horas do ponto.
+
 ## 2026-11-03 — Mapa da posição no Onde abastecer
 
 - A tela mostra o mapa do GPS assim que a posição chega, com a frase "Posição confirmada" e a precisão em metros.

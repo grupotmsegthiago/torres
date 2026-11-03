@@ -2,12 +2,12 @@ import { parseBRL, maskBRL } from "@/lib/utils";
 import { ONDE_ABASTECER_STATION_KEY } from "@shared/anp-onde-abastecer";
 import { compressImageFile } from "@/lib/image-compress";
 import MobileLayout from "@/components/mobile/layout";
-import { useGeolocation } from "@/hooks/use-geolocation";
+import { PosicaoConfirmada, usePosicaoConfirmada } from "@/components/mobile/posicao-confirmada";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { authFetch, queryClient, invalidateRelatedQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, MapPin, Car, ChevronRight, RefreshCw, ShieldCheck, Images } from "lucide-react";
+import { Camera, ArrowLeft, Loader2, Fuel, Gauge, Receipt, CheckCircle, AlertTriangle, Droplets, Car, ChevronRight, RefreshCw, ShieldCheck, Images } from "lucide-react";
 import { Link } from "wouter";
 
 type PhotoKey = "pumpPhoto" | "receiptPhoto" | "odometerPhoto";
@@ -25,7 +25,7 @@ const FUEL_STEPS: { key: PhotoKey; label: string; icon: typeof Camera }[] = [
 ];
 
 export default function MobileAbastecimentoPage() {
-  const geo = useGeolocation();
+  const { fix: posicao, error: posicaoErro } = usePosicaoConfirmada();
   const { toast } = useToast();
 
   const [step, setStep] = useState<Step>("SELECT");
@@ -97,10 +97,10 @@ export default function MobileAbastecimentoPage() {
   }, []);
 
   useEffect(() => {
-    if (geo.position && !geoAddress) {
-      reverseGeocode(geo.position.coords.latitude, geo.position.coords.longitude);
+    if (posicao && !geoAddress) {
+      reverseGeocode(posicao.lat, posicao.lng);
     }
-  }, [geo.position, geoAddress, reverseGeocode]);
+  }, [posicao, geoAddress, reverseGeocode]);
 
   const requestFreshGeo = useCallback((): Promise<{ lat: number; lng: number }> => {
     return new Promise((resolve, reject) => {
@@ -175,7 +175,13 @@ export default function MobileAbastecimentoPage() {
 
   const submitMutation = useMutation({
     mutationFn: async (confirmSaltoKm: boolean) => {
-      const coords = await requestFreshGeo();
+      let coords: { lat: number; lng: number };
+      try {
+        coords = await requestFreshGeo();
+      } catch (err) {
+        if (!posicao) throw err;
+        coords = { lat: posicao.lat, lng: posicao.lng };
+      }
       const parsedBase = parseBRL(costPerLiter) || 0;
       const parsedExtra = teveAcrescimo ? (parseBRL(acrescimo) || 0) : 0;
       const parsedCostPerLiter = parsedBase + parsedExtra;
@@ -405,29 +411,19 @@ export default function MobileAbastecimentoPage() {
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4" data-testid="abastecimento-location">
-              <div className="flex items-center gap-2 mb-2">
-                <MapPin size={16} className="text-blue-600" />
-                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Localização do Abastecimento</p>
-              </div>
-              {geo.position ? (
-                <div className="space-y-1">
-                  <p className="text-xs font-mono text-blue-700">
-                    {geo.position.coords.latitude.toFixed(5)}, {geo.position.coords.longitude.toFixed(5)}
-                  </p>
-                  {geoAddress ? (
-                    <p className="text-xs text-blue-600 leading-relaxed">{geoAddress}</p>
-                  ) : (
-                    <p className="text-xs text-blue-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Confirmando endereço...</p>
-                  )}
-                  <a href={`https://www.google.com/maps?q=${geo.position.coords.latitude},${geo.position.coords.longitude}`} target="_blank" rel="noopener noreferrer"
-                    className="text-[10px] text-blue-500 underline font-bold" data-testid="link-map-fuel">
-                    Ver no Google Maps
-                  </a>
-                </div>
+            <div data-testid="abastecimento-location" className="space-y-2">
+              {posicao ? (
+                <PosicaoConfirmada lat={posicao.lat} lng={posicao.lng} accuracy={posicao.accuracy} />
               ) : (
-                <p className="text-xs text-blue-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Obtendo localização...</p>
+                <p className="text-xs text-neutral-500 flex items-center gap-1" data-testid="text-posicao-aguardando">
+                  <Loader2 size={10} className="animate-spin" /> {posicaoErro || "Conferindo a posição..."}
+                </p>
               )}
+              {geoAddress ? (
+                <p className="text-xs text-neutral-600 leading-relaxed">{geoAddress}</p>
+              ) : posicao ? (
+                <p className="text-xs text-neutral-400 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Confirmando endereço...</p>
+              ) : null}
             </div>
 
             <div className="space-y-3">

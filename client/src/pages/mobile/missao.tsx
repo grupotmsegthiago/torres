@@ -20,6 +20,7 @@ import {
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { whatsAppMotoristaUrl } from "@shared/driver-whatsapp";
 import { DriverContactCard } from "@/components/mobile/driver-contact";
+import { BlocoPosicao } from "@/components/mobile/posicao-confirmada";
 import { VEHICLE_CHECKLIST_ITEMS } from "@shared/mission-checklist";
 
 const MISSION_STEPS = [
@@ -1622,6 +1623,7 @@ export default function MobileMissaoPage() {
               Agendamentos
             </button>
           </div>
+          <BlocoPosicao testId="missao-posicao" />
           <div className="text-center min-h-[50vh] flex flex-col items-center justify-center" data-testid="mobile-no-mission">
             <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-4">
               <AlertCircle className="w-8 h-8 text-neutral-300" />
@@ -1733,7 +1735,8 @@ export default function MobileMissaoPage() {
   if (!mission) {
     return (
       <MobileLayout>
-        <div className="p-4">
+        <div className="p-4 space-y-4">
+          <BlocoPosicao testId="missao-posicao" />
           <div className="text-center min-h-[50vh] flex flex-col items-center justify-center" data-testid="mobile-no-mission">
             <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center mx-auto mb-4">
               <AlertCircle className="w-8 h-8 text-neutral-300" />
@@ -1793,6 +1796,7 @@ export default function MobileMissaoPage() {
             )}
           </button>
         </div>
+        <BlocoPosicao testId="missao-posicao" />
         {overdueCount > 0 && (
           <button
             onClick={() => setActiveTab("agendamentos")}

@@ -1,3 +1,4 @@
+import { BlocoPosicao } from "@/components/mobile/posicao-confirmada";
 import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -75,6 +76,8 @@ export default function MobilePontoOperacionalPage() {
           </div>
           <p className="text-[10px] text-neutral-500">Jornada de longa duração</p>
         </div>
+
+        <BlocoPosicao testId="ponto-operacional-posicao" />
 
         {isLoading ? (
           <div className="bg-white rounded-2xl border border-neutral-200 p-8 text-center">
