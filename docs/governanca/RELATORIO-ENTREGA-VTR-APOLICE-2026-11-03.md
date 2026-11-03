@@ -3,7 +3,7 @@
 **Data:** 2026-11-03
 **Branch:** `cursor/apolice-seguro-mobi-b534`
 **Ambiente validado:** [x] local  [ ] preview  [ ] produção
-**Publicou?** [x] Não
+**Publicou?** [x] Sim — fast-forward de `cursor/apolice-seguro-mobi-b534` em `main` e `dev` em 03/11/2026.
 
 ### Domínio e dado
 - Domínio: frota (`vehicles`). Tipo: Fato. Caminho do anexo, sem valor financeiro.
