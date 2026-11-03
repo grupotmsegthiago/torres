@@ -72,6 +72,19 @@ export function cepDigits(value: string | null | undefined): string {
   return digits.length >= 8 ? digits.slice(0, 8) : "";
 }
 
+/**
+ * Coordenada gravada. `null` e string vazia não são número:
+ * `Number(null)` e `Number("")` valem 0, o Golfo da Guiné, e fariam o posto parecer a milhares de km.
+ */
+export function coordinateOrNull(value: number | string | null | undefined): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Faixa numérica de CEP em volta do usuário. Não é quilometragem: só escolhe quem localizar primeiro. */
 export const ONDE_ABASTECER_CEP_BAND = 80_000;
 
@@ -179,6 +192,8 @@ export interface AnpCatalog {
   stations: number;
   known: number;
   withPoint: number;
+  /** Postos cujo município é o do GPS. A faixa de CEP vizinha não entra aqui. */
+  inCity: number;
   inPlace: number;
   clean: number;
 }
@@ -187,17 +202,18 @@ function ptInt(value: number): string {
   return Math.max(0, Math.round(value)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
-/** Frase que confirma que a lista está no sistema, com o recorte da cidade do GPS. */
+/** Frase que confirma que a lista está no sistema. O recorte é a cidade do GPS, não a faixa de CEP. */
 export function catalogPhrase(
-  catalog: Pick<AnpCatalog, "stations" | "known" | "inPlace">,
+  catalog: Pick<AnpCatalog, "stations" | "known" | "inCity">,
   cityLabel: string | null,
 ): string {
   const total = ptInt(catalog.stations);
   if (catalog.stations <= 0) return "A lista de postos ainda não está no sistema.";
   if (catalog.known <= 0) return `Lista no sistema: ${total} postos. Histórico de qualidade ainda não entrou.`;
-  const here = ptInt(catalog.inPlace);
-  const where = cityLabel ? ` em ${cityLabel}` : "";
-  return `Lista no sistema: ${total} postos, ${here}${where}.`;
+  const where = (cityLabel ?? "").trim();
+  if (!where) return `Lista no sistema: ${total} postos.`;
+  if (catalog.inCity <= 0) return `Lista no sistema: ${total} postos. ${where} não tem posto na pesquisa da ANP.`;
+  return `Lista no sistema: ${total} postos, ${ptInt(catalog.inCity)} em ${where}.`;
 }
 export const ANP_YEAR_PAGE = "https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan";
 export const ANP_FISCAL_XLSX_URL =
@@ -342,6 +358,72 @@ export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: numb
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export interface GeoHit {
+  lat: number;
+  lng: number;
+  houseNumber?: string | null;
+  postcode?: string | null;
+}
+
+/**
+ * Diâmetro máximo, em km, para aceitar um grupo de pontos do mesmo CEP.
+ * Avenida longa espalha os acertos por vários quilômetros e não vira destino.
+ */
+export const STREET_CLUSTER_MAX_KM = 1.5;
+
+function houseNumberValue(value: string | null | undefined): number | null {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  const n = Number(digits);
+  return Number.isFinite(n) ? n : null;
+}
+
+function clusterDiameterKm(hits: GeoHit[]): number {
+  let max = 0;
+  for (let i = 0; i < hits.length; i++) {
+    for (let j = i + 1; j < hits.length; j++) {
+      max = Math.max(max, haversineKm(hits[i].lat, hits[i].lng, hits[j].lat, hits[j].lng));
+    }
+  }
+  return max;
+}
+
+/**
+ * Ponto que pode ir para o Waze.
+ * Número igual ao da ANP entra.
+ * Sem esse número, só entra um grupo do mesmo CEP com diâmetro curto: o número mais próximo.
+ * Centro do município e avenida espalhada ficam de fora.
+ */
+export function pickUsablePoint(input: {
+  hits: GeoHit[];
+  queryHouseNumber: string | null;
+  stationCep: string | null;
+}): { lat: number; lng: number } | null {
+  const hits = input.hits.filter((hit) =>
+    Number.isFinite(hit.lat) && Number.isFinite(hit.lng) && !isMunicipalCentroid(hit.lat, hit.lng));
+  const wanted = houseNumberValue(input.queryHouseNumber);
+  if (wanted !== null) {
+    const exact = hits.find((hit) => houseNumberValue(hit.houseNumber) === wanted);
+    if (exact) return { lat: exact.lat, lng: exact.lng };
+  }
+  const cep = cepDigits(input.stationCep);
+  if (!cep) return null;
+  const sameCep = hits.filter((hit) => cepDigits(hit.postcode) === cep);
+  if (!sameCep.length) return null;
+  const numbered = sameCep.filter((hit) => houseNumberValue(hit.houseNumber) !== null);
+  const cluster = numbered.length ? numbered : sameCep;
+  if (clusterDiameterKm(cluster) > STREET_CLUSTER_MAX_KM) return null;
+  if (wanted !== null && numbered.length) {
+    const nearest = [...numbered].sort((a, b) => {
+      const da = Math.abs((houseNumberValue(a.houseNumber) as number) - wanted);
+      const db = Math.abs((houseNumberValue(b.houseNumber) as number) - wanted);
+      return da - db;
+    })[0];
+    return { lat: nearest.lat, lng: nearest.lng };
+  }
+  return { lat: cluster[0].lat, lng: cluster[0].lng };
 }
 
 function splitCsvLine(line: string): string[] {

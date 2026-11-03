@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Onde abastecer acha posto da cidade vizinha
+
+- A lista nacional já estava no sistema. Latitude nula era lida como 0, o posto caía no Golfo da Guiné e a tela dizia que não havia ninguém em 25 km sem consultar o endereço.
+- A faixa de CEP agora puxa o município vizinho inteiro. O ponto entra na régua com o número da ANP ou com um grupo curto do mesmo CEP. Avenida espalhada e o centro de São Paulo continuam de fora.
+- A frase da lista conta a cidade do GPS. Santana de Parnaíba, sem posto na pesquisa, não herda a contagem de Barueri.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Mapa da posição no Onde abastecer
 
 - A tela mostra o mapa do GPS assim que a posição chega, com a frase "Posição confirmada" e a precisão em metros.

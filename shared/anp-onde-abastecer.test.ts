@@ -7,11 +7,14 @@ import {
   classifyFoundPoint,
   emptyReasonAfterGeo,
   emptyReasonForUnmatchedCity,
+  haversineKm,
   isCepInBand,
   isMunicipalCentroid,
   maxRadiusStepKm,
   catalogPhrase,
+  coordinateOrNull,
   noStationMessage,
+  pickUsablePoint,
   orderCepsByProximity,
   pickRadiusStep,
   radiusStepForDistance,
@@ -156,16 +159,98 @@ test("busca do posto usa o endereço, não só o CEP", () => {
 
 test("a frase da lista confirma o que está no sistema", () => {
   assert.equal(
-    catalogPhrase({ stations: 0, known: 0, inPlace: 0 }, null),
+    catalogPhrase({ stations: 0, known: 0, inCity: 0 }, null),
     "A lista de postos ainda não está no sistema.",
   );
   assert.equal(
-    catalogPhrase({ stations: 5940, known: 5940, inPlace: 290 }, "São Paulo"),
+    catalogPhrase({ stations: 5940, known: 5940, inCity: 290 }, "São Paulo"),
     "Lista no sistema: 5.940 postos, 290 em São Paulo.",
   );
   assert.equal(
-    catalogPhrase({ stations: 5940, known: 0, inPlace: 290 }, "São Paulo"),
+    catalogPhrase({ stations: 5940, known: 0, inCity: 290 }, "São Paulo"),
     "Lista no sistema: 5.940 postos. Histórico de qualidade ainda não entrou.",
+  );
+  assert.equal(
+    catalogPhrase({ stations: 5940, known: 5940, inCity: 0 }, "Santana de Parnaíba"),
+    "Lista no sistema: 5.940 postos. Santana de Parnaíba não tem posto na pesquisa da ANP.",
+  );
+});
+
+test("coordenada nula não vira o ponto 0,0", () => {
+  assert.equal(coordinateOrNull(null), null);
+  assert.equal(coordinateOrNull(undefined), null);
+  assert.equal(coordinateOrNull(""), null);
+  assert.equal(coordinateOrNull("  "), null);
+  assert.equal(coordinateOrNull(-23.42202), -23.42202);
+  assert.equal(coordinateOrNull("-46.86707"), -46.86707);
+});
+
+test("ponto do posto usa o número ou um CEP curto, e não a avenida espalhada", () => {
+  const piracema = pickUsablePoint({
+    queryHouseNumber: "601",
+    stationCep: "06460030",
+    hits: [
+      { lat: -23.50274, lng: -46.83469, houseNumber: "69", postcode: "06460-030" },
+      { lat: -23.50499, lng: -46.83394, houseNumber: "669", postcode: "06460-030" },
+      { lat: -23.49816, lng: -46.83054, houseNumber: null, postcode: "06460-030" },
+      { lat: -23.50929, lng: -46.83331, houseNumber: null, postcode: "06310-450" },
+    ],
+  });
+  assert.deepEqual(piracema, { lat: -23.50499, lng: -46.83394 });
+  const piracemaKm = haversineKm(-23.42202, -46.86707, piracema.lat, piracema.lng);
+  assert.ok(piracemaKm > 5 && piracemaKm <= 10, `Piracema a ${piracemaKm} km`);
+  assert.equal(radiusStepForDistance(piracemaKm), 10);
+
+  const jussara = pickUsablePoint({
+    queryHouseNumber: "1880",
+    stationCep: "06465070",
+    hits: [
+      { lat: -23.51293, lng: -46.81916, houseNumber: null, postcode: "06465-070" },
+      { lat: -23.51121, lng: -46.81786, houseNumber: null, postcode: "06465-070" },
+      { lat: -23.51234, lng: -46.81733, houseNumber: "1818", postcode: "06465-070" },
+    ],
+  });
+  assert.deepEqual(jussara, { lat: -23.51234, lng: -46.81733 });
+
+  const exact = pickUsablePoint({
+    queryHouseNumber: "3926",
+    stationCep: "02901000",
+    hits: [
+      { lat: -23.50691, lng: -46.69558, houseNumber: "3926", postcode: "02910-055" },
+      { lat: -23.50757, lng: -46.7026, houseNumber: null, postcode: "05101-100" },
+    ],
+  });
+  assert.deepEqual(exact, { lat: -23.50691, lng: -46.69558 });
+
+  const avenue = pickUsablePoint({
+    queryHouseNumber: "11860",
+    stationCep: "02938000",
+    hits: [
+      { lat: -23.46269, lng: -46.72112, houseNumber: null, postcode: "02952-230" },
+      { lat: -23.49039, lng: -46.7312, houseNumber: null, postcode: "05145-200" },
+      { lat: -23.44067, lng: -46.72103, houseNumber: null, postcode: "02984-035" },
+      { lat: -23.40212, lng: -46.72121, houseNumber: null, postcode: "07744-000" },
+    ],
+  });
+  assert.equal(avenue, null);
+
+  const scatteredCep = pickUsablePoint({
+    queryHouseNumber: "100",
+    stationCep: "02938000",
+    hits: [
+      { lat: -23.4, lng: -46.7, houseNumber: "10", postcode: "02938-000" },
+      { lat: -23.45, lng: -46.75, houseNumber: "9000", postcode: "02938-000" },
+    ],
+  });
+  assert.equal(scatteredCep, null);
+
+  assert.equal(
+    pickUsablePoint({
+      queryHouseNumber: "5720",
+      stationCep: "01001000",
+      hits: [{ lat: -23.5475, lng: -46.63611, houseNumber: "5720", postcode: "01001-000" }],
+    }),
+    null,
   );
 });
 

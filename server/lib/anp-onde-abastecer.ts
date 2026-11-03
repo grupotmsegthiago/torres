@@ -6,7 +6,7 @@ import {
   addressHouseNumber,
   cepBandBounds,
   cepDigits,
-  classifyFoundPoint,
+  coordinateOrNull,
   emptyReasonAfterGeo,
   emptyReasonForUnmatchedCity,
   haversineKm,
@@ -18,6 +18,7 @@ import {
   orderCepsByProximity,
   parseAnpPriceCsv,
   pickRadiusStep,
+  pickUsablePoint,
   rankStations,
   stationGeocodeQuery,
   streetGeocodeQuery,
@@ -202,34 +203,38 @@ async function nationalCatalog(): Promise<Pick<AnpCatalog, "stations" | "known" 
   return { stations: all.count ?? 0, known: known.count ?? 0, withPoint: pointed.count ?? 0 };
 }
 
-type FoundPoint = { lat: number; lng: number; houseNumber: string | null; street: string | null };
+type FoundPoint = { lat: number; lng: number; houseNumber: string | null; street: string | null; postcode: string | null };
 
-async function photonPoint(query: string): Promise<FoundPoint | null> {
-  if (!query) return null;
+async function photonHits(query: string): Promise<FoundPoint[]> {
+  if (!query) return [];
   try {
-    const res = await fetch(`https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`, {
+    const res = await fetch(`https://photon.komoot.io/api/?limit=8&q=${encodeURIComponent(query)}`, {
       headers: { "User-Agent": UA, Accept: "application/json" },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const body = await res.json() as {
       features?: {
         geometry?: { coordinates?: number[] };
-        properties?: { countrycode?: string; housenumber?: string; street?: string; name?: string };
+        properties?: { countrycode?: string; housenumber?: string; street?: string; name?: string; postcode?: string };
       }[];
     };
-    const feature = body.features?.[0];
-    if (!feature || feature.properties?.countrycode !== "BR") return null;
-    const [lng, lat] = feature.geometry?.coordinates ?? [];
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    const props = feature.properties ?? {};
-    return {
-      lat,
-      lng,
-      houseNumber: props.housenumber ?? null,
-      street: props.street || props.name || null,
-    };
+    const hits: FoundPoint[] = [];
+    for (const feature of body.features ?? []) {
+      if (feature.properties?.countrycode !== "BR") continue;
+      const [lng, lat] = feature.geometry?.coordinates ?? [];
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const props = feature.properties ?? {};
+      hits.push({
+        lat,
+        lng,
+        houseNumber: props.housenumber ?? null,
+        street: props.street || props.name || null,
+        postcode: props.postcode ?? null,
+      });
+    }
+    return hits;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -239,7 +244,7 @@ async function nominatimPoint(query: string): Promise<FoundPoint | null> {
   const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
   if (res.status === 429 || res.status >= 500) throw new Error(`nominatim ${res.status}`);
   if (!res.ok) return null;
-  const body = await res.json() as { lat?: string; lon?: string; address?: { house_number?: string; road?: string } }[];
+  const body = await res.json() as { lat?: string; lon?: string; address?: { house_number?: string; road?: string; postcode?: string } }[];
   const hit = body[0];
   if (!hit) return null;
   const lat = Number(hit.lat);
@@ -250,6 +255,7 @@ async function nominatimPoint(query: string): Promise<FoundPoint | null> {
     lng,
     houseNumber: hit.address?.house_number ?? null,
     street: hit.address?.road ?? null,
+    postcode: hit.address?.postcode ?? null,
   };
 }
 
@@ -299,22 +305,13 @@ async function geocodeCeps(
     await Promise.all(slice.map(async (cep) => {
       try {
         const house = houseByCep.get(cep) ?? null;
-        const photon = await photonPoint(queryByCep.get(cep) ?? "");
-        if (!photon) {
-          needStreet.push({ cep, street: null });
+        const hits = await photonHits(queryByCep.get(cep) ?? "");
+        const chosen = pickUsablePoint({ hits, queryHouseNumber: house, stationCep: cep });
+        if (chosen) {
+          remember(cep, { precision: "street", lat: chosen.lat, lng: chosen.lng });
           return;
         }
-        const kind = classifyFoundPoint({
-          queryHouseNumber: house,
-          foundHouseNumber: photon.houseNumber,
-          lat: photon.lat,
-          lng: photon.lng,
-        });
-        if (kind === "street") {
-          remember(cep, { precision: "street", lat: photon.lat, lng: photon.lng });
-          return;
-        }
-        needStreet.push({ cep, street: photon.street });
+        needStreet.push({ cep, street: hits.find((hit) => hit.street)?.street ?? null });
       } catch {
         /* falha de rede não conta como CEP consultado */
       }
@@ -336,13 +333,12 @@ async function geocodeCeps(
         remember(item.cep, { precision: "coarse" });
         continue;
       }
-      const kind = classifyFoundPoint({
+      const chosen = pickUsablePoint({
+        hits: [hit],
         queryHouseNumber: house,
-        foundHouseNumber: hit.houseNumber,
-        lat: hit.lat,
-        lng: hit.lng,
+        stationCep: item.cep,
       });
-      if (kind === "street") remember(item.cep, { precision: "street", lat: hit.lat, lng: hit.lng });
+      if (chosen) remember(item.cep, { precision: "street", lat: chosen.lat, lng: chosen.lng });
       else remember(item.cep, { precision: "coarse" });
     } catch {
       /* a próxima abertura tenta de novo */
@@ -353,8 +349,7 @@ async function geocodeCeps(
 }
 
 function num(value: number | string | null | undefined): number | null {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  return coordinateOrNull(value);
 }
 
 export async function recommendStations(lat: number, lng: number): Promise<OndeAbastecerPayload> {
@@ -370,6 +365,7 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     cityLabel: string | null = null,
     inPlace = 0,
     clean = 0,
+    inCity = 0,
   ): OndeAbastecerPayload => ({
     mode: "empty",
     emptyReason,
@@ -381,7 +377,7 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     state,
     pendingGeo,
     origin,
-    catalog: { ...base, inPlace, clean },
+    catalog: { ...base, inCity, inPlace, clean },
   });
 
   const place = await reverseCity(lat, lng);
@@ -408,18 +404,36 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     if (bandError) throw new Error(bandError.message);
     bandRows = (bandData ?? []) as StationRow[];
   }
+  const inCity = ((cityRows ?? []) as StationRow[]).length;
+  const neighborCities = [...new Set(
+    bandRows
+      .map((row) => row.city_norm)
+      .filter((city): city is string => Boolean(city) && city !== place.city),
+  )];
+  let neighborRows: StationRow[] = [];
+  if (neighborCities.length) {
+    const { data: neighborData, error: neighborError } = await supabaseAdmin
+      .from("anp_station_quality")
+      .select(stationColumns)
+      .eq("state", place.state)
+      .in("city_norm", neighborCities)
+      .limit(500);
+    if (neighborError) throw new Error(neighborError.message);
+    neighborRows = (neighborData ?? []) as StationRow[];
+  }
   const pool = new Map<string, StationRow>();
   for (const row of (cityRows ?? []) as StationRow[]) pool.set(row.cnpj, row);
   for (const row of bandRows) pool.set(row.cnpj, row);
+  for (const row of neighborRows) pool.set(row.cnpj, row);
   if (pool.size === 0) {
     const reason = emptyReasonForUnmatchedCity(base.known);
     const message = reason === "not_loaded"
       ? "O histórico de qualidade da ANP ainda não foi carregado."
       : noStationMessage(maxRadiusStepKm());
-    return empty(reason, message, place.city, place.state, 0, maxRadiusStepKm(), place.label, 0, 0);
+    return empty(reason, message, place.city, place.state, 0, maxRadiusStepKm(), place.label, 0, 0, inCity);
   }
   if ([...pool.values()].every((row) => !row.quality_known)) {
-    return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state, 0, maxRadiusStepKm(), place.label, pool.size, 0);
+    return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state, 0, maxRadiusStepKm(), place.label, pool.size, 0, inCity);
   }
 
   const searchKm = maxRadiusStepKm();
@@ -508,6 +522,7 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
       place.label,
       pool.size,
       merged.size,
+      inCity,
     );
   }
   const near = measured.filter((item) => item.distanceKm <= step);
@@ -556,6 +571,6 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     pendingGeo: pendingLeft,
     emptyReason: null,
     origin,
-    catalog: { ...base, inPlace: pool.size, clean: merged.size },
+    catalog: { ...base, inCity, inPlace: pool.size, clean: merged.size },
   };
 }
