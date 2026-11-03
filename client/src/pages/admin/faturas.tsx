@@ -29,6 +29,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { classifyIssuedOrProcessing, isQueuedAtPrefecture } from "@shared/nfse-status";
+import { cleanNfseDescription, NFSE_CATEGORIA_OPCOES, NFSE_DESCRICAO_MAX, NFSE_DESCRICAO_MIN, swapNfseCategoryPrefix, type NfseCategoriaFiscal } from "@shared/nfse-descricao";
 
 interface Invoice {
   id: number;
@@ -1036,10 +1037,25 @@ const NFSE_STATUS_MAP: Record<string, { label: string; color: string; icon: any 
   WAITING_MUNICIPAL_PROCESSING: { label: "Aguardando Prefeitura", color: "bg-amber-50 text-amber-700 border-amber-200", icon: Clock },
 };
 
+type NfsePreview = {
+  category: NfseCategoriaFiscal;
+  conflito?: boolean;
+  descricao_servico?: string;
+  prefixo?: Record<NfseCategoriaFiscal, string>;
+};
+
 function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDiretoria?: boolean }) {
   const { toast } = useToast();
   const [emitting, setEmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [nfseCategory, setNfseCategory] = useState<NfseCategoriaFiscal>("escolta");
+  const [nfseDescricao, setNfseDescricao] = useState("");
+  const [nfsePrefixo, setNfsePrefixo] = useState<Record<NfseCategoriaFiscal, string> | null>(null);
+  const [prefixTouched, setPrefixTouched] = useState(false);
+  const [nfseConflito, setNfseConflito] = useState(false);
+  const descricaoLimpa = cleanNfseDescription(nfseDescricao);
 
   const issuedKind = classifyIssuedOrProcessing(invoice.nfse_status, invoice.nfse_number);
   const fullyIssued = issuedKind === "NF_EMITIDA";
@@ -1069,11 +1085,56 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
     }
   };
 
+  const openEmitPreview = async () => {
+    setPreviewOpen(true);
+    setLoadingPreview(true);
+    setPrefixTouched(false);
+    setNfseConflito(false);
+    try {
+      const r = await authFetch(`/api/invoices/${invoice.id}/nfse-preview`);
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.message || "Não foi possível montar a prévia");
+      const preview = body as NfsePreview;
+      const category = preview.category === "vigilancia" ? "vigilancia" : "escolta";
+      setNfseCategory(category);
+      setNfseDescricao(String(preview.descricao_servico || ""));
+      setNfsePrefixo(preview.prefixo || null);
+      setNfseConflito(!!preview.conflito);
+    } catch (err: any) {
+      setNfseCategory("escolta");
+      setNfseDescricao("");
+      setNfsePrefixo(null);
+      toast({ title: "Prévia da NFS-e indisponível", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const changeNfseCategory = (next: NfseCategoriaFiscal) => {
+    setNfseDescricao((current) => swapNfseCategoryPrefix(
+      current,
+      nfsePrefixo?.[nfseCategory] || "",
+      nfsePrefixo?.[next] || "",
+      prefixTouched,
+    ));
+    setNfseCategory(next);
+  };
+
   const handleEmitNfse = async () => {
+    if (descricaoLimpa.text.length < NFSE_DESCRICAO_MIN) {
+      toast({ title: "Descrição incompleta", description: `A descrição precisa ter pelo menos ${NFSE_DESCRICAO_MIN} caracteres.`, variant: "destructive" });
+      return;
+    }
     setEmitting(true);
     try {
-      const r = await authFetch(`/api/invoices/${invoice.id}/emit-nfse`, { method: "POST" });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      const r = await authFetch(`/api/invoices/${invoice.id}/emit-nfse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: nfseCategory, descricao_servico: descricaoLimpa.text }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.message || "Erro ao emitir NFS-e");
+      setPreviewOpen(false);
       invalidateRelatedQueries("invoice");
       toast({ title: "NFS-e solicitada com sucesso", description: "A nota será processada pela Focus NFe e emitida automaticamente." });
     } catch (err: any) {
@@ -1180,7 +1241,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
           variant="outline"
           size="sm"
           className={`w-full h-8 text-xs ${isError ? "text-red-700 border-red-200 hover:bg-red-50" : "text-indigo-700 border-indigo-200 hover:bg-indigo-50"}`}
-          onClick={handleEmitNfse}
+          onClick={openEmitPreview}
           disabled={emitting}
           data-testid="button-emit-nfse"
         >
@@ -1216,6 +1277,78 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
       {!invoice.asaas_payment_id && (
         <p className="text-[10px] text-neutral-400">NFS-e disponível apenas para cobranças integradas com o Asaas.</p>
       )}
+
+      <Dialog open={previewOpen} onOpenChange={(open) => { if (!emitting) setPreviewOpen(open); }}>
+        <DialogContent className="max-w-lg" data-testid="dialog-nfse-preview">
+          <DialogHeader>
+            <DialogTitle>Conferir NFS-e antes de emitir</DialogTitle>
+            <DialogDescription>
+              Confira a categoria fiscal e a descrição. A nota só é enviada depois de confirmar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs font-bold text-neutral-700">Categoria fiscal</Label>
+              <Select value={nfseCategory} onValueChange={(value) => changeNfseCategory(value as NfseCategoriaFiscal)} disabled={loadingPreview || emitting}>
+                <SelectTrigger className="mt-1" data-testid="select-nfse-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {NFSE_CATEGORIA_OPCOES.map((opcao) => (
+                    <SelectItem key={opcao.value} value={opcao.value}>{opcao.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {nfseConflito && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Esta fatura tem OS de escolta e de vigilância. Escolha a categoria desta nota.
+              </p>
+            )}
+            <div>
+              <Label htmlFor="nfse-descricao" className="text-xs font-bold text-neutral-700">Descrição do serviço</Label>
+              <Textarea
+                id="nfse-descricao"
+                className="mt-1 min-h-28 text-sm"
+                value={nfseDescricao}
+                disabled={loadingPreview || emitting}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setNfseDescricao(value);
+                  const prefix = nfsePrefixo?.[nfseCategory];
+                  if (prefix && !value.startsWith(prefix)) setPrefixTouched(true);
+                }}
+                data-testid="textarea-nfse-descricao"
+              />
+              <p className={`mt-1 text-[11px] tabular-nums ${descricaoLimpa.text.length < NFSE_DESCRICAO_MIN || descricaoLimpa.truncated ? "text-red-600" : "text-neutral-500"}`} data-testid="text-nfse-char-count">
+                {descricaoLimpa.text.length} / {NFSE_DESCRICAO_MAX} caracteres
+              </p>
+              {descricaoLimpa.removedInvalid && (
+                <p className="text-[11px] text-amber-700">Caracteres inválidos para a NFS-e (&lt;, &gt;, &amp; ou controle) serão removidos ao emitir.</p>
+              )}
+              {descricaoLimpa.truncated && (
+                <p className="text-[11px] text-red-600">A Sefin aceita no máximo {NFSE_DESCRICAO_MAX} caracteres. O texto será cortado nesse limite.</p>
+              )}
+              {descricaoLimpa.text.length < NFSE_DESCRICAO_MIN && (
+                <p className="text-[11px] text-red-600">A descrição precisa ter pelo menos {NFSE_DESCRICAO_MIN} caracteres.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setPreviewOpen(false)} disabled={emitting} data-testid="button-nfse-cancel">
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={handleEmitNfse}
+                disabled={emitting || loadingPreview || descricaoLimpa.text.length < NFSE_DESCRICAO_MIN}
+                data-testid="button-nfse-confirm"
+              >
+                {emitting ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Emitindo...</> : "Confirmar e Emitir NFS-e"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

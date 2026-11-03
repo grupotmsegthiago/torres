@@ -108,10 +108,11 @@ import {
   emitFocusNfseForInvoice,  hasFocusApiToken,
   loadFocusNfsePdf,
   persistFocusNfse,
+  previewFocusNfseForInvoice,
   syncFocusNfseForInvoice,
   syncFocusNfsesForInvoices,
 } from "./lib/focus-nfe";
-import { isFocusManagedInvoice, sanitizeComplement, shouldEmitNfseViaFocus } from "./lib/focus-nfe-helpers";
+import { isFocusManagedInvoice, parseNfseCategory, sanitizeComplement, sanitizeNfseDescription, shouldEmitNfseViaFocus } from "./lib/focus-nfe-helpers";
 import { BILLING_OVERRIDE_CLEAR, billingOverrideFromTomador, parseResolverNfBody } from "./lib/resolver-nf";
 
 const ASAAS_REQUEST_TIMEOUT_MS = 20_000;
@@ -2395,6 +2396,20 @@ export function registerAsaasRoutes(app: Express) {
     }
   });
 
+  app.get("/api/invoices/:id/nfse-preview", requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const preview = await previewFocusNfseForInvoice(id);
+      if (!preview.ok) {
+        const status = /não encontrada/i.test(preview.message) ? 404 : 400;
+        return res.status(status).json({ message: preview.message });
+      }
+      return res.json(preview.preview);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/invoices/:id/emit-nfse", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -2403,6 +2418,20 @@ export function registerAsaasRoutes(app: Express) {
       if (!invoice.asaas_payment_id) return res.status(400).json({ message: "Fatura sem vínculo com Asaas. A NFS-e só pode ser emitida para cobranças integradas." });
       if (isNfFullyIssued(invoice.nfse_status, invoice.nfse_number)) {
         return res.status(409).json({ message: "Esta fatura já tem NF emitida com número. Cancele a NF atual antes de emitir outra." });
+      }
+
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const categoryRaw = body.category ?? body.categoria;
+      const descricaoRaw = body.descricao_servico ?? body.descricaoServico;
+      if (categoryRaw != null && String(categoryRaw).trim() !== "" && !parseNfseCategory(categoryRaw)) {
+        return res.status(400).json({ message: "Categoria fiscal inválida. Use escolta ou vigilancia." });
+      }
+      if (descricaoRaw != null && String(descricaoRaw).trim() !== "") {
+        try {
+          sanitizeNfseDescription(String(descricaoRaw));
+        } catch (e: any) {
+          return res.status(400).json({ message: e?.message || "Descrição da NFS-e inválida." });
+        }
       }
 
       let clientEmail: string | undefined;
@@ -2415,13 +2444,18 @@ export function registerAsaasRoutes(app: Express) {
         clientEmail = nfseTomadorEmail(cli);
       }
 
-      const r = await emitFocusNfseForInvoice(id, { source: "emit-nfse", clientEmail });
+      const r = await emitFocusNfseForInvoice(id, {
+        source: "emit-nfse",
+        clientEmail,
+        category: categoryRaw,
+        descricaoServico: descricaoRaw,
+      });
       const { data: after } = await supabaseAdmin.from("invoices").select("*").eq("id", id).maybeSingle();
       const user = (req as any).user;
       await logSystemAudit({
         userId: user?.id, userName: user?.name, userRole: user?.role,
         action: "EMITIR_NFSE", targetId: String(id), targetType: "invoice",
-        details: `NFS-e Focus fatura #${id}: ${r.message}`,
+        details: `NFS-e Focus fatura #${id}${categoryRaw ? ` categoria=${parseNfseCategory(categoryRaw) || categoryRaw}` : ""}${descricaoRaw ? ` descricao="${String(descricaoRaw).replace(/\s+/g, " ").trim().slice(0, 180)}"` : ""}: ${r.message}`,
         ipAddress: (req as any).ip,
       });
       if (r.ok) await maybeSendInvoiceReadyEmail(id);

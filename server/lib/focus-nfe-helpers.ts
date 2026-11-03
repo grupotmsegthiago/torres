@@ -12,7 +12,6 @@ import {
   CODIGO_SERVICO_MUNICIPAL_CODE,
   ISS_ALIQUOTA,
   ISS_RETAIN,
-  buildServicoDiscriminacao,
   normalizeMunicipalInscriptionForAsaas,
   cleanCnpj,
   extractStreetNumber,
@@ -20,6 +19,26 @@ import {
 import { isFinalNfNumber, isFocusNfseRef, isNfOkStatus } from "../../shared/nfse-status";
 import { parseEmailList } from "../../shared/client-emails";
 import { isValidCnpj, sanitizeComplement } from "../../shared/nfse-tomador";
+import {
+  buildDefaultNfseDescription,
+  sanitizeNfseDescription,
+  type NfseDescriptionInput,
+} from "../../shared/nfse-descricao";
+
+export {
+  buildDefaultNfseDescription,
+  sanitizeNfseDescription,
+  cleanNfseDescription,
+  nfsePeriodoLabel,
+  nfseCategoryPrefix,
+  nfseCategoryPrefixes,
+  parseNfseCategory,
+  swapNfseCategoryPrefix,
+  NFSE_DESCRICAO_MAX,
+  NFSE_DESCRICAO_MIN,
+  NFSE_CATEGORIA_OPCOES,
+} from "../../shared/nfse-descricao";
+export type { NfseCategoriaFiscal, NfseDescriptionInput } from "../../shared/nfse-descricao";
 
 export { isValidCnpj, sanitizeComplement };
 
@@ -491,6 +510,16 @@ export type FocusNfsePayloadOpts = {
   aliquotaSimples?: number | null;
   /** IBGE do local da prestação, quando for diferente do município do tomador. */
   codigoMunicipioPrestacao?: string | null;
+  /** Texto já conferido no modal. Sem ele, a DPS usa `buildDefaultNfseDescription`. */
+  descricaoServico?: string | null;
+  notes?: string | null;
+  dueDate?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  osNumbers?: NfseDescriptionInput["osNumbers"];
+  controles?: NfseDescriptionInput["controles"];
+  poNumbers?: NfseDescriptionInput["poNumbers"];
+  smNumbers?: NfseDescriptionInput["smNumbers"];
 };
 
 export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string, any> {
@@ -527,6 +556,21 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     throw new Error("A fatura mistura Vigilância e Escolta. Separe a NFS-e.");
   }
   const servico = FOCUS_SERVICO_FISCAL[fiscal.categoria];
+  const descricaoInformada = String(opts.descricaoServico ?? "").trim();
+  const descricaoServico = descricaoInformada
+    ? sanitizeNfseDescription(descricaoInformada)
+    : buildDefaultNfseDescription({
+      category: fiscal.categoria,
+      description: opts.description,
+      notes: opts.notes,
+      dueDate: opts.dueDate,
+      periodStart: opts.periodStart,
+      periodEnd: opts.periodEnd,
+      osNumbers: opts.osNumbers,
+      controles: opts.controles,
+      poNumbers: opts.poNumbers,
+      smNumbers: opts.smNumbers,
+    });
   const tomadorInSp = ibgeTomador === FOCUS_CODIGO_MUNICIPIO_SP;
   const prestacaoInformada = onlyDigits(opts.codigoMunicipioPrestacao || "");
   const municipioPrestacao = prestacaoInformada.length === 7
@@ -562,7 +606,7 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     codigo_tributacao_nacional_iss: servico.codigo_tributacao_nacional_iss,
     codigo_nbs: servico.codigo_nbs,
     codigo_tributacao_municipal_iss: servico.codigo_tributacao_municipal_iss,
-    descricao_servico: buildServicoDiscriminacao({ description: opts.description }),
+    descricao_servico: descricaoServico,
     valor_servico: value,
     tributacao_iss: FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
     tipo_retencao_iss: ISS_RETAIN ? FOCUS_TIPO_RETENCAO_ISS_TOMADOR : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO,

@@ -4,8 +4,6 @@ import {
   ISS_ALIQUOTA,
   ISS_RETAIN,
   TORRES_CNPJ,
-  NF_INSS_ANEXO_IV_TEXTO,
-  NF_SIMPLES_NACIONAL_TEXTO,
 } from "./asaas-helpers";
 import {
   FOCUS_CODIGO_MUNICIPIO_SP,
@@ -18,8 +16,11 @@ import {
   FOCUS_API_HOMOLOG_URL,
   FOCUS_API_PRODUCTION_URL,
   FOCUS_SERVICO_FISCAL,
+  buildDefaultNfseDescription,
   buildFocusNfsePayload,
   resolveFocusServicoCategoria,
+  sanitizeNfseDescription,
+  swapNfseCategoryPrefix,
   sanitizeComplement,
   extractFocusErrorMessage,
   focusCancelJustification,
@@ -203,7 +204,7 @@ test("mapFocusStatusToTorres", () => {
   assert.equal(mapFocusStatusToTorres("AUTHORIZED"), "AUTHORIZED");
 });
 
-test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, discriminacao escolta+legais", () => {
+test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, descrição Ref. com período", () => {
   const p = buildFocusNfsePayload({
     value: 1000,
     description: "Referente aos serviços de Escolta Armada - Período: 16/09/2026 a 30/09/2026 (Setembro/2026)",
@@ -227,10 +228,7 @@ test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, d
   assert.equal("item_lista_servico" in p, false);
   assert.equal("prestador" in p, false);
   assert.equal("servico" in p, false);
-  assert.match(p.descricao_servico, /Escolta Armada/);
-  assert.match(p.descricao_servico, /16\/09\/2026/);
-  assert.ok(p.descricao_servico.includes(NF_INSS_ANEXO_IV_TEXTO));
-  assert.ok(p.descricao_servico.includes(NF_SIMPLES_NACIONAL_TEXTO));
+  assert.equal(p.descricao_servico, "Ref. escolta armada (16/09/2026 a 30/09/2026)");
   assert.equal(p.tipo_retencao_iss, ISS_RETAIN ? 2 : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO);
   assert.equal(p.tributacao_iss, FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL);
   assert.equal(p.valor_servico, 1000);
@@ -257,9 +255,62 @@ test("buildFocusNfsePayload: discriminação MULTILOG leva OS e SM sem alterar o
     retemInss: true,
     inssAliquota: 11,
   });
-  assert.match(p.descricao_servico, /OS\. 1312/);
-  assert.match(p.descricao_servico, /SM\. 41128477/);
+  assert.match(p.descricao_servico, /OS: 1312/);
+  assert.match(p.descricao_servico, /SM: 41128477/);
   assert.equal(p.cnpj_tomador, "07504505000132");
+});
+
+test("buildDefaultNfseDescription preserva período, OS e controle do cliente", () => {
+  const text = buildDefaultNfseDescription({
+    category: "escolta",
+    description: "Referente aos serviços de Escolta Armada - Período: 01/10/2026 a 31/10/2026 (Outubro/2026)\nControle Cliente: 99812",
+    notes: "Pedido de Compra / PO: 555",
+    osNumbers: ["1234", "1235"],
+    controles: ["ABC"],
+  });
+  assert.equal(
+    text,
+    "Ref. escolta armada (01/10/2026 a 31/10/2026) - OS: 1234, 1235 - Controle: ABC, 99812 - PO: 555",
+  );
+  const posto = buildDefaultNfseDescription({
+    category: "vigilancia",
+    periodStart: "2026-10-01",
+    periodEnd: "2026-10-31",
+  });
+  assert.equal(posto, "Ref. vigilância (01/10/2026 a 31/10/2026)");
+  const mes = buildDefaultNfseDescription({ category: "escolta", dueDate: "2026-10-15" });
+  assert.equal(mes, "Ref. escolta armada (10/2026)");
+  const escolta = "Ref. escolta armada (01/10/2026 a 31/10/2026)";
+  const vigilancia = "Ref. vigilância (01/10/2026 a 31/10/2026)";
+  const comOs = `${escolta} - OS: 1234`;
+  assert.equal(swapNfseCategoryPrefix(comOs, escolta, vigilancia, false), `${vigilancia} - OS: 1234`);
+  assert.equal(swapNfseCategoryPrefix(`${escolta} editado à mão`, escolta, vigilancia, true), `${escolta} editado à mão`);
+});
+
+test("buildFocusNfsePayload aceita categoria e descrição revistas no modal", () => {
+  const p = buildFocusNfsePayload({
+    value: 100,
+    description: "Referente aos serviços de Escolta Armada - Período: 01/10/2026 a 31/10/2026",
+    prestadorIm: "12345",
+    tomador: tomadorOk,
+    serviceOrderTypes: ["escolta", "vigilancia"],
+    categoria: "vigilancia",
+    descricaoServico: "Ref. vigilância (10/2026) - OS: 9 <tag> & controle",
+  });
+  assert.equal(p.codigo_tributacao_nacional_iss, "110201");
+  assert.equal(p.codigo_nbs, "118025000");
+  assert.equal(p.codigo_tributacao_municipal_iss, "07870");
+  assert.equal(p.descricao_servico, "Ref. vigilância (10/2026) - OS: 9 tag controle");
+});
+
+test("sanitizeNfseDescription corta em 2000 e recusa texto curto", () => {
+  const out = sanitizeNfseDescription(`${"A".repeat(2100)}<>&\u0001`);
+  assert.equal(out.length, 2000);
+  assert.equal(out, "A".repeat(2000));
+  assert.equal(out.includes("<"), false);
+  assert.equal(out.includes("&"), false);
+  assert.throws(() => sanitizeNfseDescription("curto <>"), /10 caracteres/);
+  assert.equal(sanitizeNfseDescription("Ref. escolta   armada\u0007 (10/2026)"), "Ref. escolta armada (10/2026)");
 });
 
 test("buildFocusNfsePayload: tomador fora de SP não envia CCM paulistana", () => {

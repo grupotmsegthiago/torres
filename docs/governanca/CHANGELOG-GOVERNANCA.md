@@ -1,5 +1,13 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Conferência da NFS-e antes de emitir
+
+- O botão Emitir NFS-e abre um modal. A Beatriz confirma Escolta (`110301`) ou Vigilância (`110201`) e edita a descrição.
+- A sugestão é `Ref. escolta armada (período)` ou `Ref. vigilância (período)`, com OS, SM, controle e PO que já existem na fatura e na OS. Não há coluna de controle do cliente.
+- `POST /api/invoices/:id/emit-nfse` aceita `{ category, descricao_servico }`. Sem esses campos, a emissão automática segue com a regra já gravada.
+- A descrição comercial da fatura não é reescrita. O boleto continua com o texto anterior.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-PRE-EMISSAO-2026-11-03.md`.
+
 ## 2026-11-03 — NFS-e Ambiente Nacional (Focus /v2/nfsen)
 
 - Emissão nova sai por `POST /v2/nfsen` (DPS). Consulta e cancelamento usam `/v2/nfsen`. Nota já emitida na Paulistana (`/v2/nfse`) só é consultada ou cancelada se o nacional responder 404.

@@ -11,7 +11,6 @@ import { requireAdminRole } from "../auth";
 import { CLIENT_EMAIL_COLUMNS, nfseTomadorEmail } from "../../shared/client-emails";
 import { maybeSendInvoiceReadyEmail } from "./invoice-billing-email";
 import {
-  DESCRICAO_SERVICO_FIXA,
   ISS_ALIQUOTA,
   MISSING_EMAIL_NF_MSG,
   assertFiscalAddressForNf,
@@ -21,9 +20,12 @@ import {
   isNfFullyIssued,
 } from "../../shared/nfse-status";
 import { bloqueioNfSemOs } from "../../shared/nf-os-guard";
+import { multilogRefsForOrder } from "../../shared/multilog-refs";
+import { NFSE_CATEGORIA_OPCOES, type NfseCategoriaFiscal } from "../../shared/nfse-descricao";
 import {
   FOCUS_PROVIDER,
   absoluteFocusAssetUrl,
+  buildDefaultNfseDescription,
   buildFocusNfsePayload,
   extractFocusErrorMessage,
   focusCancelJustification,
@@ -33,7 +35,11 @@ import {
   focusNfsenEmitPath,
   focusNfsenResourcePath,
   focusPdfUrl,
+  nfseCategoryPrefixes,
+  nfsePeriodoLabel,
+  parseNfseCategory,
   resolveFocusServicoCategoria,
+  sanitizeNfseDescription,
   focusTomadorEmail,
   ibgeMunicipioFromCityUf,
   isFocusConnectivityError,
@@ -336,9 +342,109 @@ function tomadorFrom(invoice: any, client: any, emailOverride?: string): FocusTo
   };
 }
 
+type InvoiceOsRef = {
+  osNumber: string;
+  type: string;
+  scheduledDate: string | null;
+  processoOmega: string;
+  gtmNumber: string;
+  multilogOs: string;
+  multilogSm: string;
+};
+
+function mapServiceOrder(row: any): InvoiceOsRef {
+  const multilog = multilogRefsForOrder(row || {});
+  return {
+    osNumber: String(row?.os_number || "").trim(),
+    type: String(row?.type || "").trim(),
+    scheduledDate: row?.scheduled_date ? String(row.scheduled_date) : null,
+    processoOmega: String(row?.processo_omega || "").trim(),
+    gtmNumber: String(row?.gtm_number || "").trim(),
+    multilogOs: multilog.os,
+    multilogSm: multilog.sm,
+  };
+}
+
+async function loadInvoiceServiceOrders(invoice: { id: number; service_order_id?: number | null }): Promise<{ orders: InvoiceOsRef[]; vinculados: number }> {
+  const { data: bills, error } = await supabaseAdmin
+    .from("escort_billings")
+    .select("service_order_id")
+    .eq("invoice_id", invoice.id)
+    .not("service_order_id", "is", null);
+  if (error) throw new Error(error.message || "Falha ao conferir OS da fatura");
+  const osIds = new Set<number>();
+  const direct = Number(invoice.service_order_id);
+  if (Number.isFinite(direct) && direct > 0) osIds.add(direct);
+  for (const bill of bills || []) {
+    const osId = Number(bill.service_order_id);
+    if (Number.isFinite(osId) && osId > 0) osIds.add(osId);
+  }
+  if (osIds.size === 0) return { orders: [], vinculados: (bills || []).length };
+  const { data: orders, error: osError } = await supabaseAdmin
+    .from("service_orders")
+    .select("id, os_number, type, scheduled_date, processo_omega, gtm_number, multilog_os, multilog_sm")
+    .in("id", Array.from(osIds));
+  if (osError) throw new Error(osError.message || "Falha ao ler o tipo da OS");
+  return { orders: (orders || []).map(mapServiceOrder), vinculados: (bills || []).length };
+}
+
+function osPeriodBounds(orders: InvoiceOsRef[]): { periodStart: string | null; periodEnd: string | null } {
+  const days = orders
+    .map((order) => String(order.scheduledDate || "").slice(0, 10))
+    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
+    .sort();
+  if (!days.length) return { periodStart: null, periodEnd: null };
+  return { periodStart: days[0], periodEnd: days[days.length - 1] };
+}
+
+function descriptionContext(invoice: any, orders: InvoiceOsRef[]) {
+  const bounds = osPeriodBounds(orders);
+  return {
+    description: invoice?.description || null,
+    notes: invoice?.notes || null,
+    dueDate: invoice?.due_date || null,
+    periodStart: bounds.periodStart,
+    periodEnd: bounds.periodEnd,
+    osNumbers: orders.flatMap((order) => [order.osNumber, order.multilogOs]),
+    controles: orders.flatMap((order) => [order.processoOmega, order.gtmNumber]),
+    smNumbers: orders.map((order) => order.multilogSm),
+  };
+}
+
+export function buildNfsePreview(invoice: any, orders: InvoiceOsRef[]) {
+  const fiscal = resolveFocusServicoCategoria({
+    serviceOrderTypes: orders.map((order) => order.type),
+    description: invoice?.description,
+  });
+  const category: NfseCategoriaFiscal = fiscal.categoria;
+  const context = descriptionContext(invoice, orders);
+  const periodo = nfsePeriodoLabel({ ...context, description: invoice?.description, notes: invoice?.notes, dueDate: invoice?.due_date });
+  return {
+    category,
+    conflito: fiscal.conflito,
+    periodo,
+    descricao_servico: buildDefaultNfseDescription({ category, ...context }),
+    prefixo: nfseCategoryPrefixes(periodo),
+    opcoes: NFSE_CATEGORIA_OPCOES,
+  };
+}
+
+export async function previewFocusNfseForInvoice(invoiceId: number): Promise<{ ok: true; preview: ReturnType<typeof buildNfsePreview> } | { ok: false; message: string }> {
+  const id = Number(invoiceId);
+  if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
+  const { data: invoice } = await supabaseAdmin.from("invoices").select("id, description, notes, due_date, service_order_id").eq("id", id).maybeSingle();
+  if (!invoice) return { ok: false, message: "Fatura não encontrada" };
+  try {
+    const loaded = await loadInvoiceServiceOrders(invoice);
+    return { ok: true, preview: buildNfsePreview(invoice, loaded.orders) };
+  } catch (e: any) {
+    return { ok: false, message: e?.message || "Não foi possível montar a descrição da NFS-e." };
+  }
+}
+
 export async function emitFocusNfseForInvoice(
   invoiceId: number,
-  opts?: { source?: string; clientEmail?: string },
+  opts?: { source?: string; clientEmail?: string; category?: string | null; descricaoServico?: string | null },
 ): Promise<{ ok: boolean; message: string; status?: string }> {
   const id = Number(invoiceId);
   if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
@@ -416,56 +522,59 @@ export async function emitFocusNfseForInvoice(
     ? `${focusNfseRef(id)}-r${Date.now().toString(36)}`
     : ref;
 
+  let loadedOrders: InvoiceOsRef[] = [];
   let osVinculadas = 0;
-  let serviceOrderTypes: string[] = [];
   try {
-    const { data: bills, error } = await supabaseAdmin
-      .from("escort_billings")
-      .select("service_order_id")
-      .eq("invoice_id", id)
-      .not("service_order_id", "is", null);
-    if (error) throw new Error(error.message || "Falha ao conferir OS da fatura");
-    osVinculadas = (bills || []).length;
-    const osIds = new Set<number>();
-    const direct = Number(invoice.service_order_id);
-    if (Number.isFinite(direct) && direct > 0) osIds.add(direct);
-    for (const bill of bills || []) {
-      const osId = Number(bill.service_order_id);
-      if (Number.isFinite(osId) && osId > 0) osIds.add(osId);
-    }
-    if (osIds.size > 0) {
-      const { data: orders, error: osError } = await supabaseAdmin
-        .from("service_orders")
-        .select("type")
-        .in("id", [...osIds]);
-      if (osError) throw new Error(osError.message || "Falha ao ler o tipo da OS");
-      serviceOrderTypes = (orders || []).map((order: { type?: string | null }) => String(order.type || ""));
-    }
+    const loaded = await loadInvoiceServiceOrders(invoice);
+    loadedOrders = loaded.orders;
+    osVinculadas = loaded.vinculados;
   } catch (e: any) {
     return { ok: false, message: e?.message || "Não foi possível conferir as OS desta fatura. A NF não foi emitida." };
   }
   const semOs = bloqueioNfSemOs(osVinculadas);
   if (semOs) return { ok: false, message: semOs };
+  const categoryInformada = parseNfseCategory(opts?.category);
+  if (opts?.category != null && String(opts.category).trim() !== "" && !categoryInformada) {
+    return { ok: false, message: "Categoria fiscal inválida. Use escolta ou vigilancia." };
+  }
   const fiscal = resolveFocusServicoCategoria({
-    serviceOrderTypes,
+    categoria: categoryInformada,
+    serviceOrderTypes: loadedOrders.map((order) => order.type),
     description: invoice.description,
   });
-  if (fiscal.conflito) {
+  if (!categoryInformada && fiscal.conflito) {
     return { ok: false, message: "A fatura mistura OS de Vigilância e Escolta. A NFS-e não foi emitida." };
   }
+  let descricaoServico: string | undefined;
+  if (opts?.descricaoServico != null && String(opts.descricaoServico).trim() !== "") {
+    try {
+      descricaoServico = sanitizeNfseDescription(opts.descricaoServico);
+    } catch (e: any) {
+      return { ok: false, message: e?.message || "Descrição da NFS-e inválida." };
+    }
+  }
+  const texto = descriptionContext(invoice, loadedOrders);
 
   let result: any;
   try {
     const optante = focusOptanteSimples();
     result = await focusRequest("POST", focusNfsenEmitPath(emitRef), buildFocusNfsePayload({
       value: parseFloat(invoice.value),
-      description: invoice.description || DESCRICAO_SERVICO_FIXA,
+      description: invoice.description || null,
       tomador,
-      categoria: fiscal.categoria,
+      categoria: categoryInformada || fiscal.categoria,
       valorInssRetido: invoice.valor_inss_retido,
       prestadorIm,
       optanteSimplesNacional: optante,
       aliquotaSimples: optante ? focusAliquotaSimples() : null,
+      descricaoServico,
+      notes: texto.notes,
+      dueDate: texto.dueDate,
+      periodStart: texto.periodStart,
+      periodEnd: texto.periodEnd,
+      osNumbers: texto.osNumbers,
+      controles: texto.controles,
+      smNumbers: texto.smNumbers,
     }));
   } catch (e: any) {
     const code = String(e?.body?.codigo || "").toLowerCase();
