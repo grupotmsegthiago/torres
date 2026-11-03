@@ -1,5 +1,63 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Apólice do Mobi é o contrato já anexado
+
+- O Mobi pedia apólice e contrato separados. Quem anexava o contrato continuava vermelho, com a apólice vazia.
+- O contrato já gravado vale como apólice. A tela do Mobi fica com um anexo só.
+- Um upload novo grava o arquivo na apólice e, se o contrato estiver vazio, também nessa coluna.
+
+## 2026-11-03 — NFS-e preservada depois da confirmação
+
+- O dono confirmou que a descrição curta e a DPS nacional funcionaram. A regra ficou em `04-REGRAS-NEGOCIO-CRITICAS.md`.
+- Ponto de restauração: tag `safety/nfse-dps-ok-2026-11-03` no commit `975fb689`, o mesmo que está em produção.
+- Não voltar a listar OS da Torres na nota nem reenviar endereço do prestador, código municipal de 5 dígitos, `pAliq` ou `indTotTrib` no optante sem retenção de ISS.
+
+## 2026-11-03 — Descrição da NFS-e sem a lista de OS
+
+- A sugestão da nota fica em `Ref. escolta armada (período)` ou `Ref. vigilância (período)`, mais a linha do Anexo IV quando há INSS retido e a frase do Simples.
+- Número de OS da Torres, vínculo GTM e pedido de compra não entram nesse texto.
+- MULTILOG continua com `OS.` e `SM.`. Omega Solutions continua com `PROCESSO` / `PROCESSOS`. As duas regras já existiam no boleto e no boletim.
+- A descrição comercial da fatura e o boleto não mudam.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-DESCRICAO-CURTA-2026-11-03.md`.
+
+## 2026-11-03 — Regime do Simples na DPS
+
+- A fatura 241 parou na regra E0166: ME/EPP tem de informar o regime de apuração. A Torres vai com o regime 1, tributos federais e ISS pelo Simples, coerente com o regime especial nenhum.
+- Sem retenção de ISS, a alíquota municipal sai do payload. O percentual aproximado do Simples vai em `percentual_total_tributos_simples_nacional`, com o valor já configurado (`FOCUS_ALIQUOTA_SIMPLES` ou 5).
+- O indicador de “não informar tributos” sai da nota do optante. A Sefin não aceita esse indicador para ME/EPP.
+
+## 2026-11-03 — DPS sem endereço do prestador
+
+- A Sefin recusou a fatura 241: o endereço nacional do prestador não pode ir na DPS quando a própria Torres emite. Saíram município, CEP, logradouro, número e bairro do prestador. O município da emissão continua `3550308`.
+
+## 2026-11-03 — Sefin recusou a DPS da fatura 241
+
+- O XML saía sem CEP e sem logradouro do prestador. A DPS agora manda o endereço já impresso no boletim: Avenida Raimundo Pereira de Magalhães, 5720, Pirituba, CEP 02938-000.
+- `07897` e `07870` não vão mais no campo municipal. A Sefin só aceita 3 dígitos nesse campo. A nota segue com o código nacional e o NBS.
+- O grupo de tributos passa a informar que não há estimativa (`indicador_total_tributacao` 0). Não inventamos a alíquota cheia do Simples.
+
+## 2026-11-03 — Observação legal na descrição da NFS-e
+
+- A sugestão da nota termina com a frase do Simples Nacional já usada no boleto.
+- Se a fatura tem INSS retido (`valor_inss_retido` > 0), a linha do Anexo IV entra antes dessa frase.
+- PIX, agência ou dados bancários que já estejam na fatura seguem para o mesmo rodapé. O texto cabe em 2.000 caracteres e continua editável no modal.
+
+## 2026-11-03 — Conferência da NFS-e antes de emitir
+
+- O botão Emitir NFS-e abre um modal. A Beatriz confirma Escolta (`110301`) ou Vigilância (`110201`) e edita a descrição.
+- A sugestão daquela entrega listava OS, SM, controle e PO. A entrada de 2026-11-03 “Descrição da NFS-e sem a lista de OS” substitui essa parte: o texto padrão não lista mais a OS da Torres.
+- `POST /api/invoices/:id/emit-nfse` aceita `{ category, descricao_servico }`. Sem esses campos, a emissão automática segue com a regra já gravada.
+- A descrição comercial da fatura não é reescrita. O boleto continua com o texto anterior.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-PRE-EMISSAO-2026-11-03.md`.
+
+## 2026-11-03 — NFS-e Ambiente Nacional (Focus /v2/nfsen)
+
+- Emissão nova sai por `POST /v2/nfsen` (DPS). Consulta e cancelamento usam `/v2/nfsen`. Nota já emitida na Paulistana (`/v2/nfse`) só é consultada ou cancelada se o nacional responder 404.
+- Vigilância: `110201` / NBS `118025000` / municipal `07870`. Escolta: `110301` / NBS `118023000` / municipal `07897`. A categoria sai de `service_orders.type`; sem tipo, da descrição. Sem sinal, fica escolta.
+- Optante do Simples envia `percentual_aliquota_relativa_municipio` (`FOCUS_ALIQUOTA_SIMPLES` ou a alíquota 5 já usada na NFS-e). `valor_cp` só quando `invoices.valor_inss_retido` é maior que zero.
+- As mesmas colunas de `invoices` recebem status, número, código de verificação, DANFSe e XML. Boleto segue no Asaas.
+- Relatório: `docs/governanca/RELATORIO-ENTREGA-NFSE-NACIONAL-2026-11-03.md`.
+
 ## 2026-10-13 — Protocolo de assinatura de volta na listagem
 
 - O botão **4-PROT ?** da listagem de contas a pagar voltou. Lançamento pago ou aprovado volta a aceitar a foto das contas assinadas.

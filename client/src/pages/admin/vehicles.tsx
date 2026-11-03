@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { formatBRT } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { VEHICLE_ICON_OPTIONS, inferVehicleIcon, vehicleRequiresInsuranceDocs, isMobiInsuranceIncomplete, type VehicleIconOption } from "@shared/vehicle-icons";
+import { VEHICLE_ICON_OPTIONS, inferVehicleIcon, vehicleRequiresInsuranceDocs, isMobiInsuranceIncomplete, mobiInsuranceFile, type VehicleIconOption } from "@shared/vehicle-icons";
 import { apiRequest, queryClient, getQueryFn, invalidateRelatedQueries, authFetch } from "@/lib/queryClient";
 import AdminLayout from "@/components/admin/layout";
 import { Card } from "@/components/ui/card";
@@ -22,8 +22,7 @@ function insuranceFileLabel(path: string | null | undefined, pendingName?: strin
   const p = String(path || "");
   if (!p) return "";
   const base = p.split("/").pop() || p;
-  if (base.includes("apolice")) return "Apólice anexada";
-  if (base.includes("contrato")) return "Contrato anexado";
+  if (base.includes("apolice") || base.includes("contrato")) return "Apólice anexada";
   return base;
 }
 
@@ -153,7 +152,6 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
     notes: vehicle?.notes || "",
   });
   const [pendingPolicy, setPendingPolicy] = useState<PendingInsurance | null>(null);
-  const [pendingContract, setPendingContract] = useState<PendingInsurance | null>(null);
 
   // A LISTA de veículos não traz mais as colunas pesadas (documento + fotos laterais/traseira)
   // pra não derrubar o Supabase. Ao EDITAR, buscamos o veículo completo e hidratamos o form —
@@ -264,8 +262,8 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
   }, [lookupPlate, vehicle]);
 
   const mutation = useMutation({
-    mutationFn: async (data: typeof form) => {
-      const { insurancePolicyFile: _p, insuranceContractFile: _c, ...rest } = data as any;
+    mutationFn: async (payload: { form: typeof form; pendingPolicy: PendingInsurance | null }) => {
+      const { insurancePolicyFile: _p, insuranceContractFile: _c, ...rest } = payload.form as any;
       let vehicleId = vehicle?.id;
       if (vehicle) {
         await apiRequest("PATCH", `/api/vehicles/${vehicle.id}`, rest);
@@ -274,17 +272,12 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         const created = await res.json();
         vehicleId = created?.id;
       }
-      if (!vehicleId) return;
-      async function putDoc(kind: "policy" | "contract", pending: PendingInsurance | null) {
-        if (!pending) return;
-        await apiRequest("POST", `/api/vehicles/${vehicleId}/insurance/${kind}`, {
-          fileBase64: pending.dataUrl,
-          fileName: pending.fileName,
-          contentType: pending.contentType,
-        });
-      }
-      await putDoc("policy", pendingPolicy);
-      await putDoc("contract", pendingContract);
+      if (!vehicleId || !payload.pendingPolicy) return;
+      await apiRequest("POST", `/api/vehicles/${vehicleId}/insurance/policy`, {
+        fileBase64: payload.pendingPolicy.dataUrl,
+        fileName: payload.pendingPolicy.fileName,
+        contentType: payload.pendingPolicy.contentType,
+      });
     },
     onSuccess: () => {
       invalidateRelatedQueries("vehicle");
@@ -302,7 +295,7 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
         <h2 className="text-lg font-semibold">{vehicle ? "Editar Veículo" : "Novo Veículo"}</h2>
         <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <form onSubmit={(e) => { e.preventDefault(); mutation.mutate({ form, pendingPolicy }); }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Placa *</label>
           <div className="relative">
@@ -447,24 +440,23 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
             </label>
           )}
         </div>
-        {vehicleRequiresInsuranceDocs(form.iconType, form.brand, form.model) && (
-          <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-lg border ${
-            (!form.insurancePolicyFile && !pendingPolicy) || (!form.insuranceContractFile && !pendingContract)
-              ? "border-red-200 bg-red-50/30"
-              : "border-emerald-200 bg-emerald-50/20"
+        {vehicleRequiresInsuranceDocs(form.iconType, form.brand, form.model) && (() => {
+          const storedInsurance = mobiInsuranceFile(form);
+          const insuranceMissing = !storedInsurance && !pendingPolicy;
+          return (
+          <div className={`md:col-span-3 p-4 rounded-lg border ${
+            insuranceMissing ? "border-red-200 bg-red-50/30" : "border-emerald-200 bg-emerald-50/20"
           }`} data-testid="section-mobi-insurance">
-            <p className={`md:col-span-2 text-sm font-semibold ${
-              (!form.insurancePolicyFile && !pendingPolicy) || (!form.insuranceContractFile && !pendingContract)
-                ? "text-red-800"
-                : "text-emerald-800"
-            }`}>Seguro obrigatório (Mobi) — apólice e contrato, um de cada carro</p>
+            <p className={`text-sm font-semibold mb-3 ${insuranceMissing ? "text-red-800" : "text-emerald-800"}`}>
+              Seguro obrigatório (Mobi) — a apólice do carro
+            </p>
             <InsuranceAttachField
               label="Apólice de seguro"
-              kind="policy"
+              kind={storedInsurance?.kind || "policy"}
               vehicleId={vehicle?.id}
-              storedPath={form.insurancePolicyFile}
+              storedPath={storedInsurance?.path || ""}
               pending={pendingPolicy}
-              missing={!form.insurancePolicyFile && !pendingPolicy}
+              missing={insuranceMissing}
               testId="input-insurance-policy"
               onPending={setPendingPolicy}
               onCleared={async () => {
@@ -472,28 +464,15 @@ function VehicleForm({ vehicle, onClose }: { vehicle?: Vehicle; onClose: () => v
                 if (vehicle?.id && form.insurancePolicyFile) {
                   await apiRequest("DELETE", `/api/vehicles/${vehicle.id}/insurance/policy`);
                 }
-                setForm((prev) => ({ ...prev, insurancePolicyFile: "" }));
-              }}
-            />
-            <InsuranceAttachField
-              label="Contrato do seguro"
-              kind="contract"
-              vehicleId={vehicle?.id}
-              storedPath={form.insuranceContractFile}
-              pending={pendingContract}
-              missing={!form.insuranceContractFile && !pendingContract}
-              testId="input-insurance-contract"
-              onPending={setPendingContract}
-              onCleared={async () => {
-                setPendingContract(null);
                 if (vehicle?.id && form.insuranceContractFile) {
                   await apiRequest("DELETE", `/api/vehicles/${vehicle.id}/insurance/contract`);
                 }
-                setForm((prev) => ({ ...prev, insuranceContractFile: "" }));
+                setForm((prev) => ({ ...prev, insurancePolicyFile: "", insuranceContractFile: "" }));
               }}
             />
           </div>
-        )}
+          );
+        })()}
         <div>
           <label className="text-sm font-semibold text-neutral-700 mb-1.5 block">Status</label>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full h-10 border border-neutral-300 rounded-lg px-3.5 py-2.5 text-sm bg-white shadow-sm focus:border-neutral-500 focus:ring-2 focus:ring-neutral-900/10 outline-none transition-all duration-200" data-testid="select-vehicle-status">

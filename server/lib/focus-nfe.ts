@@ -1,5 +1,7 @@
 /**
- * Satélite Focus NFe — emissão, consulta e cancelamento de NFS-e (São Paulo).
+ * Satélite Focus NFe — emissão, consulta e cancelamento de NFS-e.
+ * Emissão nova: Ambiente Nacional POST /v2/nfsen. Consulta e cancelamento
+ * usam /v2/nfsen e, só em 404, a Paulistana /v2/nfse (notas já emitidas).
  * Camada 0: não altera valor comercial da invoice (boletim/billing).
  */
 
@@ -9,7 +11,7 @@ import { requireAdminRole } from "../auth";
 import { CLIENT_EMAIL_COLUMNS, nfseTomadorEmail } from "../../shared/client-emails";
 import { maybeSendInvoiceReadyEmail } from "./invoice-billing-email";
 import {
-  DESCRICAO_SERVICO_FIXA,
+  ISS_ALIQUOTA,
   MISSING_EMAIL_NF_MSG,
   assertFiscalAddressForNf,
   shouldBlockNfEmission,
@@ -18,15 +20,26 @@ import {
   isNfFullyIssued,
 } from "../../shared/nfse-status";
 import { bloqueioNfSemOs } from "../../shared/nf-os-guard";
+import { multilogRefsForOrder } from "../../shared/multilog-refs";
+import { NFSE_CATEGORIA_OPCOES, type NfseCategoriaFiscal } from "../../shared/nfse-descricao";
 import {
   FOCUS_PROVIDER,
   absoluteFocusAssetUrl,
+  buildDefaultNfseDescription,
   buildFocusNfsePayload,
   extractFocusErrorMessage,
   focusCancelJustification,
   focusNfseConsultRef,
+  focusNfseMunicipalResourcePath,
   focusNfseRef,
+  focusNfsenEmitPath,
+  focusNfsenResourcePath,
   focusPdfUrl,
+  nfseCategoryPrefixes,
+  nfsePeriodoLabel,
+  parseNfseCategory,
+  resolveFocusServicoCategoria,
+  sanitizeNfseDescription,
   focusTomadorEmail,
   ibgeMunicipioFromCityUf,
   isFocusConnectivityError,
@@ -63,6 +76,13 @@ export function resolveFocusPrestadorIm(): string {
 function focusOptanteSimples(): boolean {
   const raw = String(process.env.FOCUS_OPTANTE_SIMPLES || "true").trim().toLowerCase();
   return raw !== "false" && raw !== "0" && raw !== "nao" && raw !== "não";
+}
+
+function focusAliquotaSimples(): number {
+  const raw = String(process.env.FOCUS_ALIQUOTA_SIMPLES || "").trim().replace(",", ".");
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0 && n <= 100) return n;
+  return ISS_ALIQUOTA;
 }
 
 function basicAuthHeader(token: string): string {
@@ -149,18 +169,31 @@ export async function consultFocusNfse(ref: string): Promise<any | null> {
   const r = String(ref || "").trim();
   if (!r) return null;
   try {
-    return await focusRequest("GET", `/nfse/${encodeURIComponent(r)}`);
+    return await focusRequest("GET", focusNfsenResourcePath(r));
   } catch (e: any) {
-    if (e?.status === 404) return null;
+    if (e?.status === 404) {
+      try {
+        return await focusRequest("GET", focusNfseMunicipalResourcePath(r));
+      } catch (legacy: any) {
+        if (legacy?.status === 404) return null;
+        if (isFocusConnectivityError(legacy?.message)) return null;
+        throw legacy;
+      }
+    }
     if (isFocusConnectivityError(e?.message)) return null;
     throw e;
   }
 }
 
 export async function cancelFocusNfse(ref: string, reason?: string | null): Promise<any> {
-  return focusRequest("DELETE", `/nfse/${encodeURIComponent(ref)}`, {
-    justificativa: focusCancelJustification(reason),
-  });
+  const body = { justificativa: focusCancelJustification(reason) };
+  const r = String(ref || "").trim();
+  try {
+    return await focusRequest("DELETE", focusNfsenResourcePath(r), body);
+  } catch (e: any) {
+    if (e?.status !== 404) throw e;
+    return await focusRequest("DELETE", focusNfseMunicipalResourcePath(r), body);
+  }
 }
 
 function focusAssetNeedsAuth(url: string): boolean {
@@ -309,9 +342,110 @@ function tomadorFrom(invoice: any, client: any, emailOverride?: string): FocusTo
   };
 }
 
+type InvoiceOsRef = {
+  type: string;
+  scheduledDate: string | null;
+  processoOmega: string;
+  multilogOs: string;
+  multilogSm: string;
+};
+
+function mapServiceOrder(row: any): InvoiceOsRef {
+  const multilog = multilogRefsForOrder(row || {});
+  return {
+    type: String(row?.type || "").trim(),
+    scheduledDate: row?.scheduled_date ? String(row.scheduled_date) : null,
+    processoOmega: String(row?.processo_omega || "").trim(),
+    multilogOs: multilog.os,
+    multilogSm: multilog.sm,
+  };
+}
+
+async function loadInvoiceServiceOrders(invoice: { id: number; service_order_id?: number | null }): Promise<{ orders: InvoiceOsRef[]; vinculados: number }> {
+  const { data: bills, error } = await supabaseAdmin
+    .from("escort_billings")
+    .select("service_order_id")
+    .eq("invoice_id", invoice.id)
+    .not("service_order_id", "is", null);
+  if (error) throw new Error(error.message || "Falha ao conferir OS da fatura");
+  const osIds = new Set<number>();
+  const direct = Number(invoice.service_order_id);
+  if (Number.isFinite(direct) && direct > 0) osIds.add(direct);
+  for (const bill of bills || []) {
+    const osId = Number(bill.service_order_id);
+    if (Number.isFinite(osId) && osId > 0) osIds.add(osId);
+  }
+  if (osIds.size === 0) return { orders: [], vinculados: (bills || []).length };
+  const { data: orders, error: osError } = await supabaseAdmin
+    .from("service_orders")
+    .select("id, type, scheduled_date, processo_omega, multilog_os, multilog_sm")
+    .in("id", Array.from(osIds));
+  if (osError) throw new Error(osError.message || "Falha ao ler o tipo da OS");
+  return { orders: (orders || []).map(mapServiceOrder), vinculados: (bills || []).length };
+}
+
+function osPeriodBounds(orders: InvoiceOsRef[]): { periodStart: string | null; periodEnd: string | null } {
+  const days = orders
+    .map((order) => String(order.scheduledDate || "").slice(0, 10))
+    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
+    .sort();
+  if (!days.length) return { periodStart: null, periodEnd: null };
+  return { periodStart: days[0], periodEnd: days[days.length - 1] };
+}
+
+function descriptionContext(invoice: any, orders: InvoiceOsRef[]) {
+  const bounds = osPeriodBounds(orders);
+  return {
+    description: invoice?.description || null,
+    notes: invoice?.notes || null,
+    dueDate: invoice?.due_date || null,
+    periodStart: bounds.periodStart,
+    periodEnd: bounds.periodEnd,
+    clientName: invoice?.client_name || null,
+    multilogItems: orders.map((order) => ({ os: order.multilogOs, sm: order.multilogSm })),
+    processosOmega: orders.map((order) => order.processoOmega),
+    valorInssRetido: invoice?.valor_inss_retido,
+  };
+}
+
+export function buildNfsePreview(invoice: any, orders: InvoiceOsRef[], opts?: { incluirSimples?: boolean }) {
+  const fiscal = resolveFocusServicoCategoria({
+    serviceOrderTypes: orders.map((order) => order.type),
+    description: invoice?.description,
+  });
+  const category: NfseCategoriaFiscal = fiscal.categoria;
+  const context = descriptionContext(invoice, orders);
+  const periodo = nfsePeriodoLabel({ ...context, description: invoice?.description, notes: invoice?.notes, dueDate: invoice?.due_date });
+  return {
+    category,
+    conflito: fiscal.conflito,
+    periodo,
+    descricao_servico: buildDefaultNfseDescription({
+      category,
+      ...context,
+      incluirSimples: opts?.incluirSimples !== false,
+    }),
+    prefixo: nfseCategoryPrefixes(periodo),
+    opcoes: NFSE_CATEGORIA_OPCOES,
+  };
+}
+
+export async function previewFocusNfseForInvoice(invoiceId: number): Promise<{ ok: true; preview: ReturnType<typeof buildNfsePreview> } | { ok: false; message: string }> {
+  const id = Number(invoiceId);
+  if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
+  const { data: invoice } = await supabaseAdmin.from("invoices").select("id, client_name, description, notes, due_date, service_order_id, valor_inss_retido").eq("id", id).maybeSingle();
+  if (!invoice) return { ok: false, message: "Fatura não encontrada" };
+  try {
+    const loaded = await loadInvoiceServiceOrders(invoice);
+    return { ok: true, preview: buildNfsePreview(invoice, loaded.orders, { incluirSimples: focusOptanteSimples() }) };
+  } catch (e: any) {
+    return { ok: false, message: e?.message || "Não foi possível montar a descrição da NFS-e." };
+  }
+}
+
 export async function emitFocusNfseForInvoice(
   invoiceId: number,
-  opts?: { source?: string; clientEmail?: string },
+  opts?: { source?: string; clientEmail?: string; category?: string | null; descricaoServico?: string | null },
 ): Promise<{ ok: boolean; message: string; status?: string }> {
   const id = Number(invoiceId);
   if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
@@ -389,31 +523,59 @@ export async function emitFocusNfseForInvoice(
     ? `${focusNfseRef(id)}-r${Date.now().toString(36)}`
     : ref;
 
+  let loadedOrders: InvoiceOsRef[] = [];
   let osVinculadas = 0;
   try {
-    const { count, error } = await supabaseAdmin
-      .from("escort_billings")
-      .select("id", { count: "exact", head: true })
-      .eq("invoice_id", id)
-      .not("service_order_id", "is", null);
-    if (error) throw new Error(error.message || "Falha ao conferir OS da fatura");
-    osVinculadas = count || 0;
+    const loaded = await loadInvoiceServiceOrders(invoice);
+    loadedOrders = loaded.orders;
+    osVinculadas = loaded.vinculados;
   } catch (e: any) {
     return { ok: false, message: e?.message || "Não foi possível conferir as OS desta fatura. A NF não foi emitida." };
   }
   const semOs = bloqueioNfSemOs(osVinculadas);
   if (semOs) return { ok: false, message: semOs };
+  const categoryInformada = parseNfseCategory(opts?.category);
+  if (opts?.category != null && String(opts.category).trim() !== "" && !categoryInformada) {
+    return { ok: false, message: "Categoria fiscal inválida. Use escolta ou vigilancia." };
+  }
+  const fiscal = resolveFocusServicoCategoria({
+    categoria: categoryInformada,
+    serviceOrderTypes: loadedOrders.map((order) => order.type),
+    description: invoice.description,
+  });
+  if (!categoryInformada && fiscal.conflito) {
+    return { ok: false, message: "A fatura mistura OS de Vigilância e Escolta. A NFS-e não foi emitida." };
+  }
+  let descricaoServico: string | undefined;
+  if (opts?.descricaoServico != null && String(opts.descricaoServico).trim() !== "") {
+    try {
+      descricaoServico = sanitizeNfseDescription(opts.descricaoServico);
+    } catch (e: any) {
+      return { ok: false, message: e?.message || "Descrição da NFS-e inválida." };
+    }
+  }
+  const texto = descriptionContext(invoice, loadedOrders);
 
   let result: any;
   try {
-    result = await focusRequest("POST", `/nfse?ref=${encodeURIComponent(emitRef)}`, buildFocusNfsePayload({
+    const optante = focusOptanteSimples();
+    result = await focusRequest("POST", focusNfsenEmitPath(emitRef), buildFocusNfsePayload({
       value: parseFloat(invoice.value),
-      description: invoice.description || DESCRICAO_SERVICO_FIXA,
+      description: invoice.description || null,
       tomador,
-      retemInss: true,
-      inssAliquota: Number(client?.inss_aliquota ?? 11),
+      categoria: categoryInformada || fiscal.categoria,
+      valorInssRetido: invoice.valor_inss_retido,
       prestadorIm,
-      optanteSimplesNacional: focusOptanteSimples(),
+      optanteSimplesNacional: optante,
+      aliquotaSimples: optante ? focusAliquotaSimples() : null,
+      descricaoServico,
+      notes: texto.notes,
+      dueDate: texto.dueDate,
+      periodStart: texto.periodStart,
+      periodEnd: texto.periodEnd,
+      clientName: texto.clientName,
+      multilogItems: texto.multilogItems,
+      processosOmega: texto.processosOmega,
     }));
   } catch (e: any) {
     const code = String(e?.body?.codigo || "").toLowerCase();

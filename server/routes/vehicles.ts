@@ -105,7 +105,12 @@ function stripInsuranceDataUrls<T extends Record<string, any>>(body: T): T {
         fileName: String(fileName),
         contentType: contentType ? String(contentType) : null,
       });
-      const data = await storage.updateVehicle(id, { [insuranceColumn(kind)]: path } as any);
+      // O contrato é a apólice: o arquivo grava as duas colunas quando a outra está vazia.
+      const patch: Record<string, string> = { [insuranceColumn(kind)]: path };
+      const other = kind === "policy" ? "insuranceContractFile" : "insurancePolicyFile";
+      const otherStored = String((vehicle as any)[other] || "").trim();
+      if (!otherStored) patch[other] = path;
+      const data = await storage.updateVehicle(id, patch as any);
       res.json(data);
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Falha ao anexar documento de seguro" });

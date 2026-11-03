@@ -1,8 +1,11 @@
 /**
- * Helpers puros da NFS-e Focus NFe (São Paulo / Nota Fiscal Paulistana).
+ * Helpers puros da NFS-e Focus NFe.
+ * Emissão nova: Ambiente Nacional (/v2/nfsen), JSON plano da DPS.
  * Sem I/O — o HTTP e a persistência ficam em focus-nfe.ts.
  *
  * Reutiliza discriminacao, ISS/INSS e CNPJ oficiais de asaas-helpers.
+ * Vigilância (posto) e Escolta têm código nacional e NBS diferentes.
+ * O código Paulistana de 5 dígitos não entra na DPS: cTribMun só aceita 3.
  */
 
 import {
@@ -10,8 +13,6 @@ import {
   CODIGO_SERVICO_MUNICIPAL_CODE,
   ISS_ALIQUOTA,
   ISS_RETAIN,
-  buildServicoDiscriminacao,
-  inssAliquotaEfetiva,
   normalizeMunicipalInscriptionForAsaas,
   cleanCnpj,
   extractStreetNumber,
@@ -19,15 +20,69 @@ import {
 import { isFinalNfNumber, isFocusNfseRef, isNfOkStatus } from "../../shared/nfse-status";
 import { parseEmailList } from "../../shared/client-emails";
 import { isValidCnpj, sanitizeComplement } from "../../shared/nfse-tomador";
+import {
+  buildDefaultNfseDescription,
+  sanitizeNfseDescription,
+  type NfseDescriptionInput,
+} from "../../shared/nfse-descricao";
+
+export {
+  buildDefaultNfseDescription,
+  sanitizeNfseDescription,
+  cleanNfseDescription,
+  nfsePeriodoLabel,
+  nfseCategoryPrefix,
+  nfseCategoryPrefixes,
+  parseNfseCategory,
+  swapNfseCategoryPrefix,
+  NFSE_DESCRICAO_MAX,
+  NFSE_DESCRICAO_MIN,
+  NFSE_CATEGORIA_OPCOES,
+} from "../../shared/nfse-descricao";
+export type { NfseCategoriaFiscal, NfseDescriptionInput } from "../../shared/nfse-descricao";
 
 export { isValidCnpj, sanitizeComplement };
 
-/** Paulistana: item da lista municipal (Focus SP usa 7870; Torres homologou 07870). LC 116 11.02 não é aceito como 1102. */
+/** Item municipal histórico da Paulistana (vigilância). Não entra na DPS nacional. */
 export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
+export type FocusServicoCategoria = "vigilancia" | "escolta";
+/**
+ * cTribMun da DPS aceita só 3 dígitos. 07870 e 07897 são o código da Paulistana
+ * e a Sefin recusa esse tamanho. A nota nacional identifica o serviço por
+ * codigo_tributacao_nacional_iss + NBS.
+ */
+export const FOCUS_SERVICO_FISCAL: Record<FocusServicoCategoria, {
+  codigo_tributacao_nacional_iss: string;
+  codigo_nbs: string;
+  codigo_paulistana: string;
+}> = {
+  vigilancia: {
+    codigo_tributacao_nacional_iss: "110201",
+    codigo_nbs: "118025000",
+    codigo_paulistana: "07870",
+  },
+  escolta: {
+    codigo_tributacao_nacional_iss: "110301",
+    codigo_nbs: "118023000",
+    codigo_paulistana: "07897",
+  },
+};
 export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
-export const FOCUS_NATUREZA_OPERACAO = "1";
-export const FOCUS_NATUREZA_FORA_MUNICIPIO = "2";
-export const FOCUS_REGIME_SIMPLES_ME_EPP = "6";
+/** indTotTrib=0: não informa estimativa de tributos (Decreto 8.264/2014). */
+export const FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA = 0;
+/** 3 = optante ME/EPP. 1 = não optante. Campo oficial: codigo_opcao_simples_nacional. */
+export const FOCUS_OPCAO_SIMPLES_ME_EPP = 3;
+/**
+ * 1 = tributos federais e o ISS apurados pelo Simples.
+ * É o regime da ME/EPP comum, com regime especial nenhum.
+ */
+export const FOCUS_REGIME_APURACAO_SN_PELO_SIMPLES = 1;
+export const FOCUS_OPCAO_SIMPLES_NAO_OPTANTE = 1;
+/** 0 = nenhum. No padrão nacional, 6 é sociedade de profissionais, não o Simples. */
+export const FOCUS_REGIME_ESPECIAL_NENHUM = 0;
+export const FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL = 1;
+export const FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO = 1;
+export const FOCUS_TIPO_RETENCAO_ISS_TOMADOR = 2;
 export const FOCUS_PROVIDER = "focus";
 export const FOCUS_REF_PREFIX = "torres-inv-";
 export const FOCUS_API_PRODUCTION_URL = "https://api.focusnfe.com.br";
@@ -69,6 +124,52 @@ export function resolveFocusApiBaseUrl(
   if (isFocusProdLabel(node) && !isFocusHomologLabel(env)) return FOCUS_API_PRODUCTION_URL;
   if (isFocusHomologLabel(env)) return FOCUS_API_HOMOLOG_URL;
   return FOCUS_API_HOMOLOG_URL;
+}
+
+export function focusNfsenEmitPath(ref: string): string {
+  const r = String(ref || "").trim();
+  if (!r) throw new Error("Referência Focus ausente");
+  return `/nfsen?ref=${encodeURIComponent(r)}`;
+}
+
+export function focusNfsenResourcePath(ref: string): string {
+  const r = String(ref || "").trim();
+  if (!r) throw new Error("Referência Focus ausente");
+  return `/nfsen/${encodeURIComponent(r)}`;
+}
+
+/** Notas já autorizadas na Paulistana. Emissão nova não usa este caminho. */
+export function focusNfseMunicipalResourcePath(ref: string): string {
+  const r = String(ref || "").trim();
+  if (!r) throw new Error("Referência Focus ausente");
+  return `/nfse/${encodeURIComponent(r)}`;
+}
+
+/** Data da DPS no horário de Brasília. O ambiente nacional pede ISO com fuso e competência AAAA-MM-DD. */
+export function focusDpsTimestamps(input?: string | Date): { data_emissao: string; data_competencia: string } {
+  const date = input == null || input === ""
+    ? new Date()
+    : input instanceof Date
+      ? input
+      : new Date(input);
+  if (Number.isNaN(date.getTime())) throw new Error("Data de emissão da NFS-e inválida");
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const pick = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  const hour = pick("hour") === "24" ? "00" : pick("hour");
+  const data_competencia = `${pick("year")}-${pick("month")}-${pick("day")}`;
+  return {
+    data_emissao: `${data_competencia}T${hour}:${pick("minute")}:${pick("second")}-03:00`,
+    data_competencia,
+  };
 }
 
 export function focusNfseRef(invoiceId: number): string {
@@ -361,16 +462,76 @@ export type FocusTomadorInput = {
   codigoMunicipioIbge?: string | null;
 };
 
+function foldFiscal(raw: string): string {
+  return String(raw || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function tokenCategoria(raw: string | null | undefined): FocusServicoCategoria | null {
+  const t = foldFiscal(String(raw || ""));
+  if (!t) return null;
+  if (t === "vigilancia" || t === "posto" || t === "posto fisico" || t.startsWith("vigilancia ")) return "vigilancia";
+  if (t === "escolta" || t === "escolta armada" || t.startsWith("escolta ")) return "escolta";
+  return null;
+}
+
+/**
+ * A fatura não tem coluna de categoria. A OS guarda `service_orders.type` (hoje "escolta").
+ * Sem tipo na OS, a descrição decide: "vigilância" sem "escolta" vira posto; o restante fica escolta,
+ * que é o texto padrão da nota (`Referente aos serviços de Escolta Armada`).
+ */
+export function resolveFocusServicoCategoria(input?: {
+  categoria?: string | null;
+  serviceOrderTypes?: Array<string | null | undefined> | null;
+  description?: string | null;
+} | null): { categoria: FocusServicoCategoria; conflito: boolean } {
+  const explicit = tokenCategoria(input?.categoria);
+  if (explicit) return { categoria: explicit, conflito: false };
+  const fromOs = new Set<FocusServicoCategoria>();
+  for (const tipo of input?.serviceOrderTypes || []) {
+    const categoria = tokenCategoria(tipo);
+    if (categoria) fromOs.add(categoria);
+  }
+  if (fromOs.size > 1) return { categoria: "escolta", conflito: true };
+  if (fromOs.size === 1) return { categoria: [...fromOs][0], conflito: false };
+  const text = foldFiscal(String(input?.description || ""));
+  const hasEscolta = /\bescolta\b/.test(text);
+  const hasVigilancia = /\bvigilancia\b/.test(text);
+  if (hasVigilancia && !hasEscolta) return { categoria: "vigilancia", conflito: false };
+  return { categoria: "escolta", conflito: false };
+}
+
 export type FocusNfsePayloadOpts = {
   value: number;
   description?: string | null;
   tomador: FocusTomadorInput;
-  retemInss?: boolean;
-  inssAliquota?: number;
+  /** Categoria explícita. Sem ela, a descrição classifica. */
+  categoria?: FocusServicoCategoria | string | null;
+  /** Tipos das OS da fatura (`service_orders.type`). */
+  serviceOrderTypes?: Array<string | null | undefined> | null;
+  /** Valor de INSS já retido na fatura. Só vira `valor_cp` se for maior que zero. */
+  valorInssRetido?: number | string | null;
   prestadorIm: string;
   prestadorCnpj?: string;
   dataEmissaoIso?: string;
   optanteSimplesNacional?: boolean;
+  /** Alíquota efetiva do Simples. Sem ela, o optante usa `ISS_ALIQUOTA`. */
+  aliquotaSimples?: number | null;
+  /** IBGE do local da prestação, quando for diferente do município do tomador. */
+  codigoMunicipioPrestacao?: string | null;
+  /** Texto já conferido no modal. Sem ele, a DPS usa `buildDefaultNfseDescription`. */
+  descricaoServico?: string | null;
+  notes?: string | null;
+  dueDate?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  clientName?: NfseDescriptionInput["clientName"];
+  multilogItems?: NfseDescriptionInput["multilogItems"];
+  processosOmega?: NfseDescriptionInput["processosOmega"];
 };
 
 export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string, any> {
@@ -396,63 +557,91 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
   const cep = onlyDigits(opts.tomador.zip);
   if (cep.length !== 8) throw new Error("CEP do tomador deve ter 8 dígitos");
 
-  const issValor = Number((value * ISS_ALIQUOTA / 100).toFixed(2));
-  const inssAliq = inssAliquotaEfetiva(!!opts.retemInss, opts.inssAliquota ?? 11);
-  const inssValor = Number((value * inssAliq / 100).toFixed(2));
   const ccmTomador = normalizeMunicipalInscriptionForAsaas(opts.tomador.inscricaoMunicipal);
   const phone = onlyDigits(opts.tomador.phone).slice(0, 11);
-
-  const tomador: Record<string, any> = {
-    razao_social: String(opts.tomador.name || "").trim().slice(0, 115),
-    email: focusTomadorEmail(opts.tomador.email),
-    endereco: {
-      logradouro: String(opts.tomador.address || "").trim().slice(0, 125),
-      numero: extractStreetNumber(opts.tomador.address, opts.tomador.addressNumber) || "S/N",
-      complemento: sanitizeComplement(opts.tomador.complement),
-      bairro: String(opts.tomador.bairro || "Centro").trim().slice(0, 60),
-      codigo_municipio: ibgeTomador,
-      uf: String(opts.tomador.state || "").trim().toUpperCase().slice(0, 2),
-      cep,
-    },
-  };
-  if (digits.length === 14) tomador.cnpj = digits;
-  else tomador.cpf = digits;
+  const fiscal = resolveFocusServicoCategoria({
+    categoria: opts.categoria,
+    serviceOrderTypes: opts.serviceOrderTypes,
+    description: opts.description,
+  });
+  if (fiscal.conflito) {
+    throw new Error("A fatura mistura Vigilância e Escolta. Separe a NFS-e.");
+  }
+  const servico = FOCUS_SERVICO_FISCAL[fiscal.categoria];
+  const descricaoInformada = String(opts.descricaoServico ?? "").trim();
+  const descricaoServico = descricaoInformada
+    ? sanitizeNfseDescription(descricaoInformada)
+    : buildDefaultNfseDescription({
+      category: fiscal.categoria,
+      description: opts.description,
+      notes: opts.notes,
+      dueDate: opts.dueDate,
+      periodStart: opts.periodStart,
+      periodEnd: opts.periodEnd,
+      clientName: opts.clientName,
+      multilogItems: opts.multilogItems,
+      processosOmega: opts.processosOmega,
+      valorInssRetido: opts.valorInssRetido,
+      incluirSimples: opts.optanteSimplesNacional !== false,
+    });
   const tomadorInSp = ibgeTomador === FOCUS_CODIGO_MUNICIPIO_SP;
-  if (tomadorInSp && ccmTomador) tomador.inscricao_municipal = ccmTomador;
-  if (phone.length >= 10) tomador.telefone = phone;
-
-  const municipioPrestacao = tomadorInSp ? FOCUS_CODIGO_MUNICIPIO_SP : ibgeTomador;
-  const natureza = tomadorInSp ? FOCUS_NATUREZA_OPERACAO : FOCUS_NATUREZA_FORA_MUNICIPIO;
-
-  const servico: Record<string, any> = {
-    valor_servicos: value,
-    iss_retido: ISS_RETAIN,
-    item_lista_servico: FOCUS_ITEM_LISTA_SERVICO,
-    codigo_tributario_municipio: CODIGO_SERVICO_MUNICIPAL_CODE,
-    discriminacao: buildServicoDiscriminacao({ description: opts.description }),
-    codigo_municipio: municipioPrestacao,
-    aliquota: ISS_ALIQUOTA,
-    base_calculo: value,
-    valor_iss: issValor,
-  };
-  if (ISS_RETAIN) servico.valor_iss_retido = issValor;
-  if (inssValor > 0) servico.valor_inss = inssValor;
-
+  const prestacaoInformada = onlyDigits(opts.codigoMunicipioPrestacao || "");
+  const municipioPrestacao = prestacaoInformada.length === 7
+    ? prestacaoInformada
+    : (tomadorInSp ? FOCUS_CODIGO_MUNICIPIO_SP : ibgeTomador);
   const optante = opts.optanteSimplesNacional !== false;
-  return {
-    data_emissao: opts.dataEmissaoIso || new Date().toISOString(),
-    natureza_operacao: natureza,
-    optante_simples_nacional: optante,
-    incentivador_cultural: false,
-    regime_especial_tributacao: optante ? FOCUS_REGIME_SIMPLES_ME_EPP : undefined,
-    prestador: {
-      cnpj: cleanCnpj(opts.prestadorCnpj || TORRES_CNPJ),
-      inscricao_municipal: prestadorIm,
-      codigo_municipio: FOCUS_CODIGO_MUNICIPIO_SP,
-    },
-    tomador,
-    servico,
+  const aliquotaInformada = Number(opts.aliquotaSimples);
+  const aliquotaSimples = optante
+    ? (Number.isFinite(aliquotaInformada) && aliquotaInformada > 0 && aliquotaInformada <= 100
+      ? Number(aliquotaInformada.toFixed(2))
+      : ISS_ALIQUOTA)
+    : null;
+  const inssRetido = Number(opts.valorInssRetido);
+  const valorCp = Number.isFinite(inssRetido) && inssRetido > 0 ? Number(inssRetido.toFixed(2)) : null;
+  const when = focusDpsTimestamps(opts.dataEmissaoIso);
+
+  const payload: Record<string, any> = {
+    data_emissao: when.data_emissao,
+    data_competencia: when.data_competencia,
+    codigo_municipio_emissora: FOCUS_CODIGO_MUNICIPIO_SP,
+    cnpj_prestador: cleanCnpj(opts.prestadorCnpj || TORRES_CNPJ),
+    inscricao_municipal_prestador: prestadorIm,
+    codigo_opcao_simples_nacional: optante ? FOCUS_OPCAO_SIMPLES_ME_EPP : FOCUS_OPCAO_SIMPLES_NAO_OPTANTE,
+    regime_especial_tributacao: FOCUS_REGIME_ESPECIAL_NENHUM,
+    razao_social_tomador: String(opts.tomador.name || "").trim().slice(0, 150),
+    codigo_municipio_tomador: ibgeTomador,
+    cep_tomador: cep,
+    logradouro_tomador: String(opts.tomador.address || "").trim().slice(0, 255),
+    numero_tomador: extractStreetNumber(opts.tomador.address, opts.tomador.addressNumber) || "S/N",
+    bairro_tomador: String(opts.tomador.bairro || "Centro").trim().slice(0, 60),
+    codigo_municipio_prestacao: municipioPrestacao,
+    codigo_tributacao_nacional_iss: servico.codigo_tributacao_nacional_iss,
+    codigo_nbs: servico.codigo_nbs,
+    descricao_servico: descricaoServico,
+    valor_servico: value,
+    tributacao_iss: FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
+    tipo_retencao_iss: ISS_RETAIN ? FOCUS_TIPO_RETENCAO_ISS_TOMADOR : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO,
   };
+  if (optante) {
+    // E0166: ME/EPP tem de informar o regime de apuração do Simples.
+    payload.regime_tributario_simples_nacional = FOCUS_REGIME_APURACAO_SN_PELO_SIMPLES;
+    // E0712: ME/EPP não pode usar indTotTrib. O total vai em pTotTribSN.
+    payload.percentual_total_tributos_simples_nacional = aliquotaSimples;
+    // E0625 e E0631: sem retenção de ISS, a alíquota municipal não entra na DPS.
+    if (ISS_RETAIN && aliquotaSimples != null) payload.percentual_aliquota_relativa_municipio = aliquotaSimples;
+  } else {
+    payload.indicador_total_tributacao = FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA;
+  }
+  if (digits.length === 14) payload.cnpj_tomador = digits;
+  else payload.cpf_tomador = digits;
+  const email = focusTomadorEmail(opts.tomador.email);
+  if (email) payload.email_tomador = email;
+  const complemento = sanitizeComplement(opts.tomador.complement);
+  if (complemento) payload.complemento_tomador = complemento;
+  if (tomadorInSp && ccmTomador) payload.inscricao_municipal_tomador = ccmTomador;
+  if (phone.length >= 10) payload.telefone_tomador = phone;
+  if (valorCp != null) payload.valor_cp = valorCp;
+  return payload;
 }
 
 export function focusCancelJustification(reason?: string | null): string {
