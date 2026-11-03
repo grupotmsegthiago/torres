@@ -281,7 +281,7 @@ A tela e a carga seguem a regra da seção 4. O pacote de exemplo que comparava 
 |---|---|
 | Regra pura (preço, raio, texto da nota, semana, infração) | `shared/anp-onde-abastecer.ts` |
 | Tabelas satélite | `anp_fuel_prices`, `anp_station_quality`, `anp_cep_geo` |
-| Carga semanal, segunda 04:20 BRT | `runAnpStationsCron` |
+| Carga a cada 30 minutos, e de novo no minuto enquanto a base estiver vazia | `runAnpStationsCron` / `runAnpStationsIfEmptyCron` |
 | Leitura do agente | `GET /api/mobile/onde-abastecer` |
 | Carga manual da diretoria | `POST /api/admin/anp-stations/sync` |
 | Botão e tela | home mobile e `/mobile/onde-abastecer` |
@@ -294,7 +294,7 @@ O campo Posto do lançamento começa com o nome guardado nesta tela, na mesma se
 
 A volta da tela é `/mobile`. A API manda `emptyReason`. O aviso âmbar só sai de `isAnpBaseNotLoaded`: a resposta precisa estar em `mode === "empty"` e o motivo ser `not_loaded`. Sem o campo, a frase "ainda não foi carregado" ainda vale. Cidade, raio e CEP em localização ficam no aviso neutro. Cartão com preço ou posto mais próximo nunca usa o âmbar. Os marcadores da tela são `empty-not-loaded` e `empty-no-station`.
 
-O checklist com login (carga admin ou segunda 04:20, âmbar antes da qualidade, cartão com GPS, nome do posto no lançamento) está no relatório de entrega de 3 de novembro de 2026. Ele não foi executado sem sessão.
+O checklist com login (carga admin ou bucket de 30 minutos, âmbar antes da qualidade, cartão com GPS, nome do posto no lançamento) está no relatório de entrega de 3 de novembro de 2026. Ele não foi executado sem sessão.
 
 ## 13. Pontos úteis para a comparação
 

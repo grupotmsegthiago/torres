@@ -153,7 +153,7 @@ export default function OndeAbastecerPage() {
                 <AlertCircle className="w-8 h-8 mx-auto text-amber-600" />
                 <h2 className="text-base font-bold text-amber-900">Histórico da ANP ainda não carregado</h2>
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  {payload?.message || "A sincronização roda na segunda-feira às 04:20 ou pode ser disparada por um administrador."}
+                  {payload?.message || "A sincronização roda a cada 30 minutos ou pode ser disparada por um administrador."}
                 </p>
               </div>
             ) : (

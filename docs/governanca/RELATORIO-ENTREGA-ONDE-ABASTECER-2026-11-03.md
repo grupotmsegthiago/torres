@@ -14,7 +14,7 @@
 - Botão **Onde abastecer** na home do agente e tela `/mobile/onde-abastecer`
 - O lançamento de abastecimento começa com o nome do posto sugerido, na mesma sessão
 - Tabelas satélite `anp_fuel_prices`, `anp_station_quality` e `anp_cep_geo`
-- Carga semanal na segunda, 04:20 BRT, e carga manual `POST /api/admin/anp-stations/sync`
+- Carga a cada 30 minutos no bucket que já existia, tentativa no minuto seguinte enquanto a base estiver vazia, e carga manual `POST /api/admin/anp-stations/sync`
 
 ### O que NÃO foi alterado
 - Custo do abastecimento, regra dos 70%, fotos, TicketLog, balanço e boletim
@@ -48,7 +48,7 @@ O agente ganha um botão que indica posto perto, com os dois preços da última 
 - Webhook/auth/RLS tocados? A leitura exige login. A carga manual exige perfil admin.
 
 ### Backup / ponto de restauração
-- Rollback: tirar o card da home e o agendamento das 04:20. As tabelas novas não alimentam custo.
+- Rollback: tirar o card da home e a chamada no bucket de 30 minutos. As tabelas novas não alimentam custo.
 
 ### Riscos remanescentes
 - O CSV não traz coordenada. O raio usa o CEP, até 40 endereços novos por abertura.
@@ -64,7 +64,7 @@ O agente ganha um botão que indica posto perto, com os dois preços da última 
 
 Pré-requisito: o ambiente já precisa estar com esta branch no ar. Sem isso, `POST /api/admin/anp-stations/sync` e `/mobile/onde-abastecer` não existem.
 
-1. Carga inicial. Com perfil admin, `POST /api/admin/anp-stations/sync`. O JSON de sucesso traz `prices`, `stations`, `flagged` e `csvUrl`. `prices` e `stations` acima de zero e `flagged` com os CNPJs da fiscalização. Alternativa: esperar a segunda às 04:20 no horário de Brasília e conferir o mesmo preenchimento em `anp_fuel_prices` e `anp_station_quality`.
+1. Carga inicial. Com perfil admin, `POST /api/admin/anp-stations/sync`. O JSON de sucesso traz `prices`, `stations`, `flagged` e `csvUrl`. `prices` e `stations` acima de zero e `flagged` com os CNPJs da fiscalização. Sem o POST, o bucket de 30 minutos chama a mesma função, e o bucket do minuto tenta de novo enquanto não houver qualidade conhecida. Conferir `anp_fuel_prices` e `anp_station_quality`.
 2. Antes da carga, em banco ainda sem qualidade conhecida. Abrir `/mobile/onde-abastecer` com GPS. O bloco `empty-not-loaded` (âmbar, “Histórico da ANP ainda não carregado”) aparece quando a cidade tem preço importado e `quality_known` ainda é falso, e também quando o país inteiro está com zero postos de qualidade conhecida (tabela vazia). Cidade sem nenhuma linha, depois que a base nacional já tem qualidade conhecida, cai em `empty-no-station`.
 3. Fluxo com GPS depois da carga. O cartão `card-posto-principal` mostra distância, “cerca de” minutos (25 km/h), gasolina e álcool, e o selo `text-qualidade` dos últimos 2 anos. “Ver outros postos” (`button-ver-outros`) abre a lista; Fechar é `button-fechar-outros`.
 4. Passagem para o lançamento. Tocar em Waze ou Google Maps grava o nome em `sessionStorage` (`torres.ondeAbastecer.stationName`). Voltar e abrir `/mobile/abastecimento`: o campo `input-station` (Posto / Local) vem com esse nome. A regra dos 70% e o R$/litro continuam só com o que for digitado na bomba. O preço da ANP não entra no custo.

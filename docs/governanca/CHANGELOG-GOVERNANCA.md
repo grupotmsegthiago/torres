@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Carga da ANP a cada 30 minutos
+
+- O bucket `thirty-min` já existia (Vercel Cron e `node-cron`). Ele passa a chamar `syncAnpReference`, a mesma carga do `POST /api/admin/anp-stations/sync`.
+- Enquanto não houver posto com qualidade conhecida, o bucket `minute` tenta essa carga uma vez. Um lock em `system_settings` impede outra carga paralela por 20 minutos.
+- Saiu o horário único de segunda 04:20. O arquivo da ANP é mensal; a repetição só regrava as mesmas linhas.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Onde abastecer distinguia base vazia de raio sem posto
 
 - Publicado na `main` e na `dev` em 03/11/2026, horário de Brasília.

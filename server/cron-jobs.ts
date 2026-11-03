@@ -1063,17 +1063,66 @@ export async function runAgentCentralEscalationCron(): Promise<void> {
   });
 }
 
-/** Segunda 04:20 BRT. Preço semanal e fiscalização da ANP. Fail-soft. */
+const ANP_SYNC_LOCK = "anp_sync_lock";
+const ANP_SYNC_LOCK_MS = 20 * 60 * 1000;
+
+/** Evita duas cargas ao mesmo tempo. O lock em memória não atravessa as funções da Vercel. */
+async function claimAnpSyncLock(): Promise<boolean> {
+  const stamp = new Date().toISOString();
+  const { error } = await supabaseAdmin.from("system_settings").insert({ key: ANP_SYNC_LOCK, value: stamp });
+  if (!error) return true;
+  if (error.code !== "23505") {
+    log(`[anp] lock não reservado: ${error.message}`, "cron");
+    return false;
+  }
+  const { data, error: readError } = await supabaseAdmin
+    .from("system_settings")
+    .select("updated_at, value")
+    .eq("key", ANP_SYNC_LOCK)
+    .maybeSingle();
+  if (readError || !data) return false;
+  const at = new Date(data.updated_at || data.value).getTime();
+  if (Number.isFinite(at) && Date.now() - at < ANP_SYNC_LOCK_MS) return false;
+  const { error: updateError } = await supabaseAdmin
+    .from("system_settings")
+    .update({ value: stamp, updated_at: stamp })
+    .eq("key", ANP_SYNC_LOCK);
+  if (updateError) return false;
+  return true;
+}
+
+async function releaseAnpSyncLock(): Promise<void> {
+  await supabaseAdmin.from("system_settings").delete().eq("key", ANP_SYNC_LOCK);
+}
+
+/** A cada 30 minutos, no bucket que já existe. Fail-soft. A carga manual continua em POST /api/admin/anp-stations/sync. */
 export async function runAnpStationsCron(): Promise<void> {
   await withCronLock("anp-stations", async () => {
+    if (!(await claimAnpSyncLock())) return;
     try {
       const { syncAnpReference } = await import("./lib/anp-onde-abastecer");
       const r = await syncAnpReference();
       log(`[anp] carga ok preços=${r.prices} postos=${r.stations} marcados=${r.flagged}`, "cron");
+      await releaseAnpSyncLock();
     } catch (e: any) {
       log(`[anp] carga interrompida: ${e?.message || e}`, "cron");
     }
   });
+}
+
+/** Enquanto não houver qualidade conhecida, tenta a mesma carga. O minuto seguinte não dispara outra. */
+export async function runAnpStationsIfEmptyCron(): Promise<void> {
+  if (!isSupabaseHealthy()) return;
+  const { count, error } = await supabaseAdmin
+    .from("anp_station_quality")
+    .select("cnpj", { count: "exact", head: true })
+    .eq("quality_known", true);
+  if (error) {
+    log(`[anp] contagem da base: ${error.message}`, "cron");
+    return;
+  }
+  if ((count ?? 0) > 0) return;
+  await runAnpStationsCron();
 }
 
 /** Lotes: base64 inline → Storage (não apaga evidências). */

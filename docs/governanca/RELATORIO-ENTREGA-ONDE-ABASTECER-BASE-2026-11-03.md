@@ -43,7 +43,7 @@
 | `npx tsx --test shared/anp-onde-abastecer.test.ts server/lib/anp-fiscal-xlsx.test.ts` | 10 pass |
 
 ### Resultados (negócio)
-Quem abrir Onde abastecer com a base ainda vazia vê que o histórico não foi carregado, em vez de "nenhum posto neste raio". O posto só aparece depois da carga (admin ou segunda às 04:20). O valor lançado em Abastecer continua sendo o da bomba.
+Quem abrir Onde abastecer com a base ainda vazia vê que o histórico não foi carregado. O posto aparece depois que `syncAnpReference` gravar preço e qualidade. Essa carga roda a cada 30 minutos, também no minuto seguinte enquanto a base estiver vazia, e no `POST /api/admin/anp-stations/sync`. O valor lançado em Abastecer continua sendo o da bomba.
 
 ### Segurança
 - Secrets no diff? Não
