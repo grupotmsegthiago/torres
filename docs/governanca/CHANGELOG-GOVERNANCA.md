@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Onde abastecer com a ANP publicado
+
+- O botão **Onde abastecer** entra na home do agente, com preço e histórico de qualidade da ANP.
+- A base de preços não vem no deploy. A carga é na segunda às 04:20 (America/Sao_Paulo) ou em `POST /api/admin/anp-stations/sync`.
+- Não altera o custo do abastecimento.
+
 ## 2026-11-03 — Apólice do Mobi é o contrato já anexado
 
 - O Mobi pedia apólice e contrato separados. Quem anexava o contrato continuava vermelho, com a apólice vazia.
