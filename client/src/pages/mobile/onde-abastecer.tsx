@@ -1,7 +1,8 @@
 import MobileLayout from "@/components/mobile/layout";
+import { loadGoogleMapsScript } from "@/components/places-autocomplete";
 import { authFetch } from "@/lib/queryClient";
-import { isAnpBaseNotLoaded, ONDE_ABASTECER_RADIUS_STEPS_KM, ONDE_ABASTECER_STATION_KEY, type EmptyReason } from "@shared/anp-onde-abastecer";
-import { useEffect, useState } from "react";
+import { catalogPhrase, isAnpBaseNotLoaded, ONDE_ABASTECER_RADIUS_STEPS_KM, ONDE_ABASTECER_STATION_KEY, type AnpCatalog, type EmptyReason } from "@shared/anp-onde-abastecer";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { AlertCircle, ArrowLeft, Loader2, MapPin, ShieldCheck } from "lucide-react";
 
@@ -27,6 +28,118 @@ interface Payload {
   stations: StationCard[];
   pendingGeo: number;
   radiusKm?: number;
+  cityLabel?: string | null;
+  origin?: { lat: number; lng: number };
+  catalog?: AnpCatalog;
+}
+
+function mapFrame(lat: number, lng: number, radiusKm: number): string {
+  const dLat = Math.max(radiusKm, 1) / 111;
+  const dLng = Math.max(radiusKm, 1) / (111 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+  const west = lng - dLng;
+  const east = lng + dLng;
+  const south = lat - dLat;
+  const north = lat + dLat;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${west}%2C${south}%2C${east}%2C${north}&layer=mapnik&marker=${lat}%2C${lng}`;
+}
+
+function PositionMap({
+  lat,
+  lng,
+  stations,
+  radiusKm,
+}: {
+  lat: number;
+  lng: number;
+  stations: StationCard[];
+  radiusKm: number;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const [osm, setOsm] = useState(!import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+  const markerKey = stations.map((station) => station.cnpj).join(",");
+
+  useEffect(() => {
+    if (osm) return;
+    let cancelled = false;
+    let drew = false;
+    const timer = window.setTimeout(() => {
+      if (!cancelled && !drew) setOsm(true);
+    }, 5000);
+    loadGoogleMapsScript(() => {
+      if (cancelled || !box.current || !window.google?.maps?.Map) return;
+      drew = true;
+      window.clearTimeout(timer);
+      const g = window.google.maps;
+      const map = new g.Map(box.current, {
+        center: { lat, lng },
+        zoom: 14,
+        disableDefaultUI: true,
+        zoomControl: true,
+        gestureHandling: "greedy",
+        clickableIcons: false,
+      });
+      const bounds = new g.LatLngBounds();
+      bounds.extend({ lat, lng });
+      new g.Marker({
+        map,
+        position: { lat, lng },
+        title: "Sua posição",
+        zIndex: 20,
+        icon: g.SymbolPath ? {
+          path: g.SymbolPath.CIRCLE,
+          scale: 9,
+          fillColor: "#2563eb",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        } : undefined,
+      });
+      for (const station of stations) {
+        if (!Number.isFinite(station.latitude) || !Number.isFinite(station.longitude)) continue;
+        bounds.extend({ lat: station.latitude, lng: station.longitude });
+        new g.Marker({
+          map,
+          position: { lat: station.latitude, lng: station.longitude },
+          title: station.name,
+          icon: g.SymbolPath ? {
+            path: g.SymbolPath.CIRCLE,
+            scale: 7,
+            fillColor: "#059669",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          } : undefined,
+        });
+      }
+      if (g.Circle) {
+        new g.Circle({
+          map,
+          center: { lat, lng },
+          radius: radiusKm * 1000,
+          strokeColor: "#059669",
+          strokeOpacity: 0.9,
+          strokeWeight: 1,
+          fillColor: "#059669",
+          fillOpacity: 0.08,
+        });
+      }
+      if (stations.length > 0) map.fitBounds(bounds, 28);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [lat, lng, markerKey, radiusKm, osm, stations]);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-100" data-testid="map-posicao">
+      {osm ? (
+        <iframe title="Mapa da posição" src={mapFrame(lat, lng, radiusKm)} className="h-56 w-full border-0" />
+      ) : (
+        <div ref={box} className="h-56 w-full" />
+      )}
+    </div>
+  );
 }
 
 function RadiusRuler({ activeKm, opening }: { activeKm: number | null; opening: boolean }) {
@@ -107,6 +220,7 @@ export default function OndeAbastecerPage() {
   const [locating, setLocating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [payload, setPayload] = useState<Payload | null>(null);
+  const [fix, setFix] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
@@ -122,7 +236,8 @@ export default function OndeAbastecerPage() {
         async (position) => {
           if (cancelled) return;
           try {
-            const { latitude, longitude } = position.coords;
+            const { latitude, longitude, accuracy } = position.coords;
+            setFix({ lat: latitude, lng: longitude, accuracy: Number.isFinite(accuracy) ? accuracy : null });
             const res = await authFetch(`/api/mobile/onde-abastecer?lat=${latitude}&lng=${longitude}`);
             const data = await res.json();
             if (!res.ok) {
@@ -178,6 +293,26 @@ export default function OndeAbastecerPage() {
             activeKm={payload?.radiusKm ?? null}
             opening={loading || payload?.emptyReason === "locating"}
           />
+        )}
+
+        {fix && (
+          <div className="px-4 pt-3 space-y-2" data-testid="bloco-mapa">
+            <PositionMap
+              lat={fix.lat}
+              lng={fix.lng}
+              stations={payload?.stations ?? []}
+              radiusKm={payload?.radiusKm ?? 5}
+            />
+            <p className="text-xs font-semibold text-neutral-800" data-testid="text-posicao-confirmada">
+              Posição confirmada · {fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}
+              {fix.accuracy != null ? ` · precisão ${Math.round(fix.accuracy)} m` : ""}
+            </p>
+            <p className="text-xs text-neutral-600" data-testid="text-lista-sistema">
+              {payload?.catalog
+                ? catalogPhrase(payload.catalog, payload.cityLabel ?? null)
+                : "Conferindo a lista no sistema..."}
+            </p>
+          </div>
         )}
 
         <div className="p-4 flex-1 space-y-4">
@@ -294,7 +429,7 @@ export default function OndeAbastecerPage() {
             <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
               <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[85vh] overflow-y-auto p-5 space-y-4 shadow-2xl">
                 <div className="flex justify-between items-center border-b border-neutral-100 pb-3">
-                  <h3 className="font-bold text-base text-neutral-900">Outros postos no raio de 5 km</h3>
+                  <h3 className="font-bold text-base text-neutral-900">Outros postos no raio de {payload?.radiusKm ?? 5} km</h3>
                   <button
                     type="button"
                     onClick={() => setShowAll(false)}

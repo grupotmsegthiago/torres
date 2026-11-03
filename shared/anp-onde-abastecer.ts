@@ -173,6 +173,32 @@ export function pickRadiusStep(distancesKm: number[], steps: readonly number[] =
 export function noStationMessage(radiusKm: number): string {
   return `Nenhum posto com histórico limpo em até ${radiusKm} km.`;
 }
+
+/** Contagem da lista ANP já gravada. Satélite: não é custo de abastecimento. */
+export interface AnpCatalog {
+  stations: number;
+  known: number;
+  withPoint: number;
+  inPlace: number;
+  clean: number;
+}
+
+function ptInt(value: number): string {
+  return Math.max(0, Math.round(value)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+/** Frase que confirma que a lista está no sistema, com o recorte da cidade do GPS. */
+export function catalogPhrase(
+  catalog: Pick<AnpCatalog, "stations" | "known" | "inPlace">,
+  cityLabel: string | null,
+): string {
+  const total = ptInt(catalog.stations);
+  if (catalog.stations <= 0) return "A lista de postos ainda não está no sistema.";
+  if (catalog.known <= 0) return `Lista no sistema: ${total} postos. Histórico de qualidade ainda não entrou.`;
+  const here = ptInt(catalog.inPlace);
+  const where = cityLabel ? ` em ${cityLabel}` : "";
+  return `Lista no sistema: ${total} postos, ${here}${where}.`;
+}
 export const ANP_YEAR_PAGE = "https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan";
 export const ANP_FISCAL_XLSX_URL =
   "https://www.gov.br/anp/pt-br/centrais-de-conteudo/paineis-dinamicos-da-anp/arquivos-dados-brutos-do-painel-dinamico-da-fiscalizacao-do-abastecimento-da-sfi/dados-fisc-a-partir-2019.xlsx";

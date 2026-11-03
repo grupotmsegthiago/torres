@@ -10,6 +10,7 @@ import {
   isCepInBand,
   isMunicipalCentroid,
   maxRadiusStepKm,
+  catalogPhrase,
   noStationMessage,
   orderCepsByProximity,
   pickRadiusStep,
@@ -150,6 +151,21 @@ test("busca do posto usa o endereço, não só o CEP", () => {
   assert.equal(
     streetGeocodeQuery("11823", "Avenida Raimundo Pereira de Magalhães", "São Paulo", "SP"),
     "11823 Avenida Raimundo Pereira de Magalhães, São Paulo, SP, Brasil",
+  );
+});
+
+test("a frase da lista confirma o que está no sistema", () => {
+  assert.equal(
+    catalogPhrase({ stations: 0, known: 0, inPlace: 0 }, null),
+    "A lista de postos ainda não está no sistema.",
+  );
+  assert.equal(
+    catalogPhrase({ stations: 5940, known: 5940, inPlace: 290 }, "São Paulo"),
+    "Lista no sistema: 5.940 postos, 290 em São Paulo.",
+  );
+  assert.equal(
+    catalogPhrase({ stations: 5940, known: 0, inPlace: 290 }, "São Paulo"),
+    "Lista no sistema: 5.940 postos. Histórico de qualidade ainda não entrou.",
   );
 });
 

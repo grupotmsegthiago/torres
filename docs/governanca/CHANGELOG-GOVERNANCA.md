@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Mapa da posição no Onde abastecer
+
+- A tela mostra o mapa do GPS assim que a posição chega, com a frase "Posição confirmada" e a precisão em metros.
+- A mesma resposta traz a contagem da lista já gravada: postos no sistema e quantos estão na cidade do GPS.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Régua de raio no Onde abastecer
 
 - A busca não para mais em 5 km. Os degraus são 5, 10, 15 e 25 km. Vale o menor degrau que já tem posto localizado com histórico limpo.

@@ -21,6 +21,7 @@ import {
   rankStations,
   stationGeocodeQuery,
   streetGeocodeQuery,
+  type AnpCatalog,
   type AnpPriceRow,
   type OndeAbastecerEmptyReason,
   type RankResult,
@@ -35,9 +36,12 @@ const NOMINATIM_BUDGET = 8;
 export interface OndeAbastecerPayload extends RankResult {
   radiusKm: number;
   city: string | null;
+  cityLabel: string | null;
   state: string | null;
   pendingGeo: number;
   emptyReason: OndeAbastecerEmptyReason | null;
+  origin: { lat: number; lng: number };
+  catalog: AnpCatalog;
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -173,7 +177,7 @@ interface StationRow {
   state: string | null;
 }
 
-async function reverseCity(lat: number, lng: number): Promise<{ city: string; state: string; cep: string } | null> {
+async function reverseCity(lat: number, lng: number): Promise<{ city: string; label: string; state: string; cep: string } | null> {
   const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`;
   const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
   if (!res.ok) return null;
@@ -183,7 +187,19 @@ async function reverseCity(lat: number, lng: number): Promise<{ city: string; st
   const iso = address["ISO3166-2-lvl4"] || "";
   const state = iso.includes("-") ? iso.split("-").pop() || "" : "";
   if (!city || !state) return null;
-  return { city: normalizePlace(city), state: state.toUpperCase(), cep: cepDigits(address.postcode) };
+  return { city: normalizePlace(city), label: city, state: state.toUpperCase(), cep: cepDigits(address.postcode) };
+}
+
+async function nationalCatalog(): Promise<Pick<AnpCatalog, "stations" | "known" | "withPoint">> {
+  const [all, known, pointed] = await Promise.all([
+    supabaseAdmin.from("anp_station_quality").select("cnpj", { count: "exact", head: true }),
+    supabaseAdmin.from("anp_station_quality").select("cnpj", { count: "exact", head: true }).eq("quality_known", true),
+    supabaseAdmin.from("anp_station_quality").select("cnpj", { count: "exact", head: true }).not("latitude", "is", null),
+  ]);
+  if (all.error) throw new Error(all.error.message);
+  if (known.error) throw new Error(known.error.message);
+  if (pointed.error) throw new Error(pointed.error.message);
+  return { stations: all.count ?? 0, known: known.count ?? 0, withPoint: pointed.count ?? 0 };
 }
 
 type FoundPoint = { lat: number; lng: number; houseNumber: string | null; street: string | null };
@@ -342,6 +358,8 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 export async function recommendStations(lat: number, lng: number): Promise<OndeAbastecerPayload> {
+  const base = await nationalCatalog();
+  const origin = { lat, lng };
   const empty = (
     emptyReason: OndeAbastecerEmptyReason,
     message: string,
@@ -349,6 +367,9 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     state: string | null = null,
     pendingGeo = 0,
     radiusKm = maxRadiusStepKm(),
+    cityLabel: string | null = null,
+    inPlace = 0,
+    clean = 0,
   ): OndeAbastecerPayload => ({
     mode: "empty",
     emptyReason,
@@ -356,8 +377,11 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     stations: [],
     radiusKm,
     city,
+    cityLabel,
     state,
     pendingGeo,
+    origin,
+    catalog: { ...base, inPlace, clean },
   });
 
   const place = await reverseCity(lat, lng);
@@ -388,19 +412,14 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
   for (const row of (cityRows ?? []) as StationRow[]) pool.set(row.cnpj, row);
   for (const row of bandRows) pool.set(row.cnpj, row);
   if (pool.size === 0) {
-    const { count, error: knownError } = await supabaseAdmin
-      .from("anp_station_quality")
-      .select("cnpj", { count: "exact", head: true })
-      .eq("quality_known", true);
-    if (knownError) throw new Error(knownError.message);
-    const reason = emptyReasonForUnmatchedCity(count ?? 0);
+    const reason = emptyReasonForUnmatchedCity(base.known);
     const message = reason === "not_loaded"
       ? "O histórico de qualidade da ANP ainda não foi carregado."
       : noStationMessage(maxRadiusStepKm());
-    return empty(reason, message, place.city, place.state);
+    return empty(reason, message, place.city, place.state, 0, maxRadiusStepKm(), place.label, 0, 0);
   }
   if ([...pool.values()].every((row) => !row.quality_known)) {
-    return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state);
+    return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state, 0, maxRadiusStepKm(), place.label, pool.size, 0);
   }
 
   const searchKm = maxRadiusStepKm();
@@ -486,6 +505,9 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
       place.state,
       pendingLeft,
       searchKm,
+      place.label,
+      pool.size,
+      merged.size,
     );
   }
   const near = measured.filter((item) => item.distanceKm <= step);
@@ -529,8 +551,11 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     ...ranked,
     radiusKm: step,
     city: place.city,
+    cityLabel: place.label,
     state: place.state,
     pendingGeo: pendingLeft,
     emptyReason: null,
+    origin,
+    catalog: { ...base, inPlace: pool.size, clean: merged.size },
   };
 }
