@@ -2,6 +2,7 @@
 
 ## 2026-11-03 — Onde abastecer distinguia base vazia de raio sem posto
 
+- Publicado na `main` e na `dev` em 03/11/2026, horário de Brasília.
 - Com as tabelas da ANP em zero linhas, a cidade do GPS caía em "Nenhum posto com histórico limpo neste raio".
 - Sem nenhum posto com `quality_known` no país, a resposta é `not_loaded` (cartão âmbar). Cidade sem posto, depois da carga, continua `no_station`.
 - Posto ainda sem coordenada é buscado pelo endereço. O CEP da BrasilAPI fica como reserva: em São Paulo ele repete o centro do município e o raio de 5 km em Pirituba ficava vazio.

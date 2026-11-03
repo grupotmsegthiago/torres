@@ -3,7 +3,7 @@
 **Data:** 3 de novembro de 2026, horário de Brasília
 **Branch:** `cursor/anp-base-vazia-b534`
 **Ambiente validado:** regra local e contagem no banco. A tela do celular não foi aberta: neste ambiente não há login.
-**Publicou?** Não. O código fica na branch. As tabelas seguem vazias: a conexão SQL deste ambiente é somente leitura, e aqui não há chave do serviço para chamar a carga.
+**Publicou?** Sim — `main` e `dev` em 03/11/2026, horário de Brasília. As tabelas seguem vazias: a conexão SQL deste ambiente é somente leitura, e aqui não há chave do serviço para chamar a carga.
 
 ### Reutilização (D11 / P13)
 - Busca realizada: `recommendStations`, `isAnpBaseNotLoaded`, `parseAnpPriceCsv`, `fiscalFlagsFromXlsx`, `syncAnpReference`, `anp_station_quality`
@@ -55,4 +55,4 @@ Quem abrir Onde abastecer com a base ainda vazia vê que o histórico não foi c
 ### Riscos remanescentes
 - O endereço longo às vezes cai no meio da rua, não no número. O raio de 5 km usa esse ponto.
 - "Cerca de X min" segue a 25 km/h.
-- A tela em produção continua com a frase antiga até este código ser publicado. Sem a carga, o cartão segue vazio: âmbar se este código estiver no ar, cinza se não estiver.
+- Sem a carga, o cartão segue vazio. Com este código no ar, o aviso é o âmbar de histórico não carregado.
