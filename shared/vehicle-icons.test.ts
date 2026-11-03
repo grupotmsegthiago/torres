@@ -57,14 +57,18 @@ test("vehicleRequiresInsuranceDocs: só MOBI", () => {
   assert.equal(vehicleRequiresInsuranceDocs("kwid", "RENAULT", "KWID"), false);
 });
 
-test("isMobiInsuranceIncomplete: MOBI vermelho sem apólice ou contrato; Polo nunca", () => {
+test("isMobiInsuranceIncomplete: o contrato já é a apólice; Polo nunca", () => {
   assert.equal(isMobiInsuranceIncomplete({
     iconType: "mobi", brand: "FIAT", model: "MOBI",
   }), true);
+  assert.equal(isMobiInsuranceIncomplete({
+    iconType: "mobi", brand: "FIAT", model: "MOBI LIKE",
+    insuranceContractFile: "13/contrato.pdf",
+  }), false);
   assert.equal(isMobiInsuranceIncomplete({
     iconType: "mobi", brand: "FIAT", model: "MOBI",
     insurancePolicyFile: "1/apolice.pdf",
-  }), true);
+  }), false);
   assert.equal(isMobiInsuranceIncomplete({
     iconType: "mobi", brand: "FIAT", model: "MOBI",
     insurancePolicyFile: "1/apolice.pdf",

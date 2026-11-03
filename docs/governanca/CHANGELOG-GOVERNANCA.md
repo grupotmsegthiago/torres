@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Apólice do Mobi é o contrato já anexado
+
+- O Mobi pedia apólice e contrato separados. Quem anexava o contrato continuava vermelho, com a apólice vazia.
+- O contrato já gravado vale como apólice. A tela do Mobi fica com um anexo só.
+- Um upload novo grava o arquivo na apólice e, se o contrato estiver vazio, também nessa coluna.
+
 ## 2026-11-03 — NFS-e preservada depois da confirmação
 
 - O dono confirmou que a descrição curta e a DPS nacional funcionaram. A regra ficou em `04-REGRAS-NEGOCIO-CRITICAS.md`.

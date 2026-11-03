@@ -114,7 +114,7 @@ export function inferVehicleIcon(brand?: string | null, model?: string | null): 
   return null;
 }
 
-/** MOBI precisa de apólice + contrato de seguro; Polo (e Kwid) não. */
+/** MOBI precisa da apólice de seguro (o contrato anexado vale como apólice). Polo e Kwid não. */
 export function vehicleRequiresInsuranceDocs(
   iconType?: string | null,
   brand?: string | null,
@@ -128,7 +128,24 @@ export function isInsuranceDocPresent(value?: string | null): boolean {
   return v.length > 0 && v !== "null" && v !== "undefined";
 }
 
-/** True = MOBI sem apólice ou sem contrato (lista em vermelho). Polo nunca entra. */
+/**
+ * O contrato anexado já é a apólice. Um dos dois caminhos basta.
+ * Prefere a coluna da apólice; se ela estiver vazia, usa o contrato já salvo.
+ */
+export function mobiInsuranceFile(opts: {
+  insurancePolicyFile?: string | null;
+  insuranceContractFile?: string | null;
+}): { path: string; kind: "policy" | "contract" } | null {
+  if (isInsuranceDocPresent(opts.insurancePolicyFile)) {
+    return { path: String(opts.insurancePolicyFile).trim(), kind: "policy" };
+  }
+  if (isInsuranceDocPresent(opts.insuranceContractFile)) {
+    return { path: String(opts.insuranceContractFile).trim(), kind: "contract" };
+  }
+  return null;
+}
+
+/** True = MOBI sem nenhum anexo de seguro (lista em vermelho). Polo nunca entra. */
 export function isMobiInsuranceIncomplete(opts: {
   iconType?: string | null;
   brand?: string | null;
@@ -137,5 +154,5 @@ export function isMobiInsuranceIncomplete(opts: {
   insuranceContractFile?: string | null;
 }): boolean {
   if (!vehicleRequiresInsuranceDocs(opts.iconType, opts.brand, opts.model)) return false;
-  return !isInsuranceDocPresent(opts.insurancePolicyFile) || !isInsuranceDocPresent(opts.insuranceContractFile);
+  return mobiInsuranceFile(opts) == null;
 }
