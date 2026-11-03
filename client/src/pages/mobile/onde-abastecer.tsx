@@ -1,9 +1,9 @@
 import MobileLayout from "@/components/mobile/layout";
 import { authFetch } from "@/lib/queryClient";
-import { ONDE_ABASTECER_STATION_KEY } from "@shared/anp-onde-abastecer";
+import { isAnpBaseNotLoaded, ONDE_ABASTECER_STATION_KEY, type OndeAbastecerEmptyReason } from "@shared/anp-onde-abastecer";
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { AlertCircle, ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2, MapPin, ShieldCheck } from "lucide-react";
 
 interface StationCard {
   cnpj: string;
@@ -25,6 +25,7 @@ interface Payload {
   message: string | null;
   stations: StationCard[];
   pendingGeo: number;
+  emptyReason?: OndeAbastecerEmptyReason | null;
 }
 
 function money(value: number | null): string {
@@ -117,7 +118,7 @@ export default function OndeAbastecerPage() {
 
   const primary = payload?.stations?.[0];
   const others = payload?.stations?.slice(1) || [];
-  const historyMissing = (payload?.message ?? "").includes("ainda não foi carregado");
+  const notLoaded = isAnpBaseNotLoaded(payload?.emptyReason, payload?.message);
 
   return (
     <MobileLayout>
@@ -144,16 +145,24 @@ export default function OndeAbastecerPage() {
             </div>
           )}
 
-          {!loading && !errorMsg && payload?.mode === "empty" && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-2" data-testid="text-onde-abastecer-empty">
-              <AlertCircle className="w-8 h-8 mx-auto text-amber-600" />
-              <h2 className="text-base font-bold text-amber-900">
-                {historyMissing ? "Histórico da ANP ainda não carregado" : "Nenhum posto para mostrar"}
-              </h2>
-              <p className="text-xs text-amber-700 leading-relaxed">
-                {payload.message || "A base de dados de preços e qualidade ainda não foi sincronizada no sistema. Aguarde a carga automática de segunda-feira ou solicite a sincronização ao administrador."}
-              </p>
-            </div>
+          {!loading && !errorMsg && !primary && (
+            notLoaded ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-2" data-testid="text-onde-abastecer-empty">
+                <AlertCircle className="w-8 h-8 mx-auto text-amber-600" />
+                <h2 className="text-base font-bold text-amber-900">Histórico da ANP ainda não carregado</h2>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  {payload?.message || "A sincronização roda na segunda-feira ou pode ser disparada por um administrador."}
+                </p>
+              </div>
+            ) : (
+              <div className="bg-neutral-50 border border-neutral-200 rounded-2xl p-6 text-center space-y-2" data-testid="text-onde-abastecer-empty">
+                <MapPin className="w-8 h-8 mx-auto text-neutral-400" />
+                <h2 className="text-base font-bold text-neutral-800">Nenhum posto elegível encontrado</h2>
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  {payload?.message || "Não há postos com histórico limpo no raio de 5 km ou a cidade não foi identificada."}
+                </p>
+              </div>
+            )
           )}
 
           {!loading && !errorMsg && primary && (

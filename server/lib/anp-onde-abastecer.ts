@@ -11,6 +11,7 @@ import {
   parseAnpPriceCsv,
   rankStations,
   type AnpPriceRow,
+  type OndeAbastecerEmptyReason,
   type RankResult,
   type StationCandidate,
 } from "@shared/anp-onde-abastecer";
@@ -24,6 +25,7 @@ export interface OndeAbastecerPayload extends RankResult {
   city: string | null;
   state: string | null;
   pendingGeo: number;
+  emptyReason: OndeAbastecerEmptyReason | null;
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -215,18 +217,25 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 export async function recommendStations(lat: number, lng: number): Promise<OndeAbastecerPayload> {
-  const empty = (message: string, city: string | null = null, state: string | null = null): OndeAbastecerPayload => ({
+  const empty = (
+    emptyReason: OndeAbastecerEmptyReason,
+    message: string,
+    city: string | null = null,
+    state: string | null = null,
+    pendingGeo = 0,
+  ): OndeAbastecerPayload => ({
     mode: "empty",
+    emptyReason,
     message,
     stations: [],
     radiusKm: ONDE_ABASTECER_RADIUS_KM,
     city,
     state,
-    pendingGeo: 0,
+    pendingGeo,
   });
 
   const place = await reverseCity(lat, lng);
-  if (!place) return empty("Não foi possível identificar a cidade desta localização.");
+  if (!place) return empty("no_city", "Não foi possível identificar a cidade desta localização.");
 
   const { data: cityRows, error } = await supabaseAdmin
     .from("anp_station_quality")
@@ -236,9 +245,9 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     .limit(5000);
   if (error) throw new Error(error.message);
   const inCity = (cityRows ?? []) as StationRow[];
-  if (inCity.length === 0) return empty("Nenhum posto com histórico limpo neste raio.", place.city, place.state);
+  if (inCity.length === 0) return empty("no_station", "Nenhum posto com histórico limpo neste raio.", place.city, place.state);
   if (inCity.every((row) => !row.quality_known)) {
-    return empty("O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state);
+    return empty("not_loaded", "O histórico de qualidade da ANP ainda não foi carregado.", place.city, place.state);
   }
 
   const dLat = ONDE_ABASTECER_RADIUS_KM / 111;
@@ -303,16 +312,15 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     .filter((item) => item.distanceKm <= ONDE_ABASTECER_RADIUS_KM);
 
   if (near.length === 0) {
-    return {
-      ...empty(
-        pendingLeft > 0
-          ? "Localizando os postos desta cidade. Abra de novo em instantes."
-          : "Nenhum posto com histórico limpo neste raio.",
-        place.city,
-        place.state,
-      ),
-      pendingGeo: pendingLeft,
-    };
+    return empty(
+      pendingLeft > 0 ? "locating" : "no_station",
+      pendingLeft > 0
+        ? "Localizando os postos desta cidade. Abra de novo em instantes."
+        : "Nenhum posto com histórico limpo neste raio.",
+      place.city,
+      place.state,
+      pendingLeft,
+    );
   }
 
   const cnpjs = near.map((item) => item.row.cnpj);
@@ -356,5 +364,6 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     city: place.city,
     state: place.state,
     pendingGeo: pendingLeft,
+    emptyReason: null,
   };
 }

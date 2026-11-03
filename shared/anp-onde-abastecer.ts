@@ -5,6 +5,21 @@
  */
 
 export const ONDE_ABASTECER_STATION_KEY = "torres.ondeAbastecer.stationName";
+/** `not_loaded` é a base ainda não sincronizada. Os outros são raio, cidade ou CEP ainda sem coordenada. */
+export type OndeAbastecerEmptyReason = "not_loaded" | "no_city" | "no_station" | "locating";
+
+/**
+ * Âmbar só para base ainda não sincronizada.
+ * `mode === "empty"` também é cidade não identificada, raio sem posto ou CEP em localização.
+ * Sem `emptyReason` (resposta antiga), cai na frase que a API já usava.
+ */
+export function isAnpBaseNotLoaded(
+  emptyReason: OndeAbastecerEmptyReason | null | undefined,
+  message?: string | null,
+): boolean {
+  if (emptyReason) return emptyReason === "not_loaded";
+  return (message ?? "").includes("ainda não foi carregado");
+}
 export const ONDE_ABASTECER_RADIUS_KM = 5;
 export const ANP_YEAR_PAGE = "https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/shpc/dsan";
 export const ANP_FISCAL_XLSX_URL =

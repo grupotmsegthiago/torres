@@ -33,7 +33,7 @@
 ### Testes executados
 | Comando / arquivo | Resultado |
 |---|---|
-| `npx tsx --test shared/anp-onde-abastecer.test.ts server/lib/anp-fiscal-xlsx.test.ts` | 7 pass |
+| `npx tsx --test shared/anp-onde-abastecer.test.ts server/lib/anp-fiscal-xlsx.test.ts` | 8 pass |
 | CSV real de set/2026 (gasolina e etanol) | 35.855 preços, 5.825 postos, 4.968 com os dois preços |
 | Planilha real de fiscalização desde 2019 | 1.873 CNPJs marcados, 1.483 com infração de qualidade, 463 interditados |
 
@@ -53,4 +53,4 @@ O agente ganha um botão que indica posto perto, com os dois preços da última 
 ### Riscos remanescentes
 - O CSV não traz coordenada. O raio usa o CEP, até 40 endereços novos por abertura.
 - "Cerca de X min" é estimativa a 25 km/h, não o trânsito da hora.
-- A primeira carga só acontece na segunda de manhã, ou quando um admin chamar a sincronização. Antes disso a tela avisa que o histórico ainda não foi carregado.
+- A primeira carga só acontece na segunda de manhã, ou quando um admin chamar a sincronização. Antes disso, e só nesse caso (`emptyReason = not_loaded`), a tela avisa que o histórico ainda não foi carregado. Cidade não identificada ou raio sem posto usa o outro aviso.

@@ -292,6 +292,8 @@ A carga de qualidade lê a planilha pública de fiscalização. Se ela vier sem 
 
 O campo Posto do lançamento começa com o nome guardado nesta tela, na mesma sessão. O preço da pesquisa não preenche o R$/litro.
 
+A volta da tela é `/mobile`. A API manda `emptyReason`. A tela usa o aviso âmbar só quando esse valor é `not_loaded` (base ainda não sincronizada). Cidade não identificada, raio sem posto e CEP ainda sendo localizado ficam no aviso neutro, com a frase da própria resposta. `mode === "empty"` cobre os quatro casos e não decide o título.
+
 ## 13. Pontos úteis para a comparação
 
 Quem ler este arquivo em outra ferramenta pode discordar destes pontos. Estão explícitos para não serem relidos como lacuna:

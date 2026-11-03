@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   digitsCnpj,
   estimateDriveMinutes,
+  isAnpBaseNotLoaded,
   isDesinterdiction,
   isFuelQualityProcedure,
   isTotalInterdiction,
@@ -119,6 +120,16 @@ test("infração de qualidade e interdição total", () => {
   assert.equal(flags.has("11111111000111"), false);
   assert.equal(flags.get("22222222000122")?.isInterdicted, true);
   assert.equal(flags.has("33333333000133"), false);
+});
+
+test("base não sincronizada não se confunde com raio vazio ou cidade", () => {
+  assert.equal(isAnpBaseNotLoaded("not_loaded", "Nenhum posto com histórico limpo neste raio."), true);
+  assert.equal(isAnpBaseNotLoaded("no_station", "O histórico de qualidade da ANP ainda não foi carregado."), false);
+  assert.equal(isAnpBaseNotLoaded("no_city"), false);
+  assert.equal(isAnpBaseNotLoaded("locating"), false);
+  assert.equal(isAnpBaseNotLoaded(null, "O histórico de qualidade da ANP ainda não foi carregado."), true);
+  assert.equal(isAnpBaseNotLoaded(null, "Nenhum posto com histórico limpo neste raio."), false);
+  assert.equal(isAnpBaseNotLoaded(undefined, null), false);
 });
 
 test("escolhe o arquivo de gasolina e etanol do mês mais novo", () => {
