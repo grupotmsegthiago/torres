@@ -4,7 +4,8 @@
  * Sem I/O — o HTTP e a persistência ficam em focus-nfe.ts.
  *
  * Reutiliza discriminacao, ISS/INSS e CNPJ oficiais de asaas-helpers.
- * Vigilância (posto) e Escolta têm códigos nacionais, NBS e complemento municipal diferentes.
+ * Vigilância (posto) e Escolta têm código nacional e NBS diferentes.
+ * O código Paulistana de 5 dígitos não entra na DPS: cTribMun só aceita 3.
  */
 
 import {
@@ -42,26 +43,43 @@ export type { NfseCategoriaFiscal, NfseDescriptionInput } from "../../shared/nfs
 
 export { isValidCnpj, sanitizeComplement };
 
-/** Item municipal histórico da Paulistana (vigilância). A DPS usa a trinca por categoria. */
+/** Item municipal histórico da Paulistana (vigilância). Não entra na DPS nacional. */
 export const FOCUS_ITEM_LISTA_SERVICO = CODIGO_SERVICO_MUNICIPAL_CODE;
 export type FocusServicoCategoria = "vigilancia" | "escolta";
+/**
+ * cTribMun da DPS aceita só 3 dígitos. 07870 e 07897 são o código da Paulistana
+ * e a Sefin recusa esse tamanho. A nota nacional identifica o serviço por
+ * codigo_tributacao_nacional_iss + NBS.
+ */
 export const FOCUS_SERVICO_FISCAL: Record<FocusServicoCategoria, {
   codigo_tributacao_nacional_iss: string;
   codigo_nbs: string;
-  codigo_tributacao_municipal_iss: string;
+  codigo_paulistana: string;
 }> = {
   vigilancia: {
     codigo_tributacao_nacional_iss: "110201",
     codigo_nbs: "118025000",
-    codigo_tributacao_municipal_iss: "07870",
+    codigo_paulistana: "07870",
   },
   escolta: {
     codigo_tributacao_nacional_iss: "110301",
     codigo_nbs: "118023000",
-    codigo_tributacao_municipal_iss: "07897",
+    codigo_paulistana: "07897",
   },
 };
 export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
+/**
+ * Endereço da emissora já impresso no boletim e no contrato.
+ * A DPS exige CEP e logradouro do prestador; o cadastro da Focus não os levava no XML.
+ */
+export const FOCUS_PRESTADOR_ENDERECO = {
+  cep: "02938000",
+  logradouro: "Avenida Raimundo Pereira de Magalhães",
+  numero: "5720",
+  bairro: "Pirituba",
+} as const;
+/** indTotTrib=0: não informa estimativa de tributos (Decreto 8.264/2014). */
+export const FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA = 0;
 /** 3 = optante ME/EPP. 1 = não optante. Campo oficial: codigo_opcao_simples_nacional. */
 export const FOCUS_OPCAO_SIMPLES_ME_EPP = 3;
 export const FOCUS_OPCAO_SIMPLES_NAO_OPTANTE = 1;
@@ -596,6 +614,10 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     cnpj_prestador: cleanCnpj(opts.prestadorCnpj || TORRES_CNPJ),
     inscricao_municipal_prestador: prestadorIm,
     codigo_municipio_prestador: FOCUS_CODIGO_MUNICIPIO_SP,
+    cep_prestador: FOCUS_PRESTADOR_ENDERECO.cep,
+    logradouro_prestador: FOCUS_PRESTADOR_ENDERECO.logradouro,
+    numero_prestador: FOCUS_PRESTADOR_ENDERECO.numero,
+    bairro_prestador: FOCUS_PRESTADOR_ENDERECO.bairro,
     codigo_opcao_simples_nacional: optante ? FOCUS_OPCAO_SIMPLES_ME_EPP : FOCUS_OPCAO_SIMPLES_NAO_OPTANTE,
     regime_especial_tributacao: FOCUS_REGIME_ESPECIAL_NENHUM,
     razao_social_tomador: String(opts.tomador.name || "").trim().slice(0, 150),
@@ -607,11 +629,11 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     codigo_municipio_prestacao: municipioPrestacao,
     codigo_tributacao_nacional_iss: servico.codigo_tributacao_nacional_iss,
     codigo_nbs: servico.codigo_nbs,
-    codigo_tributacao_municipal_iss: servico.codigo_tributacao_municipal_iss,
     descricao_servico: descricaoServico,
     valor_servico: value,
     tributacao_iss: FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
     tipo_retencao_iss: ISS_RETAIN ? FOCUS_TIPO_RETENCAO_ISS_TOMADOR : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO,
+    indicador_total_tributacao: FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA,
   };
   if (aliquotaSimples != null) payload.percentual_aliquota_relativa_municipio = aliquotaSimples;
   if (digits.length === 14) payload.cnpj_tomador = digits;

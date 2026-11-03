@@ -17,7 +17,9 @@ import {
   FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
   FOCUS_API_HOMOLOG_URL,
   FOCUS_API_PRODUCTION_URL,
+  FOCUS_PRESTADOR_ENDERECO,
   FOCUS_SERVICO_FISCAL,
+  FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA,
   buildDefaultNfseDescription,
   buildFocusNfsePayload,
   resolveFocusServicoCategoria,
@@ -142,7 +144,8 @@ test("vigilância e escolta levam a trinca fiscal e a alíquota do Simples", () 
   });
   assert.equal(vigilancia.codigo_tributacao_nacional_iss, "110201");
   assert.equal(vigilancia.codigo_nbs, "118025000");
-  assert.equal(vigilancia.codigo_tributacao_municipal_iss, "07870");
+  assert.equal(FOCUS_SERVICO_FISCAL.vigilancia.codigo_paulistana, "07870");
+  assert.equal("codigo_tributacao_municipal_iss" in vigilancia, false);
   assert.equal(vigilancia.valor_cp, 220);
   assert.equal(vigilancia.percentual_aliquota_relativa_municipio, 2.55);
   assert.equal(vigilancia.tipo_retencao_iss, 1);
@@ -157,7 +160,8 @@ test("vigilância e escolta levam a trinca fiscal e a alíquota do Simples", () 
   });
   assert.equal(escolta.codigo_tributacao_nacional_iss, "110301");
   assert.equal(escolta.codigo_nbs, "118023000");
-  assert.equal(escolta.codigo_tributacao_municipal_iss, "07897");
+  assert.equal(FOCUS_SERVICO_FISCAL.escolta.codigo_paulistana, "07897");
+  assert.equal("codigo_tributacao_municipal_iss" in escolta, false);
   assert.equal("valor_cp" in escolta, false);
   assert.equal(escolta.percentual_aliquota_relativa_municipio, ISS_ALIQUOTA);
   assert.equal(escolta.codigo_municipio_prestacao, "3205002");
@@ -193,6 +197,7 @@ test("não optante do Simples manda código 1 e regime nenhum", () => {
   });
   assert.equal(p.codigo_opcao_simples_nacional, FOCUS_OPCAO_SIMPLES_NAO_OPTANTE);
   assert.equal(p.regime_especial_tributacao, FOCUS_REGIME_ESPECIAL_NENHUM);
+  assert.equal(p.indicador_total_tributacao, FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA);
   assert.equal("percentual_aliquota_relativa_municipio" in p, false);
   assert.equal("valor_cp" in p, false);
 });
@@ -225,7 +230,14 @@ test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, d
   assert.equal(p.cep_tomador, "01310100");
   assert.equal(p.codigo_tributacao_nacional_iss, FOCUS_SERVICO_FISCAL.escolta.codigo_tributacao_nacional_iss);
   assert.equal(p.codigo_nbs, "118023000");
-  assert.equal(p.codigo_tributacao_municipal_iss, "07897");
+  assert.equal("codigo_tributacao_municipal_iss" in p, false);
+  assert.equal(p.cep_prestador, FOCUS_PRESTADOR_ENDERECO.cep);
+  assert.equal(typeof p.cep_prestador, "string");
+  assert.equal(p.cep_prestador.length, 8);
+  assert.equal(p.logradouro_prestador, FOCUS_PRESTADOR_ENDERECO.logradouro);
+  assert.equal(p.numero_prestador, FOCUS_PRESTADOR_ENDERECO.numero);
+  assert.equal(p.bairro_prestador, FOCUS_PRESTADOR_ENDERECO.bairro);
+  assert.equal(p.indicador_total_tributacao, FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA);
   assert.equal(p.percentual_aliquota_relativa_municipio, ISS_ALIQUOTA);
   assert.equal("item_lista_servico" in p, false);
   assert.equal("prestador" in p, false);
@@ -328,7 +340,7 @@ test("buildFocusNfsePayload aceita categoria e descrição revistas no modal", (
   });
   assert.equal(p.codigo_tributacao_nacional_iss, "110201");
   assert.equal(p.codigo_nbs, "118025000");
-  assert.equal(p.codigo_tributacao_municipal_iss, "07870");
+  assert.equal("codigo_tributacao_municipal_iss" in p, false);
   assert.equal(p.descricao_servico, "Ref. vigilância (10/2026) - OS: 9 tag controle");
 });
 

@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Sefin recusou a DPS da fatura 241
+
+- O XML saía sem CEP e sem logradouro do prestador. A DPS agora manda o endereço já impresso no boletim: Avenida Raimundo Pereira de Magalhães, 5720, Pirituba, CEP 02938-000.
+- `07897` e `07870` não vão mais no campo municipal. A Sefin só aceita 3 dígitos nesse campo. A nota segue com o código nacional e o NBS.
+- O grupo de tributos passa a informar que não há estimativa (`indicador_total_tributacao` 0). Não inventamos a alíquota cheia do Simples.
+
 ## 2026-11-03 — Observação legal na descrição da NFS-e
 
 - A sugestão da nota termina com a frase do Simples Nacional já usada no boleto.

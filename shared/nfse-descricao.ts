@@ -16,8 +16,8 @@ export const NF_SIMPLES_NACIONAL_TEXTO =
 export type NfseCategoriaFiscal = "escolta" | "vigilancia";
 
 export const NFSE_CATEGORIA_OPCOES: ReadonlyArray<{ value: NfseCategoriaFiscal; label: string }> = [
-  { value: "escolta", label: "Escolta — Nac: 110301 | NBS: 1.1802.30.00 | Mun: 07897" },
-  { value: "vigilancia", label: "Vigilância (Posto) — Nac: 110201 | NBS: 1.1802.50.00 | Mun: 07870" },
+  { value: "escolta", label: "Escolta — 110301 | NBS 1.1802.30.00" },
+  { value: "vigilancia", label: "Vigilância (Posto) — 110201 | NBS 1.1802.50.00" },
 ];
 
 export type NfseDescriptionInput = {
