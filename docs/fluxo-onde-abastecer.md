@@ -292,7 +292,9 @@ A carga de qualidade lê a planilha pública de fiscalização. Se ela vier sem 
 
 O campo Posto do lançamento começa com o nome guardado nesta tela, na mesma sessão. O preço da pesquisa não preenche o R$/litro.
 
-A volta da tela é `/mobile`. A API manda `emptyReason`. O aviso âmbar só sai de `isAnpBaseNotLoaded`: a resposta precisa estar em `mode === "empty"` e o motivo ser `not_loaded`. Sem o campo, a frase "ainda não foi carregado" ainda vale. Cidade, raio e CEP em localização ficam no aviso neutro. Cartão com preço ou posto mais próximo nunca usa o âmbar.
+A volta da tela é `/mobile`. A API manda `emptyReason`. O aviso âmbar só sai de `isAnpBaseNotLoaded`: a resposta precisa estar em `mode === "empty"` e o motivo ser `not_loaded`. Sem o campo, a frase "ainda não foi carregado" ainda vale. Cidade, raio e CEP em localização ficam no aviso neutro. Cartão com preço ou posto mais próximo nunca usa o âmbar. Os marcadores da tela são `empty-not-loaded` e `empty-no-station`.
+
+O checklist com login (carga admin ou segunda 04:20, âmbar antes da qualidade, cartão com GPS, nome do posto no lançamento) está no relatório de entrega de 3 de novembro de 2026. Ele não foi executado sem sessão.
 
 ## 13. Pontos úteis para a comparação
 

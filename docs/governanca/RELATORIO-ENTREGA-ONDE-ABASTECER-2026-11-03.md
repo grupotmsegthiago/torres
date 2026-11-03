@@ -58,4 +58,15 @@ O agente ganha um botão que indica posto perto, com os dois preços da última 
 ### Status consolidado
 - Isolamento de domínio: satélite de consulta. Sem efeito em `vehicle_fueling`, conciliação TicketLog, boletim ou balanço.
 - Cobertura: 8 testes passando. Incluem reprovação recente no XLSX (coleta simples fica de fora), descarte de gasolina aditivada com o preço mais recente de comum e etanol, semana de domingo a sábado, exigência dos dois preços com desempate por distância, e a distinção de `emptyReason` (cartão com preço não acende o âmbar).
-- Homologação: disparar `POST /api/admin/anp-stations/sync` ou esperar o cron de segunda às 04:20 no horário de Brasília, e abrir `/mobile/onde-abastecer` com login de agente. A tela não foi aberta neste ambiente.
+- Homologação com login: não executada neste ambiente. Não há `.env` nem sessão. A branch ainda não foi publicada, então produção ainda não tem a rota nem as tabelas novas.
+
+### Checklist de homologação (ambiente com login)
+
+Pré-requisito: o ambiente já precisa estar com esta branch no ar. Sem isso, `POST /api/admin/anp-stations/sync` e `/mobile/onde-abastecer` não existem.
+
+1. Carga inicial. Com perfil admin, `POST /api/admin/anp-stations/sync`. O JSON de sucesso traz `prices`, `stations`, `flagged` e `csvUrl`. `prices` e `stations` acima de zero e `flagged` com os CNPJs da fiscalização. Alternativa: esperar a segunda às 04:20 no horário de Brasília e conferir o mesmo preenchimento em `anp_fuel_prices` e `anp_station_quality`.
+2. Antes da carga, em banco ainda sem qualidade conhecida. Abrir `/mobile/onde-abastecer` com GPS. O bloco `empty-not-loaded` (âmbar, “Histórico da ANP ainda não carregado”) aparece quando a cidade tem preço importado e `quality_known` ainda é falso. Cidade sem nenhuma linha cai em `empty-no-station`, não no âmbar.
+3. Fluxo com GPS depois da carga. O cartão `card-posto-principal` mostra distância, “cerca de” minutos (25 km/h), gasolina e álcool, e o selo `text-qualidade` dos últimos 2 anos. “Ver outros postos” (`button-ver-outros`) abre a lista; Fechar é `button-fechar-outros`.
+4. Passagem para o lançamento. Tocar em Waze ou Google Maps grava o nome em `sessionStorage` (`torres.ondeAbastecer.stationName`). Voltar e abrir `/mobile/abastecimento`: o campo `input-station` (Posto / Local) vem com esse nome. A regra dos 70% e o R$/litro continuam só com o que for digitado na bomba. O preço da ANP não entra no custo.
+
+Nenhum desses quatro passos foi clicado neste ambiente.
