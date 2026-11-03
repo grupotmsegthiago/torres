@@ -2,9 +2,9 @@
 
 **Data:** 2026-11-03
 **Branch:** `cursor/nfse-descricao-curta-b534`
-**Commit(s):** (preenchido no push)
+**Commit(s):** `7c15b38e`
 **Ambiente validado:** [x] local  [ ] preview  [ ] produção
-**Publicou?** [ ] Não  [ ] Sim (quando/como)
+**Publicou?** [x] Sim — fast-forward de `cursor/nfse-descricao-curta-b534` em `main` e `dev`, para a próxima emissão da fatura 241 usar o texto novo.
 
 ### Domínio e dado
 - Domínio: NFS-e (satélite Focus). Dono do texto comercial continua `invoices.description`.
