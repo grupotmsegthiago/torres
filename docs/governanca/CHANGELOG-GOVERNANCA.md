@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Observação legal na descrição da NFS-e
+
+- A sugestão da nota termina com a frase do Simples Nacional já usada no boleto.
+- Se a fatura tem INSS retido (`valor_inss_retido` > 0), a linha do Anexo IV entra antes dessa frase.
+- PIX, agência ou dados bancários que já estejam na fatura seguem para o mesmo rodapé. O texto cabe em 2.000 caracteres e continua editável no modal.
+
 ## 2026-11-03 — Conferência da NFS-e antes de emitir
 
 - O botão Emitir NFS-e abre um modal. A Beatriz confirma Escolta (`110301`) ou Vigilância (`110201`) e edita a descrição.

@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
   ISS_ALIQUOTA,
   ISS_RETAIN,
+  NF_INSS_ANEXO_IV_TEXTO,
+  NF_SIMPLES_NACIONAL_TEXTO,
   TORRES_CNPJ,
 } from "./asaas-helpers";
 import {
@@ -228,7 +230,8 @@ test("buildFocusNfsePayload: DPS nacional, escolta 110301, ISS sem retenção, d
   assert.equal("item_lista_servico" in p, false);
   assert.equal("prestador" in p, false);
   assert.equal("servico" in p, false);
-  assert.equal(p.descricao_servico, "Ref. escolta armada (16/09/2026 a 30/09/2026)");
+  assert.equal(p.descricao_servico, `Ref. escolta armada (16/09/2026 a 30/09/2026)\n${NF_SIMPLES_NACIONAL_TEXTO}`);
+  assert.equal(p.descricao_servico.includes(NF_INSS_ANEXO_IV_TEXTO), false);
   assert.equal(p.tipo_retencao_iss, ISS_RETAIN ? 2 : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO);
   assert.equal(p.tributacao_iss, FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL);
   assert.equal(p.valor_servico, 1000);
@@ -270,16 +273,42 @@ test("buildDefaultNfseDescription preserva período, OS e controle do cliente", 
   });
   assert.equal(
     text,
-    "Ref. escolta armada (01/10/2026 a 31/10/2026) - OS: 1234, 1235 - Controle: ABC, 99812 - PO: 555",
+    `Ref. escolta armada (01/10/2026 a 31/10/2026) - OS: 1234, 1235 - Controle: ABC, 99812 - PO: 555\n${NF_SIMPLES_NACIONAL_TEXTO}`,
   );
+  assert.equal(text.includes(NF_INSS_ANEXO_IV_TEXTO), false);
   const posto = buildDefaultNfseDescription({
     category: "vigilancia",
     periodStart: "2026-10-01",
     periodEnd: "2026-10-31",
+    valorInssRetido: 220,
+    notes: "PIX: chave do cliente",
   });
-  assert.equal(posto, "Ref. vigilância (01/10/2026 a 31/10/2026)");
+  assert.equal(
+    posto,
+    [
+      "Ref. vigilância (01/10/2026 a 31/10/2026)",
+      "PIX: chave do cliente",
+      NF_INSS_ANEXO_IV_TEXTO,
+      NF_SIMPLES_NACIONAL_TEXTO,
+    ].join("\n"),
+  );
   const mes = buildDefaultNfseDescription({ category: "escolta", dueDate: "2026-10-15" });
-  assert.equal(mes, "Ref. escolta armada (10/2026)");
+  assert.equal(mes, `Ref. escolta armada (10/2026)\n${NF_SIMPLES_NACIONAL_TEXTO}`);
+  const fraseDoCliente = "Documento emitido por ME ou EPP optante pelo Simples Nacional.";
+  const preservada = buildDefaultNfseDescription({
+    category: "escolta",
+    dueDate: "2026-10-15",
+    notes: fraseDoCliente,
+  });
+  assert.ok(preservada.endsWith(fraseDoCliente));
+  assert.equal(preservada.includes(NF_SIMPLES_NACIONAL_TEXTO), false);
+  const longa = buildDefaultNfseDescription({
+    category: "escolta",
+    dueDate: "2026-10-15",
+    notes: "A".repeat(2500),
+  });
+  assert.equal(longa.length, 2000);
+  assert.ok(longa.endsWith(NF_SIMPLES_NACIONAL_TEXTO));
   const escolta = "Ref. escolta armada (01/10/2026 a 31/10/2026)";
   const vigilancia = "Ref. vigilância (01/10/2026 a 31/10/2026)";
   const comOs = `${escolta} - OS: 1234`;

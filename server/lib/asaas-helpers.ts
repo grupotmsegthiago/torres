@@ -10,6 +10,9 @@ import {
   classifyIssuedOrProcessing,
 } from "../../shared/nfse-status";
 import { multilogLinesFromDescription } from "../../shared/multilog-refs";
+import { NF_INSS_ANEXO_IV_TEXTO, NF_SIMPLES_NACIONAL_TEXTO } from "../../shared/nfse-descricao";
+
+export { NF_INSS_ANEXO_IV_TEXTO, NF_SIMPLES_NACIONAL_TEXTO };
 
 export {
   isNfOkStatus,
@@ -78,11 +81,7 @@ export const INSS_DISPENSA_OBSERVACAO =
 export const SIMPLES_NACIONAL_OBSERVACAO =
   "Empresa optante pelo Simples Nacional. Dispensada da retenção de PIS, COFINS e CSLL, conforme art. 30 da Lei nº 10.833/2003.";
 
-/** Textos oficiais na discriminação do boleto Asaas e da NFS-e Focus (pedido do proprietário). */
-export const NF_INSS_ANEXO_IV_TEXTO =
-  "Retenção de INSS sobre cessão de mão-de-obra (ANEXO IV) - Art. 111, II da IN RFB nº 2.110/2022";
-export const NF_SIMPLES_NACIONAL_TEXTO =
-  "Empresa optante pelo Simples Nacional. Não sujeita à retenção das contribuições conforme art. 30 da Lei 10.833/2003";
+/** Textos oficiais na discriminação do boleto e da NFS-e: `NF_INSS_ANEXO_IV_TEXTO` e `NF_SIMPLES_NACIONAL_TEXTO`. */
 
 export const MESES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",

@@ -570,6 +570,8 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
       controles: opts.controles,
       poNumbers: opts.poNumbers,
       smNumbers: opts.smNumbers,
+      valorInssRetido: opts.valorInssRetido,
+      incluirSimples: opts.optanteSimplesNacional !== false,
     });
   const tomadorInSp = ibgeTomador === FOCUS_CODIGO_MUNICIPIO_SP;
   const prestacaoInformada = onlyDigits(opts.codigoMunicipioPrestacao || "");

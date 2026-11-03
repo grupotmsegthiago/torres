@@ -19,6 +19,7 @@
 - Ao clicar em Emitir NFS-e, abre o modal de conferência já preenchido.
 - O seletor oferece Escolta (`110301` / NBS `1.1802.30.00` / `07897`) e Vigilância (`110201` / NBS `1.1802.50.00` / `07870`). A troca atualiza o prefixo `Ref. escolta armada` / `Ref. vigilância` só enquanto esse prefixo não foi editado.
 - A descrição sugerida usa o período da fatura (ou as datas da OS, ou o mês do vencimento) e junta número da OS, SM, `processo_omega`, `gtm_number` e PO/controle já escritos na descrição ou nas observações.
+- No final entram a frase do Simples Nacional do boleto e, quando `valor_inss_retido` é maior que zero, a linha de retenção do Anexo IV. Dados bancários já escritos na fatura vão junto. O financeiro pode apagar ou editar isso no modal.
 - O POST aceita `{ category, descricao_servico }`. Sem esses campos, a automação (relatório, retry, resolver erro) continua emitindo com a categoria inferida e a descrição padrão.
 - Categoria explícita vale mesmo quando a fatura mistura OS ou não tem tipo.
 - A descrição passa por sanitização: sem `<`, `>`, `&` nem caractere de controle, no máximo 2.000 e no mínimo 10.
@@ -41,7 +42,7 @@
 ### Testes executados
 | Comando / arquivo | Resultado |
 |---|---|
-| `npx tsx --test server/lib/focus-nfe-helpers.test.ts` | 28 pass |
+| `npx tsx --test server/lib/focus-nfe-helpers.test.ts server/lib/asaas-helpers.test.ts` | 147 pass |
 
 ### Resultados (negócio)
 O financeiro escolhe a categoria e ajusta a descrição antes do POST. Quem emite sem abrir o modal continua na regra automática.
@@ -49,7 +50,8 @@ O financeiro escolhe a categoria e ajusta a descrição antes do POST. Quem emit
 ### Regressões verificadas
 - Payload sem descrição informada gera `Ref. escolta armada (período)` e não regrava a descrição da fatura.
 - Categoria explícita de vigilância substitui a trinca mesmo com OS dos dois tipos.
-- Texto com `<`, `>`, `&` e controle é limpo; acima de 2.000 é cortado; abaixo de 10 é recusado.
+- Texto com `<`, `>`, `&` e controle é limpo; acima de 2.000 é cortado sem perder o rodapé legal; abaixo de 10 é recusado.
+- Fatura sem INSS retido não leva a linha do Anexo IV. Fatura com retenção leva.
 
 ### Segurança
 - Secrets no diff? Não

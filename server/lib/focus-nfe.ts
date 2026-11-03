@@ -408,10 +408,11 @@ function descriptionContext(invoice: any, orders: InvoiceOsRef[]) {
     osNumbers: orders.flatMap((order) => [order.osNumber, order.multilogOs]),
     controles: orders.flatMap((order) => [order.processoOmega, order.gtmNumber]),
     smNumbers: orders.map((order) => order.multilogSm),
+    valorInssRetido: invoice?.valor_inss_retido,
   };
 }
 
-export function buildNfsePreview(invoice: any, orders: InvoiceOsRef[]) {
+export function buildNfsePreview(invoice: any, orders: InvoiceOsRef[], opts?: { incluirSimples?: boolean }) {
   const fiscal = resolveFocusServicoCategoria({
     serviceOrderTypes: orders.map((order) => order.type),
     description: invoice?.description,
@@ -423,7 +424,11 @@ export function buildNfsePreview(invoice: any, orders: InvoiceOsRef[]) {
     category,
     conflito: fiscal.conflito,
     periodo,
-    descricao_servico: buildDefaultNfseDescription({ category, ...context }),
+    descricao_servico: buildDefaultNfseDescription({
+      category,
+      ...context,
+      incluirSimples: opts?.incluirSimples !== false,
+    }),
     prefixo: nfseCategoryPrefixes(periodo),
     opcoes: NFSE_CATEGORIA_OPCOES,
   };
@@ -432,11 +437,11 @@ export function buildNfsePreview(invoice: any, orders: InvoiceOsRef[]) {
 export async function previewFocusNfseForInvoice(invoiceId: number): Promise<{ ok: true; preview: ReturnType<typeof buildNfsePreview> } | { ok: false; message: string }> {
   const id = Number(invoiceId);
   if (!Number.isFinite(id) || id <= 0) return { ok: false, message: "Fatura inválida" };
-  const { data: invoice } = await supabaseAdmin.from("invoices").select("id, description, notes, due_date, service_order_id").eq("id", id).maybeSingle();
+  const { data: invoice } = await supabaseAdmin.from("invoices").select("id, description, notes, due_date, service_order_id, valor_inss_retido").eq("id", id).maybeSingle();
   if (!invoice) return { ok: false, message: "Fatura não encontrada" };
   try {
     const loaded = await loadInvoiceServiceOrders(invoice);
-    return { ok: true, preview: buildNfsePreview(invoice, loaded.orders) };
+    return { ok: true, preview: buildNfsePreview(invoice, loaded.orders, { incluirSimples: focusOptanteSimples() }) };
   } catch (e: any) {
     return { ok: false, message: e?.message || "Não foi possível montar a descrição da NFS-e." };
   }

@@ -7,6 +7,12 @@
 export const NFSE_DESCRICAO_MAX = 2000;
 export const NFSE_DESCRICAO_MIN = 10;
 
+/** Mesmas frases do boleto. A nota leva as duas para o cliente conferir no DANFSe. */
+export const NF_INSS_ANEXO_IV_TEXTO =
+  "Retenção de INSS sobre cessão de mão-de-obra (ANEXO IV) - Art. 111, II da IN RFB nº 2.110/2022";
+export const NF_SIMPLES_NACIONAL_TEXTO =
+  "Empresa optante pelo Simples Nacional. Não sujeita à retenção das contribuições conforme art. 30 da Lei 10.833/2003";
+
 export type NfseCategoriaFiscal = "escolta" | "vigilancia";
 
 export const NFSE_CATEGORIA_OPCOES: ReadonlyArray<{ value: NfseCategoriaFiscal; label: string }> = [
@@ -25,6 +31,10 @@ export type NfseDescriptionInput = {
   controles?: Array<string | number | null | undefined>;
   poNumbers?: Array<string | number | null | undefined>;
   smNumbers?: Array<string | number | null | undefined>;
+  /** INSS já retido na fatura. A linha do Anexo IV só entra se este valor for maior que zero. */
+  valorInssRetido?: number | string | null;
+  /** Torres é optante. Sem este campo, a sugestão leva a frase do Simples. */
+  incluirSimples?: boolean;
 };
 
 export function cleanNfseDescription(text: string): { text: string; removedInvalid: boolean; truncated: boolean } {
@@ -170,6 +180,48 @@ function isBoilerplate(chunk: string): boolean {
   return false;
 }
 
+function isBankLine(s: string): boolean {
+  return /\b(pix|ag[eê]ncia|conta corrente|dados banc[aá]rios)\b/i.test(s);
+}
+
+function isInssLine(s: string): boolean {
+  return /anexo iv|reten[cç][aã]o de inss/i.test(s);
+}
+
+function isSimplesLine(s: string): boolean {
+  return /simples nacional/i.test(s);
+}
+
+function uniqueLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of lines) {
+    const line = String(raw || "").replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+  }
+  return out;
+}
+
+function linesOf(text: string): string[] {
+  return String(text || "")
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function joinNfseDescription(head: string, suffixLines: string[]): string {
+  const suffix = uniqueLines(suffixLines).join("\n");
+  if (!suffix) return sanitizeNfseDescription(head);
+  const maxHead = NFSE_DESCRICAO_MAX - suffix.length - 1;
+  const trimmedHead = maxHead > 0 ? head.trim().slice(0, maxHead).trim() : "";
+  const combined = trimmedHead ? `${trimmedHead}\n${suffix}` : suffix.slice(0, NFSE_DESCRICAO_MAX);
+  return sanitizeNfseDescription(combined);
+}
+
 function extraClientLines(text: string): string[] {
   const chunks = String(text || "")
     .split(/\n+/)
@@ -200,6 +252,7 @@ export function buildDefaultNfseDescription(input: NfseDescriptionInput): string
     ...extractList(blob, /\b(?:pedido de compra(?:\s*\/\s*po)?|p\.?o\.?)\s*[:#]\s*([^\n]+)/gi),
   ]);
   const extras = extraClientLines(blob).filter((line) => {
+    if (isBankLine(line) || isInssLine(line) || isSimplesLine(line)) return false;
     const folded = line.toLowerCase();
     return ![...os, ...sm, ...controles, ...pos].some((token) => folded === token.toLowerCase());
   });
@@ -209,5 +262,16 @@ export function buildDefaultNfseDescription(input: NfseDescriptionInput): string
   if (controles.length) parts.push(`Controle: ${controles.join(", ")}`);
   if (pos.length) parts.push(`PO: ${pos.join(", ")}`);
   if (extras.length) parts.push(extras.join(" | "));
-  return sanitizeNfseDescription(parts.join(" - "));
+
+  const stored = linesOf(blob).filter((line) => !/^referente aos servi/i.test(line) && !/^ref\. (escolta armada|vigil[aâ]ncia)\b/i.test(line));
+  const inssGuardado = stored.filter(isInssLine);
+  const simplesGuardado = stored.filter(isSimplesLine);
+  const banco = stored.filter(isBankLine);
+  const inssValor = Number(input.valorInssRetido);
+  const temRetencaoInss = Number.isFinite(inssValor) && inssValor > 0;
+  const inss = inssGuardado.length ? inssGuardado : (temRetencaoInss ? [NF_INSS_ANEXO_IV_TEXTO] : []);
+  const simples = input.incluirSimples === false
+    ? simplesGuardado
+    : (simplesGuardado.length ? simplesGuardado : [NF_SIMPLES_NACIONAL_TEXTO]);
+  return joinNfseDescription(parts.join(" - "), [...banco, ...inss, ...simples]);
 }
