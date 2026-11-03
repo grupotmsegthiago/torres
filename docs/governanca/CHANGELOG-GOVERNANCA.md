@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — NFS-e preservada depois da confirmação
+
+- O dono confirmou que a descrição curta e a DPS nacional funcionaram. A regra ficou em `04-REGRAS-NEGOCIO-CRITICAS.md`.
+- Ponto de restauração: tag `safety/nfse-dps-ok-2026-11-03` no commit `975fb689`, o mesmo que está em produção.
+- Não voltar a listar OS da Torres na nota nem reenviar endereço do prestador, código municipal de 5 dígitos, `pAliq` ou `indTotTrib` no optante sem retenção de ISS.
+
 ## 2026-11-03 — Descrição da NFS-e sem a lista de OS
 
 - A sugestão da nota fica em `Ref. escolta armada (período)` ou `Ref. vigilância (período)`, mais a linha do Anexo IV quando há INSS retido e a frase do Simples.

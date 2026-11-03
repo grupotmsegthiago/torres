@@ -68,6 +68,9 @@ A nota deixa de sair com a lista de TOR, BO e OS. O controle aparece só para o 
 ### Deploy
 - A fatura 241 está cancelada (NFS-e número 1, ref `torres-inv-241-rmw0y0940`, atualizada em 03/11/2026 14:14 America/Sao_Paulo). A próxima emissão usa a sugestão que estiver na `main`.
 
+### Confirmação
+- Em 03/11/2026 o dono confirmou que esta configuração funcionou e pediu para publicar e preservar.
+- Tag `safety/nfse-dps-ok-2026-11-03` no commit `975fb689`. A regra ficou em `04-REGRAS-NEGOCIO-CRITICAS.md`.
+
 ### Pendências
-- A Beatriz confere o texto no modal antes de retransmitir a 241.
 - Troca dos códigos NBS e alíquota cheia do DAS continuam decisão do proprietário, fora deste texto.

@@ -5,6 +5,8 @@ description: Emissão de NFS-e vai pela Focus no Ambiente Nacional /v2/nfsen. As
 
 # NFS-e Focus NFe
 
+Preservado em 03/11/2026: o dono confirmou que funcionou. Tag `safety/nfse-dps-ok-2026-11-03` (`975fb689`). Não reverter a descrição curta nem o payload da DPS descrito abaixo e em `docs/governanca/04-REGRAS-NEGOCIO-CRITICAS.md`.
+
 Novas NFS-e: `server/lib/focus-nfe.ts` via `POST /v2/nfsen?ref=torres-inv-{id}` (Basic Auth token, senha vazia). Payload plano da DPS (`buildFocusNfsePayload`). Consulta `GET /v2/nfsen/{ref}` e cancelamento `DELETE /v2/nfsen/{ref}`. Se a Focus responder 404, consulta e cancelamento tentam `/v2/nfse/{ref}` só para nota já emitida na Paulistana. Emissão nova não usa `/v2/nfse`.
 
 Homologação só com `FOCUS_NFE_ENV=homologacao` em runtime local/dev. Preview/production da Vercel (`NODE_ENV=production`) usa `api.focusnfe.com.br` — senão o token de produção falha em homologacao.focus.

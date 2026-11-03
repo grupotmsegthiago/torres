@@ -102,3 +102,27 @@ Edição manual excepcional, se existir, exige autorização de role adequada e 
 - Período do boletim deriva da **data de agendamento** (`service_orders.scheduled_date`): dias 1–15 = 1ª quinzena; 16–último dia do mês = 2ª. `escort_billings.data_missao` não define o ciclo (pode ser o dia do lançamento).
 - Bloquear cruzamento indevido de quinzenas no envio.
 - Snapshot no envio garante tela = e-mail = Excel = aprovação.
+
+---
+
+## NFS-e nacional — configuração preservada
+
+O dono confirmou em 03/11/2026 que esta configuração funcionou. Não reverter.
+
+Ponto de restauração: tag `safety/nfse-dps-ok-2026-11-03` (`975fb689`).
+
+Texto sugerido da DPS (`buildDefaultNfseDescription`):
+
+- `Ref. escolta armada (período)` ou `Ref. vigilância (período)`.
+- Linha do Anexo IV só se `valor_inss_retido` > 0.
+- Frase do Simples Nacional em seguida.
+- Não listar número de OS da Torres, vínculo GTM nem pedido de compra.
+- MULTILOG: só `OS.` e `SM.` do cliente.
+- Omega Solutions: só `PROCESSO` / `PROCESSOS`.
+- Esse texto não regrava `invoices.description` nem o boleto.
+
+DPS que acompanha esse texto (`buildFocusNfsePayload`):
+
+- Emissão nova só em `/v2/nfsen`. Sem endereço do prestador. Sem `codigo_tributacao_municipal_iss`.
+- Optante: `codigo_opcao_simples_nacional` 3, `regime_tributario_simples_nacional` 1, `percentual_total_tributos_simples_nacional` (`FOCUS_ALIQUOTA_SIMPLES` ou 5). Sem retenção de ISS, não enviar `percentual_aliquota_relativa_municipio` nem `indicador_total_tributacao`.
+- `regime_especial_tributacao` 0. `valor_cp` só se houver INSS retido.
