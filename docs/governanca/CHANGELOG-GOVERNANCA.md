@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Regime do Simples na DPS
+
+- A fatura 241 parou na regra E0166: ME/EPP tem de informar o regime de apuração. A Torres vai com o regime 1, tributos federais e ISS pelo Simples, coerente com o regime especial nenhum.
+- Sem retenção de ISS, a alíquota municipal sai do payload. O percentual aproximado do Simples vai em `percentual_total_tributos_simples_nacional`, com o valor já configurado (`FOCUS_ALIQUOTA_SIMPLES` ou 5).
+- O indicador de “não informar tributos” sai da nota do optante. A Sefin não aceita esse indicador para ME/EPP.
+
 ## 2026-11-03 — DPS sem endereço do prestador
 
 - A Sefin recusou a fatura 241: o endereço nacional do prestador não pode ir na DPS quando a própria Torres emite. Saíram município, CEP, logradouro, número e bairro do prestador. O município da emissão continua `3550308`.

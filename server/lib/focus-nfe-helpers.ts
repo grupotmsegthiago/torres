@@ -72,6 +72,11 @@ export const FOCUS_CODIGO_MUNICIPIO_SP = "3550308";
 export const FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA = 0;
 /** 3 = optante ME/EPP. 1 = não optante. Campo oficial: codigo_opcao_simples_nacional. */
 export const FOCUS_OPCAO_SIMPLES_ME_EPP = 3;
+/**
+ * 1 = tributos federais e o ISS apurados pelo Simples.
+ * É o regime da ME/EPP comum, com regime especial nenhum.
+ */
+export const FOCUS_REGIME_APURACAO_SN_PELO_SIMPLES = 1;
 export const FOCUS_OPCAO_SIMPLES_NAO_OPTANTE = 1;
 /** 0 = nenhum. No padrão nacional, 6 é sociedade de profissionais, não o Simples. */
 export const FOCUS_REGIME_ESPECIAL_NENHUM = 0;
@@ -618,9 +623,17 @@ export function buildFocusNfsePayload(opts: FocusNfsePayloadOpts): Record<string
     valor_servico: value,
     tributacao_iss: FOCUS_TRIBUTACAO_ISS_TRIBUTAVEL,
     tipo_retencao_iss: ISS_RETAIN ? FOCUS_TIPO_RETENCAO_ISS_TOMADOR : FOCUS_TIPO_RETENCAO_ISS_NAO_RETIDO,
-    indicador_total_tributacao: FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA,
   };
-  if (aliquotaSimples != null) payload.percentual_aliquota_relativa_municipio = aliquotaSimples;
+  if (optante) {
+    // E0166: ME/EPP tem de informar o regime de apuração do Simples.
+    payload.regime_tributario_simples_nacional = FOCUS_REGIME_APURACAO_SN_PELO_SIMPLES;
+    // E0712: ME/EPP não pode usar indTotTrib. O total vai em pTotTribSN.
+    payload.percentual_total_tributos_simples_nacional = aliquotaSimples;
+    // E0625 e E0631: sem retenção de ISS, a alíquota municipal não entra na DPS.
+    if (ISS_RETAIN && aliquotaSimples != null) payload.percentual_aliquota_relativa_municipio = aliquotaSimples;
+  } else {
+    payload.indicador_total_tributacao = FOCUS_INDICADOR_TOTAL_TRIBUTACAO_NAO_INFORMA;
+  }
   if (digits.length === 14) payload.cnpj_tomador = digits;
   else payload.cpf_tomador = digits;
   const email = focusTomadorEmail(opts.tomador.email);
