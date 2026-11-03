@@ -426,6 +426,134 @@ export function pickUsablePoint(input: {
   return { lat: cluster[0].lat, lng: cluster[0].lng };
 }
 
+/** Brasil continental, com folga. Ponto fora daqui não é posto da ANP. */
+export function isInsideBrazil(lat: number, lng: number): boolean {
+  return lat >= -34 && lat <= 6 && lng >= -74 && lng <= -28;
+}
+
+/**
+ * Ponto que o mapa do celular leu a partir do endereço.
+ * Telhado e interpolação de quadra entram.
+ * Centro geométrico ou resultado parcial só entram se a janela do mapa tiver até 1,5 km.
+ * Aproximado e o centro do município ficam de fora. Modelo de texto não inventa coordenada.
+ */
+export function acceptMapPoint(input: {
+  lat: number;
+  lng: number;
+  locationType: string | null | undefined;
+  partialMatch?: boolean;
+  viewportDiagonalKm?: number | null;
+}): { lat: number; lng: number } | null {
+  const { lat, lng } = input;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (!isInsideBrazil(lat, lng)) return null;
+  if (isMunicipalCentroid(lat, lng)) return null;
+  const type = String(input.locationType ?? "").trim().toUpperCase();
+  const diagonal = input.viewportDiagonalKm;
+  const tight = diagonal != null && Number.isFinite(diagonal) && diagonal >= 0 && diagonal <= STREET_CLUSTER_MAX_KM;
+  if (type === "ROOFTOP" || type === "RANGE_INTERPOLATED") {
+    if (input.partialMatch && !tight) return null;
+    return { lat, lng };
+  }
+  if (type === "GEOMETRIC_CENTER" && tight) return { lat, lng };
+  return null;
+}
+
+/** O pino do mapa precisa estar perto do GPS. A régua continua em 25 km. */
+export const MAP_PIN_MAX_KM = 30;
+/** Endereços que o celular lê numa abertura. O mesmo CEP guarda um pino só. */
+export const MAP_LOCATE_LIMIT = 8;
+
+export interface StationToLocate {
+  cnpj: string;
+  name: string;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  cep: string;
+  query: string;
+  houseNumber: string | null;
+  anpScore: number | null;
+  gasolinePrice: number | null;
+  ethanolPrice: number | null;
+  researchDate: string | null;
+}
+
+export interface ClientPin {
+  cep: string;
+  lat: number;
+  lng: number;
+}
+
+const PIN_PART = /^(\d{8}):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)$/;
+
+export function parsePinList(raw: string | null | undefined, limit = MAP_LOCATE_LIMIT): ClientPin[] {
+  const out: ClientPin[] = [];
+  const seen = new Set<string>();
+  for (const part of String(raw ?? "").split(",")) {
+    const match = PIN_PART.exec(part.trim());
+    if (!match || seen.has(match[1])) continue;
+    const lat = Number(match[2]);
+    const lng = Number(match[3]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    seen.add(match[1]);
+    out.push({ cep: match[1], lat, lng });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export function formatPinList(pins: ClientPin[]): string {
+  return pins
+    .slice(0, MAP_LOCATE_LIMIT)
+    .map((pin) => `${cepDigits(pin.cep)}:${pin.lat}:${pin.lng}`)
+    .filter((part) => PIN_PART.test(part))
+    .join(",");
+}
+
+/** CEP da lista limpa, dentro do Brasil, fora do centro do município e a até 30 km do GPS. */
+export function acceptClientPin(input: {
+  pin: ClientPin;
+  originLat: number;
+  originLng: number;
+  allowedCeps: Iterable<string>;
+}): ClientPin | null {
+  const cep = cepDigits(input.pin.cep);
+  if (cep.length !== 8) return null;
+  let allowed = false;
+  for (const item of input.allowedCeps) {
+    if (cepDigits(item) === cep) {
+      allowed = true;
+      break;
+    }
+  }
+  if (!allowed) return null;
+  const point = acceptMapPoint({ lat: input.pin.lat, lng: input.pin.lng, locationType: "ROOFTOP" });
+  if (!point) return null;
+  if (haversineKm(input.originLat, input.originLng, point.lat, point.lng) > MAP_PIN_MAX_KM) return null;
+  return { cep, lat: point.lat, lng: point.lng };
+}
+
+/** Régua em cima de coordenadas já aceitas. Sem posto até 25 km, null. */
+export function rankFromCoordinates(
+  originLat: number,
+  originLng: number,
+  rows: Array<Omit<StationCandidate, "distanceKm">>,
+): (RankResult & { radiusKm: number }) | null {
+  const measured = rows
+    .filter((row) =>
+      Number.isFinite(row.latitude) &&
+      Number.isFinite(row.longitude) &&
+      !isMunicipalCentroid(row.latitude, row.longitude))
+    .map((row) => ({
+      ...row,
+      distanceKm: haversineKm(originLat, originLng, row.latitude, row.longitude),
+    }));
+  const step = pickRadiusStep(measured.map((row) => row.distanceKm));
+  if (step === null) return null;
+  return { ...rankStations(measured, step), radiusKm: step };
+}
+
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
   let cur = "";

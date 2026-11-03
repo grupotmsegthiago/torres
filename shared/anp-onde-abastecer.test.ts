@@ -1,10 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  acceptClientPin,
+  acceptMapPoint,
   digitsCnpj,
   addressHouseNumber,
   cepBandBounds,
   classifyFoundPoint,
+  formatPinList,
+  parsePinList,
+  rankFromCoordinates,
   emptyReasonAfterGeo,
   emptyReasonForUnmatchedCity,
   haversineKm,
@@ -315,6 +320,98 @@ test("o raio vazio só fecha depois que o CEP da faixa foi localizado", () => {
   assert.equal(isCepInBand("02939040", "02901000"), true);
   assert.equal(isCepInBand("02939040", "04506000"), false);
   assert.deepEqual(cepBandBounds("02939040"), { from: "02859040", to: "03019040" });
+});
+
+test("o mapa lê o endereço e não inventa o pino", () => {
+  assert.deepEqual(
+    acceptMapPoint({ lat: -23.50499, lng: -46.83394, locationType: "ROOFTOP" }),
+    { lat: -23.50499, lng: -46.83394 },
+  );
+  assert.deepEqual(
+    acceptMapPoint({ lat: -23.51234, lng: -46.81733, locationType: "RANGE_INTERPOLATED" }),
+    { lat: -23.51234, lng: -46.81733 },
+  );
+  assert.equal(acceptMapPoint({ lat: -23.50499, lng: -46.83394, locationType: "APPROXIMATE" }), null);
+  assert.equal(acceptMapPoint({ lat: -23.5475, lng: -46.63611, locationType: "ROOFTOP" }), null);
+  assert.equal(acceptMapPoint({ lat: 40, lng: -46.83, locationType: "ROOFTOP" }), null);
+  assert.equal(
+    acceptMapPoint({ lat: -23.51, lng: -46.82, locationType: "GEOMETRIC_CENTER", viewportDiagonalKm: 3 }),
+    null,
+  );
+  assert.deepEqual(
+    acceptMapPoint({ lat: -23.51, lng: -46.82, locationType: "GEOMETRIC_CENTER", viewportDiagonalKm: 0.4 }),
+    { lat: -23.51, lng: -46.82 },
+  );
+  assert.equal(
+    acceptMapPoint({ lat: -23.51, lng: -46.82, locationType: "ROOFTOP", partialMatch: true, viewportDiagonalKm: 4 }),
+    null,
+  );
+  assert.deepEqual(
+    acceptMapPoint({ lat: -23.51, lng: -46.82, locationType: "ROOFTOP", partialMatch: true, viewportDiagonalKm: 0.8 }),
+    { lat: -23.51, lng: -46.82 },
+  );
+
+  const origin = { lat: -23.42202, lng: -46.86707 };
+  assert.deepEqual(
+    acceptClientPin({
+      pin: { cep: "06460-030", lat: -23.50499, lng: -46.83394 },
+      originLat: origin.lat,
+      originLng: origin.lng,
+      allowedCeps: ["06460030"],
+    }),
+    { cep: "06460030", lat: -23.50499, lng: -46.83394 },
+  );
+  assert.equal(
+    acceptClientPin({
+      pin: { cep: "02938000", lat: -23.46269, lng: -46.72112 },
+      originLat: origin.lat,
+      originLng: origin.lng,
+      allowedCeps: ["06460030"],
+    }),
+    null,
+  );
+  assert.equal(
+    acceptClientPin({
+      pin: { cep: "06460030", lat: -23, lng: -46 },
+      originLat: origin.lat,
+      originLng: origin.lng,
+      allowedCeps: ["06460030"],
+    }),
+    null,
+  );
+  assert.equal(
+    formatPinList([{ cep: "06460030", lat: -23.50499, lng: -46.83394 }]),
+    "06460030:-23.50499:-46.83394",
+  );
+  assert.deepEqual(
+    parsePinList("06460030:-23.50499:-46.83394,lixo,06460030:-23.1:-46.8"),
+    [{ cep: "06460030", lat: -23.50499, lng: -46.83394 }],
+  );
+
+  const ranked = rankFromCoordinates(origin.lat, origin.lng, [{
+    cnpj: "1",
+    name: "Piracema",
+    address: "AV PIRACEMA, 601",
+    latitude: -23.50499,
+    longitude: -46.83394,
+    anpScore: null,
+    gasolinePrice: 5.5,
+    ethanolPrice: 3.4,
+    researchDate: "2026-09-08",
+  }]);
+  assert.equal(ranked?.radiusKm, 10);
+  assert.equal(ranked?.stations[0].name, "Piracema");
+  assert.equal(rankFromCoordinates(origin.lat, origin.lng, [{
+    cnpj: "2",
+    name: "Longe",
+    address: null,
+    latitude: -22.9,
+    longitude: -43.2,
+    anpScore: null,
+    gasolinePrice: null,
+    ethanolPrice: null,
+    researchDate: null,
+  }]), null);
 });
 
 test("base não sincronizada não se confunde com raio vazio ou cidade", () => {

@@ -1,7 +1,23 @@
 import MobileLayout from "@/components/mobile/layout";
 import { PosicaoConfirmada } from "@/components/mobile/posicao-confirmada";
+import { loadGoogleMapsScript } from "@/components/places-autocomplete";
 import { authFetch } from "@/lib/queryClient";
-import { catalogPhrase, isAnpBaseNotLoaded, ONDE_ABASTECER_RADIUS_STEPS_KM, ONDE_ABASTECER_STATION_KEY, type AnpCatalog, type EmptyReason } from "@shared/anp-onde-abastecer";
+import {
+  acceptMapPoint,
+  catalogPhrase,
+  formatPinList,
+  haversineKm,
+  isAnpBaseNotLoaded,
+  MAP_PIN_MAX_KM,
+  noStationMessage,
+  ONDE_ABASTECER_RADIUS_STEPS_KM,
+  ONDE_ABASTECER_STATION_KEY,
+  rankFromCoordinates,
+  type AnpCatalog,
+  type ClientPin,
+  type EmptyReason,
+  type StationToLocate,
+} from "@shared/anp-onde-abastecer";
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { AlertCircle, ArrowLeft, Loader2, MapPin, ShieldCheck } from "lucide-react";
@@ -31,6 +47,73 @@ interface Payload {
   cityLabel?: string | null;
   origin?: { lat: number; lng: number };
   catalog?: AnpCatalog;
+  toLocate?: StationToLocate[];
+}
+
+function viewportDiagonalKm(geometry: { viewport?: { getNorthEast?: () => { lat: () => number; lng: () => number }; getSouthWest?: () => { lat: () => number; lng: () => number } } } | null): number | null {
+  const ne = geometry?.viewport?.getNorthEast?.();
+  const sw = geometry?.viewport?.getSouthWest?.();
+  if (!ne || !sw) return null;
+  return haversineKm(ne.lat(), ne.lng(), sw.lat(), sw.lng());
+}
+
+function mapsGeocoderReady(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY) {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    loadGoogleMapsScript(() => finish(!!window.google?.maps?.Geocoder));
+    window.setTimeout(() => finish(!!window.google?.maps?.Geocoder), 5000);
+  });
+}
+
+function geocodeAddress(query: string, origin: { lat: number; lng: number }): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    const geocoderCtor = window.google?.maps?.Geocoder;
+    if (!query || !geocoderCtor) {
+      resolve(null);
+      return;
+    }
+    const delta = MAP_PIN_MAX_KM / 111;
+    const bounds = new window.google.maps.LatLngBounds(
+      { lat: origin.lat - delta, lng: origin.lng - delta },
+      { lat: origin.lat + delta, lng: origin.lng + delta },
+    );
+    const timer = window.setTimeout(() => resolve(null), 8000);
+    new geocoderCtor().geocode(
+      { address: query, region: "br", bounds, componentRestrictions: { country: "BR" } },
+      (results: Array<{ geometry?: { location?: { lat: () => number; lng: () => number }; location_type?: string; viewport?: { getNorthEast?: () => { lat: () => number; lng: () => number }; getSouthWest?: () => { lat: () => number; lng: () => number } } }; partial_match?: boolean }> | null, status: string) => {
+        window.clearTimeout(timer);
+        if (status !== "OK" || !results?.length) {
+          resolve(null);
+          return;
+        }
+        for (const result of results) {
+          const loc = result.geometry?.location;
+          if (!loc) continue;
+          const point = acceptMapPoint({
+            lat: loc.lat(),
+            lng: loc.lng(),
+            locationType: result.geometry?.location_type,
+            partialMatch: result.partial_match === true,
+            viewportDiagonalKm: viewportDiagonalKm(result.geometry ?? null),
+          });
+          if (!point) continue;
+          if (haversineKm(origin.lat, origin.lng, point.lat, point.lng) > MAP_PIN_MAX_KM) continue;
+          resolve(point);
+          return;
+        }
+        resolve(null);
+      },
+    );
+  });
 }
 
 function RadiusRuler({ activeKm, opening }: { activeKm: number | null; opening: boolean }) {
@@ -109,6 +192,7 @@ function RouteButtons({ station }: { station: StationCard }) {
 export default function OndeAbastecerPage() {
   const [loading, setLoading] = useState(true);
   const [locating, setLocating] = useState(false);
+  const [lendoMapa, setLendoMapa] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [fix, setFix] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
@@ -138,7 +222,82 @@ export default function OndeAbastecerPage() {
             setPayload(data);
             const first = data.stations?.[0];
             if (first?.name) rememberStation(first.name);
-            if (data.emptyReason === "locating" && attempt < 6) {
+            const todo = (data.toLocate ?? []) as StationToLocate[];
+            if (!data.stations?.length && todo.length) {
+              setLendoMapa(true);
+              setLocating(true);
+              const ready = await mapsGeocoderReady();
+              if (cancelled) return;
+              const pins: ClientPin[] = [];
+              const located: Array<Omit<StationToLocate, "query" | "houseNumber" | "cep" | "city" | "state"> & { latitude: number; longitude: number }> = [];
+              if (ready) {
+                const found = await Promise.all(todo.map(async (item) => {
+                  const point = await geocodeAddress(item.query, { lat: latitude, lng: longitude });
+                  return point ? { item, point } : null;
+                }));
+                if (cancelled) return;
+                for (const hit of found) {
+                  if (!hit) continue;
+                  pins.push({ cep: hit.item.cep, lat: hit.point.lat, lng: hit.point.lng });
+                  located.push({
+                    cnpj: hit.item.cnpj,
+                    name: hit.item.name,
+                    address: hit.item.address,
+                    latitude: hit.point.lat,
+                    longitude: hit.point.lng,
+                    anpScore: hit.item.anpScore,
+                    gasolinePrice: hit.item.gasolinePrice,
+                    ethanolPrice: hit.item.ethanolPrice,
+                    researchDate: hit.item.researchDate,
+                  });
+                }
+              }
+              const ranked = rankFromCoordinates(latitude, longitude, located);
+              if (ranked) {
+                setPayload({
+                  ...data,
+                  ...ranked,
+                  emptyReason: null,
+                  pendingGeo: 0,
+                  toLocate: [],
+                });
+                if (ranked.stations[0]?.name) rememberStation(ranked.stations[0].name);
+              } else if (!ready) {
+                setPayload({
+                  ...data,
+                  emptyReason: "no_station",
+                  message: "O mapa não carregou para ler o endereço do posto.",
+                  toLocate: [],
+                });
+              } else {
+                setPayload({
+                  ...data,
+                  emptyReason: "no_station",
+                  message: noStationMessage(25),
+                  toLocate: [],
+                });
+              }
+              if (cancelled) return;
+              setLendoMapa(false);
+              setLocating(false);
+              setLoading(false);
+              if (pins.length) {
+                try {
+                  const savedRes = await authFetch(
+                    `/api/mobile/onde-abastecer?lat=${latitude}&lng=${longitude}&pins=${encodeURIComponent(formatPinList(pins))}`,
+                  );
+                  const saved = await savedRes.json();
+                  if (!cancelled && savedRes.ok && saved.stations?.length) {
+                    setPayload(saved);
+                    if (saved.stations[0]?.name) rememberStation(saved.stations[0].name);
+                  }
+                } catch {
+                  /* a lista já lida no mapa continua nesta abertura */
+                }
+              }
+              return;
+            }
+            if (data.emptyReason === "locating" && attempt < 2) {
               setLocating(true);
               timer = window.setTimeout(() => ask(attempt + 1), 900);
               return;
@@ -208,7 +367,11 @@ export default function OndeAbastecerPage() {
             <div className="flex flex-col items-center justify-center py-20 space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
               <p className="text-sm text-neutral-500 font-medium">
-                {locating ? "Abrindo a régua de 5 até 25 km..." : "Buscando postos no raio de 5 km..."}
+                {lendoMapa
+                  ? "Lendo o endereço dos postos no mapa..."
+                  : locating
+                    ? "Abrindo a régua de 5 até 25 km..."
+                    : "Buscando postos no raio de 5 km..."}
               </p>
             </div>
           )}

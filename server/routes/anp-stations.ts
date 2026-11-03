@@ -16,7 +16,8 @@ export function registerAnpStationRoutes(app: Express) {
       if (lat === null || lng === null) {
         return res.status(400).json({ message: "Latitude e longitude são obrigatórias." });
       }
-      const payload = await recommendStations(lat, lng);
+      const pins = typeof req.query.pins === "string" ? req.query.pins : "";
+      const payload = await recommendStations(lat, lng, pins);
       res.json(payload);
     } catch (err: any) {
       console.error("[anp] recomendação:", err?.message || err);

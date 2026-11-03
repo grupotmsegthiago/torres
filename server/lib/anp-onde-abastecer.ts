@@ -3,6 +3,7 @@ import { log } from "./logger";
 import {
   ANP_FISCAL_XLSX_URL,
   ANP_YEAR_PAGE,
+  acceptClientPin,
   addressHouseNumber,
   cepBandBounds,
   cepDigits,
@@ -12,11 +13,13 @@ import {
   haversineKm,
   latestGasolinaEtanolHref,
   latestPricesByStation,
+  MAP_LOCATE_LIMIT,
   maxRadiusStepKm,
   noStationMessage,
   normalizePlace,
   orderCepsByProximity,
   parseAnpPriceCsv,
+  parsePinList,
   pickRadiusStep,
   pickUsablePoint,
   rankStations,
@@ -24,15 +27,17 @@ import {
   streetGeocodeQuery,
   type AnpCatalog,
   type AnpPriceRow,
+  type ClientPin,
   type OndeAbastecerEmptyReason,
   type RankResult,
   type StationCandidate,
+  type StationToLocate,
 } from "@shared/anp-onde-abastecer";
 import { fiscalFlagsFromXlsx } from "./anp-fiscal-xlsx";
 
 const UA = "TorresSeguranca/onde-abastecer";
-const GEO_BUDGET = 24;
-const NOMINATIM_BUDGET = 8;
+const GEO_BUDGET = 8;
+const NOMINATIM_BUDGET = 0;
 
 export interface OndeAbastecerPayload extends RankResult {
   radiusKm: number;
@@ -43,6 +48,8 @@ export interface OndeAbastecerPayload extends RankResult {
   emptyReason: OndeAbastecerEmptyReason | null;
   origin: { lat: number; lng: number };
   catalog: AnpCatalog;
+  /** Endereços limpos ainda sem coordenada, para o mapa do celular ler. */
+  toLocate: StationToLocate[];
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -210,6 +217,7 @@ async function photonHits(query: string): Promise<FoundPoint[]> {
   try {
     const res = await fetch(`https://photon.komoot.io/api/?limit=8&q=${encodeURIComponent(query)}`, {
       headers: { "User-Agent": UA, Accept: "application/json" },
+      signal: AbortSignal.timeout(1800),
     });
     if (!res.ok) return [];
     const body = await res.json() as {
@@ -352,7 +360,63 @@ function num(value: number | string | null | undefined): number | null {
   return coordinateOrNull(value);
 }
 
-export async function recommendStations(lat: number, lng: number): Promise<OndeAbastecerPayload> {
+async function pricesFor(cnpjs: string[]) {
+  const unique = [...new Set(cnpjs.filter(Boolean))];
+  if (!unique.length) return new Map<string, { gasoline: number | null; ethanol: number | null; researchDate: string | null }>();
+  const { data: priceRows, error: priceError } = await supabaseAdmin
+    .from("anp_fuel_prices")
+    .select("cnpj, fuel_date, product_name, price")
+    .in("cnpj", unique)
+    .in("product_name", ["GASOLINA", "ETANOL"])
+    .order("fuel_date", { ascending: false })
+    .limit(8000);
+  if (priceError) throw new Error(priceError.message);
+  return latestPricesByStation(
+    (priceRows ?? []).map((row: { cnpj: string; fuel_date: string; product_name: "GASOLINA" | "ETANOL"; price: number | string }) => ({
+      cnpj: row.cnpj,
+      fuelDate: String(row.fuel_date).slice(0, 10),
+      productName: row.product_name,
+      price: Number(row.price),
+    })),
+  );
+}
+
+function stationsToLocate(rows: StationRow[], userCep: string): StationRow[] {
+  const byCep = new Map<string, StationRow>();
+  for (const row of rows) {
+    if (num(row.latitude) !== null && num(row.longitude) !== null) continue;
+    const cep = cepDigits(row.cep);
+    if (cep.length !== 8 || byCep.has(cep)) continue;
+    byCep.set(cep, row);
+  }
+  return orderCepsByProximity(userCep, byCep.keys())
+    .slice(0, MAP_LOCATE_LIMIT)
+    .map((cep) => byCep.get(cep) as StationRow);
+}
+
+async function rememberClientPins(rows: StationRow[], pins: ClientPin[]) {
+  if (!pins.length) return;
+  const byCep = new Map(pins.map((pin) => [pin.cep, pin]));
+  const now = new Date().toISOString();
+  const stationUpdates: Record<string, unknown>[] = [];
+  const cepUpdates: Record<string, unknown>[] = [];
+  const seenCep = new Set<string>();
+  for (const row of rows) {
+    const pin = byCep.get(cepDigits(row.cep));
+    if (!pin || (num(row.latitude) !== null && num(row.longitude) !== null)) continue;
+    row.latitude = pin.lat;
+    row.longitude = pin.lng;
+    stationUpdates.push({ cnpj: row.cnpj, latitude: pin.lat, longitude: pin.lng, updated_at: now });
+    if (!seenCep.has(pin.cep)) {
+      seenCep.add(pin.cep);
+      cepUpdates.push({ cep: pin.cep, latitude: pin.lat, longitude: pin.lng, looked_up_at: now });
+    }
+  }
+  if (cepUpdates.length) await upsertChunks("anp_cep_geo", cepUpdates, "cep");
+  if (stationUpdates.length) await upsertChunks("anp_station_quality", stationUpdates, "cnpj").catch(() => {});
+}
+
+export async function recommendStations(lat: number, lng: number, pinText = ""): Promise<OndeAbastecerPayload> {
   const base = await nationalCatalog();
   const origin = { lat, lng };
   const empty = (
@@ -366,6 +430,7 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     inPlace = 0,
     clean = 0,
     inCity = 0,
+    toLocate: StationToLocate[] = [],
   ): OndeAbastecerPayload => ({
     mode: "empty",
     emptyReason,
@@ -378,6 +443,7 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     pendingGeo,
     origin,
     catalog: { ...base, inCity, inPlace, clean },
+    toLocate,
   });
 
   const place = await reverseCity(lat, lng);
@@ -462,7 +528,31 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
   for (const row of pool.values()) if (clean(row)) merged.set(row.cnpj, row);
   for (const row of (boxRows ?? []) as StationRow[]) merged.set(row.cnpj, row);
 
+  const acceptedPins = parsePinList(pinText)
+    .map((pin) => acceptClientPin({
+      pin,
+      originLat: lat,
+      originLng: lng,
+      allowedCeps: [...merged.values()].map((row) => row.cep),
+    }))
+    .filter((pin): pin is ClientPin => pin !== null);
+  await rememberClientPins([...merged.values()], acceptedPins);
+
+  const streetDistances = () => {
+    const distances: number[] = [];
+    for (const row of merged.values()) {
+      const latitude = num(row.latitude);
+      const longitude = num(row.longitude);
+      if (latitude === null || longitude === null) continue;
+      distances.push(haversineKm(lat, lng, latitude, longitude));
+    }
+    return distances;
+  };
+
   const pending = [...merged.values()].filter((row) => num(row.latitude) === null || num(row.longitude) === null);
+  if (pickRadiusStep(streetDistances()) !== null) {
+    pending.length = 0;
+  }
   const queryByCep = new Map<string, string>();
   const houseByCep = new Map<string, string | null>();
   const placeByCep = new Map<string, { city: string | null; state: string | null }>();
@@ -510,6 +600,26 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
   const step = pickRadiusStep(measured.map((item) => item.distanceKm));
   if (step === null) {
     const reason = emptyReasonAfterGeo(pendingLeft);
+    const waiting = stationsToLocate([...merged.values()], place.cep);
+    const waitingPrices = await pricesFor(waiting.map((row) => row.cnpj));
+    const toLocate: StationToLocate[] = waiting.map((row) => {
+      const price = waitingPrices.get(row.cnpj);
+      const cep = cepDigits(row.cep);
+      return {
+        cnpj: row.cnpj,
+        name: row.station_name || "Posto",
+        address: row.address,
+        city: row.city || row.city_norm,
+        state: row.state,
+        cep,
+        query: stationGeocodeQuery(row.address, row.city || row.city_norm, row.state),
+        houseNumber: addressHouseNumber(row.address),
+        anpScore: row.anp_score,
+        gasolinePrice: price?.gasoline ?? null,
+        ethanolPrice: price?.ethanol ?? null,
+        researchDate: price?.researchDate ?? null,
+      };
+    });
     return empty(
       reason,
       reason === "locating"
@@ -523,27 +633,11 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
       pool.size,
       merged.size,
       inCity,
+      toLocate,
     );
   }
   const near = measured.filter((item) => item.distanceKm <= step);
-
-  const cnpjs = near.map((item) => item.row.cnpj);
-  const { data: priceRows, error: priceError } = await supabaseAdmin
-    .from("anp_fuel_prices")
-    .select("cnpj, fuel_date, product_name, price")
-    .in("cnpj", cnpjs)
-    .in("product_name", ["GASOLINA", "ETANOL"])
-    .order("fuel_date", { ascending: false })
-    .limit(8000);
-  if (priceError) throw new Error(priceError.message);
-  const prices = latestPricesByStation(
-    (priceRows ?? []).map((row: { cnpj: string; fuel_date: string; product_name: "GASOLINA" | "ETANOL"; price: number | string }) => ({
-      cnpj: row.cnpj,
-      fuelDate: String(row.fuel_date).slice(0, 10),
-      productName: row.product_name,
-      price: Number(row.price),
-    })),
-  );
+  const prices = await pricesFor(near.map((item) => item.row.cnpj));
 
   const candidates: StationCandidate[] = near.map(({ row, distanceKm }) => {
     const price = prices.get(row.cnpj);
@@ -572,5 +666,6 @@ export async function recommendStations(lat: number, lng: number): Promise<OndeA
     emptyReason: null,
     origin,
     catalog: { ...base, inCity, inPlace: pool.size, clean: merged.size },
+    toLocate: [],
   };
 }

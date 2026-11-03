@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — O mapa do celular lê o endereço do posto
+
+- A lista da ANP já estava no sistema, com 5.940 postos, e nenhuma latitude gravada. Photon e Nominatim, chamados do servidor, não deixaram pino nenhum.
+- O mesmo mapa que confirma o GPS lê o endereço da ANP no celular. Entra telhado ou quadra interpolada. Aproximado, centro do município e janela larga ficam de fora. Modelo de texto não inventa coordenada.
+- O pino aceito volta no mesmo `GET /api/mobile/onde-abastecer`, só para CEP da lista limpa e a até 30 km. A próxima abertura não lê de novo.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Posição confirmada na missão, no ponto operacional e no abastecimento
 
 - O mapa e a frase "Posição confirmada", com a precisão em metros, saem do Onde abastecer e entram na missão, no ponto operacional e no formulário de abastecimento.
