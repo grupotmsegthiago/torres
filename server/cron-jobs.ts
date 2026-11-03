@@ -1064,7 +1064,24 @@ export async function runAgentCentralEscalationCron(): Promise<void> {
 }
 
 const ANP_SYNC_LOCK = "anp_sync_lock";
-const ANP_SYNC_LOCK_MS = 20 * 60 * 1000;
+const ANP_SYNC_LOCK_MS = 8 * 60 * 1000;
+
+type AnpLoadState = "empty" | "partial" | "ready";
+
+/** `partial`: preços já gravados e a marcação de qualidade estourou o tempo da função. */
+async function anpLoadState(): Promise<AnpLoadState> {
+  const { count: total, error } = await supabaseAdmin
+    .from("anp_station_quality")
+    .select("cnpj", { count: "exact", head: true });
+  if (error) throw new Error(error.message);
+  if (!total) return "empty";
+  const { count: pending, error: pendingError } = await supabaseAdmin
+    .from("anp_station_quality")
+    .select("cnpj", { count: "exact", head: true })
+    .eq("quality_known", false);
+  if (pendingError) throw new Error(pendingError.message);
+  return (pending ?? 0) > 0 ? "partial" : "ready";
+}
 
 /** Evita duas cargas ao mesmo tempo. O lock em memória não atravessa as funções da Vercel. */
 async function claimAnpSyncLock(): Promise<boolean> {
@@ -1098,11 +1115,19 @@ async function releaseAnpSyncLock(): Promise<void> {
 /** A cada 30 minutos, no bucket que já existe. Fail-soft. A carga manual continua em POST /api/admin/anp-stations/sync. */
 export async function runAnpStationsCron(): Promise<void> {
   await withCronLock("anp-stations", async () => {
+    if (!isSupabaseHealthy()) return;
     if (!(await claimAnpSyncLock())) return;
     try {
-      const { syncAnpReference } = await import("./lib/anp-onde-abastecer");
-      const r = await syncAnpReference();
-      log(`[anp] carga ok preços=${r.prices} postos=${r.stations} marcados=${r.flagged}`, "cron");
+      const state = await anpLoadState();
+      if (state === "partial") {
+        const { importAnpQuality } = await import("./lib/anp-onde-abastecer");
+        const r = await importAnpQuality(new Date().toISOString().slice(0, 10));
+        log(`[anp] qualidade retomada, marcados=${r.flagged}`, "cron");
+      } else {
+        const { syncAnpReference } = await import("./lib/anp-onde-abastecer");
+        const r = await syncAnpReference();
+        log(`[anp] carga ok preços=${r.prices} postos=${r.stations} marcados=${r.flagged}`, "cron");
+      }
       await releaseAnpSyncLock();
     } catch (e: any) {
       log(`[anp] carga interrompida: ${e?.message || e}`, "cron");
@@ -1110,19 +1135,16 @@ export async function runAnpStationsCron(): Promise<void> {
   });
 }
 
-/** Enquanto não houver qualidade conhecida, tenta a mesma carga. O minuto seguinte não dispara outra. */
+/** Base vazia ou qualidade incompleta: o minuto seguinte tenta de novo, sem uma segunda carga paralela. */
 export async function runAnpStationsIfEmptyCron(): Promise<void> {
   if (!isSupabaseHealthy()) return;
-  const { count, error } = await supabaseAdmin
-    .from("anp_station_quality")
-    .select("cnpj", { count: "exact", head: true })
-    .eq("quality_known", true);
-  if (error) {
-    log(`[anp] contagem da base: ${error.message}`, "cron");
-    return;
+  try {
+    const state = await anpLoadState();
+    if (state === "ready") return;
+    await runAnpStationsCron();
+  } catch (e: any) {
+    log(`[anp] contagem da base: ${e?.message || e}`, "cron");
   }
-  if ((count ?? 0) > 0) return;
-  await runAnpStationsCron();
 }
 
 /** Lotes: base64 inline → Storage (não apaga evidências). */

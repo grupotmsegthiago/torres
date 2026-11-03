@@ -3,7 +3,7 @@
 ## 2026-11-03 — Carga da ANP a cada 30 minutos
 
 - O bucket `thirty-min` já existia (Vercel Cron e `node-cron`). Ele passa a chamar `syncAnpReference`, a mesma carga do `POST /api/admin/anp-stations/sync`.
-- Enquanto não houver posto com qualidade conhecida, o bucket `minute` tenta essa carga uma vez. Um lock em `system_settings` impede outra carga paralela por 20 minutos.
+- Enquanto a base estiver vazia ou a qualidade tiver ficado pela metade (o tempo da função da Vercel estoura), o bucket `minute` continua a mesma carga. Preço já gravado não é baixado de novo. Um lock em `system_settings` impede outra carga paralela por 8 minutos.
 - Saiu o horário único de segunda 04:20. O arquivo da ANP é mensal; a repetição só regrava as mesmas linhas.
 - Não entra no custo do abastecimento.
 
