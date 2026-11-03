@@ -99,13 +99,15 @@ export async function importAnpPrices(csvText: string): Promise<{ prices: number
   return { prices: rows.length, stations: stations.size };
 }
 
-export async function importAnpQuality(asOfIso: string): Promise<{ flagged: number }> {
+export async function importAnpQuality(asOfIso: string, onlyUnknown = false): Promise<{ flagged: number }> {
   const buf = await fetchBuffer(ANP_FISCAL_XLSX_URL);
   const flags = fiscalFlagsFromXlsx(buf, asOfIso);
   if (flags.size === 0) {
     throw new Error("Fiscalização sem eventos reconhecidos. A carga de qualidade foi interrompida.");
   }
-  const { data, error } = await supabaseAdmin.from("anp_station_quality").select("cnpj").limit(20000);
+  let query = supabaseAdmin.from("anp_station_quality").select("cnpj").limit(20000);
+  if (onlyUnknown) query = query.eq("quality_known", false);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   const existing = new Set((data ?? []).map((row: { cnpj: string }) => row.cnpj));
   const now = new Date().toISOString();

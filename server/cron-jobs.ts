@@ -1121,7 +1121,7 @@ export async function runAnpStationsCron(): Promise<void> {
       const state = await anpLoadState();
       if (state === "partial") {
         const { importAnpQuality } = await import("./lib/anp-onde-abastecer");
-        const r = await importAnpQuality(new Date().toISOString().slice(0, 10));
+        const r = await importAnpQuality(new Date().toISOString().slice(0, 10), true);
         log(`[anp] qualidade retomada, marcados=${r.flagged}`, "cron");
       } else {
         const { syncAnpReference } = await import("./lib/anp-onde-abastecer");
