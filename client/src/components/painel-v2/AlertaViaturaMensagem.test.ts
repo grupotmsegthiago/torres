@@ -18,6 +18,9 @@ test("o aviso da atualização oferece WhatsApp com foto e texto", () => {
   const html = renderToStaticMarkup(createElement(AlertaViaturaMensagem, { ...base, onShare: () => {} }));
   assert.match(html, /data-testid="button-alerta-whatsapp"/);
   assert.match(html, /foto e texto/);
+  assert.match(html, /max-h-\[92vh\]/);
+  assert.match(html, /overflow-y-auto/);
+  assert.match(html, /overflow-x-hidden/);
 });
 
 test("sem compartilhamento o aviso não mostra o botão", () => {

@@ -13,7 +13,7 @@
 Operação de campo. A atualização é fato (`mission_updates`). O botão só lê e compartilha. Satélite de interface. Não altera boletim, balanço nem `calcularEscolta`.
 
 ### O que foi alterado
-O aviso que abre quando a atualização chega, e a leitura da mensagem no mapa, ganham o botão verde "WhatsApp · foto e texto" quando o celular sabe compartilhar arquivo.
+O aviso que abre quando a atualização chega, e a leitura da mensagem no mapa, ganham o botão verde "WhatsApp · foto e texto" quando o celular sabe compartilhar arquivo. No celular o desenho da viatura encolhe e o aviso rola, para o botão aparecer na mesma tela.
 
 ### O que não foi alterado
 A lista antiga continua oculta. Copiar foto e copiar texto no computador permanecem. Custo, NFS-e e Mobi não entram.

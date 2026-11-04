@@ -26,9 +26,9 @@ export function AlertaViaturaMensagem({
 }: AlertaViaturaProps) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 backdrop-blur-md p-4" data-testid="alerta-viatura-mensagem">
-      <div className="relative w-full max-w-5xl rounded-3xl bg-gradient-to-b from-[#0f192b] via-[#070b13] to-[#04060a]
+      <div className="relative w-full max-w-5xl max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-3xl bg-gradient-to-b from-[#0f192b] via-[#070b13] to-[#04060a]
         border-2 border-amber-500/50 shadow-[0_0_60px_rgba(245,158,11,0.25),inset_0_1px_3px_rgba(255,255,255,0.15)]
-        p-6 md:p-10 overflow-hidden flex flex-col md:flex-row items-center gap-8">
+        p-4 md:p-10 flex flex-col md:flex-row items-center gap-4 md:gap-8">
         <div className="pointer-events-none absolute top-1/2 left-1/4 -translate-y-1/2 w-80 h-80 bg-amber-500/10 rounded-full blur-[120px] animate-pulse" />
 
         <div className="relative w-full md:w-1/2 flex items-center justify-center">
@@ -36,7 +36,7 @@ export function AlertaViaturaMensagem({
           <img
             src={imageUrl}
             alt={`Viatura ${plate}`}
-            className="relative z-10 w-full max-w-[460px] h-auto object-contain drop-shadow-[0_20px_25px_rgba(0,0,0,0.85)]"
+            className="relative z-10 w-full max-w-[460px] max-h-[22vh] md:max-h-none h-auto object-contain drop-shadow-[0_20px_25px_rgba(0,0,0,0.85)]"
           />
           <span className="absolute z-20 top-[46%] left-[16%] w-7 h-4 rounded-full bg-amber-100/90 blur-[5px] shadow-[0_0_22px_#fef08a,0_0_42px_#eab308] animate-ping" />
           <span className="absolute z-20 top-[50%] left-[33%] w-6 h-4 rounded-full bg-amber-100/90 blur-[5px] shadow-[0_0_22px_#fef08a,0_0_42px_#eab308] animate-ping" />
@@ -76,7 +76,7 @@ export function AlertaViaturaMensagem({
             <p className="text-base font-bold text-slate-100 leading-relaxed italic pr-16">“{message}”</p>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="sticky bottom-0 z-20 flex flex-col sm:flex-row gap-3 bg-[#070b13]/95 py-2">
             {onShare ? (
               <button
                 type="button"
