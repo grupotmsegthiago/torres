@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-04 — O aviso da atualização mostra a missão e manda o formulário
+
+- A tela da atualização do agente passa a mostrar cliente, origem e destino da ordem de serviço. A leitura usa a OS que está na viatura ou, se o rastreamento ainda não casou, a grade operacional.
+- O WhatsApp continua levando a foto junto com o texto. O texto volta a ser o formulário completo da missão, o mesmo modelo já usado no compartilhamento, com a frase desta atualização no campo de atualização.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-04 — WhatsApp de novo leva a foto e o texto da atualização
 
 - No layout novo, a lista que compartilhava a atualização do vigilante ficou escondida. O aviso no celular só marcava como lida.

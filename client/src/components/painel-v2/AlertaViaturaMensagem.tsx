@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import { SiWhatsapp } from "react-icons/si";
+import { titleCase } from "@/lib/utils";
 
 interface AlertaViaturaProps {
   plate: string;
@@ -7,6 +8,9 @@ interface AlertaViaturaProps {
   message: string;
   time: string;
   imageUrl: string;
+  clientName?: string | null;
+  origin?: string | null;
+  destination?: string | null;
   onClose: () => void;
   onMarkRead: () => void;
   onShare?: () => void;
@@ -19,11 +23,17 @@ export function AlertaViaturaMensagem({
   message,
   time,
   imageUrl,
+  clientName,
+  origin,
+  destination,
   onClose,
   onMarkRead,
   onShare,
   linkAction,
 }: AlertaViaturaProps) {
+  const cliente = titleCase(clientName) || "—";
+  const origem = origin?.trim() || "—";
+  const destino = destination?.trim() || "—";
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 backdrop-blur-md p-4" data-testid="alerta-viatura-mensagem">
       <div className="relative w-full max-w-5xl max-h-[92vh] overflow-x-hidden overflow-y-auto rounded-3xl bg-gradient-to-b from-[#0f192b] via-[#070b13] to-[#04060a]
@@ -67,6 +77,20 @@ export function AlertaViaturaMensagem({
             <div className="text-3xl font-black font-mono text-slate-100 tracking-wider">{plate}</div>
             <div className="text-sm text-slate-400 mt-1">
               Agente: <span className="text-slate-200 font-bold">{driver}</span>
+            </div>
+            <div className="mt-3 space-y-1 text-sm" data-testid="alerta-ficha-missao">
+              <div data-testid="alerta-cliente">
+                <span className="text-slate-500">Cliente </span>
+                <span className="font-bold text-slate-100 break-words">{cliente}</span>
+              </div>
+              <div data-testid="alerta-origem">
+                <span className="text-slate-500">Origem </span>
+                <span className="font-bold text-slate-100 break-words">{origem}</span>
+              </div>
+              <div data-testid="alerta-destino">
+                <span className="text-slate-500">Destino </span>
+                <span className="font-bold text-slate-100 break-words">{destino}</span>
+              </div>
             </div>
           </div>
 

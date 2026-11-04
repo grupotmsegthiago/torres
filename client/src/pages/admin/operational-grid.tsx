@@ -45,6 +45,7 @@ import { KpiCard3D, KpiGlyphRelief } from "@/components/painel-v2/KpiCard3D";
 import { FleetCard3D, type CartaPainel, type RotaCard3D } from "@/components/painel-v2/FleetCard3D";
 import { OSDetailModal, type OsDetalhePainel } from "@/components/painel-v2/OSDetailModal";
 import { AlertaViaturaMensagem } from "@/components/painel-v2/AlertaViaturaMensagem";
+import { prepararRelatorioAlerta, resolverFichaAlerta } from "@/components/painel-v2/alerta-ficha";
 import type { ViaturaStatusType } from "@/components/painel-v2/StatusBadge3D";
 
 type OpNotifStatus = "pending" | "success" | "error";
@@ -7364,6 +7365,10 @@ export default function OperationalGridPage() {
     imageUrl: string;
     vehicle: TrackedVehicle | null;
     osNumber: string | null;
+    serviceOrderId: number | null;
+    missionStep: string | null;
+    latitude: string | number | null;
+    longitude: string | number | null;
     photoUrl: string | null;
     hasPhoto: boolean;
   } | null>(null);
@@ -7449,6 +7454,10 @@ export default function OperationalGridPage() {
         imageUrl: painelEscoltaThumb(v?.model),
         vehicle: v,
         osNumber: u.osNumber || v?.activeOs?.osNumber || null,
+        serviceOrderId: u.serviceOrderId != null ? Number(u.serviceOrderId) : null,
+        missionStep: u.missionStep || null,
+        latitude: u.latitude ?? null,
+        longitude: u.longitude ?? null,
         photoUrl: u.photoUrl || null,
         hasPhoto: Boolean(u.hasPhoto || (u.photoUrl && u.photoUrl !== "[has_photo]")),
       };
@@ -7895,13 +7904,25 @@ export default function OperationalGridPage() {
               onClose={() => setFleetDetailId(null)}
               onFocusMap={(id) => setFocusVehicleId(id)}
             />
-            {alertaMsg ? (
+            {alertaMsg ? (() => {
+              const fichaAlerta = resolverFichaAlerta(
+                { osNumber: alertaMsg.osNumber, serviceOrderId: alertaMsg.serviceOrderId },
+                onlyVehicles,
+                gridData,
+              );
+              const viaturaAlerta = fichaAlerta.vehicle?.id
+                ? onlyVehicles.find((viatura) => viatura.id === fichaAlerta.vehicle?.id) || alertaMsg.vehicle
+                : alertaMsg.vehicle;
+              return (
               <AlertaViaturaMensagem
-                plate={alertaMsg.plate}
+                plate={fichaAlerta.plate}
                 driver={alertaMsg.driver}
+                clientName={fichaAlerta.cliente}
+                origin={fichaAlerta.origem}
+                destination={fichaAlerta.destino}
                 message={alertaMsg.message}
                 time={alertaMsg.time}
-                imageUrl={alertaMsg.imageUrl}
+                imageUrl={fichaAlerta.vehicle?.model ? painelEscoltaThumb(fichaAlerta.vehicle.model) : alertaMsg.imageUrl}
                 onClose={() => {
                   alertaDispensados.current.add(alertaMsg.id);
                   setAlertaMsg(null);
@@ -7921,10 +7942,25 @@ export default function OperationalGridPage() {
                   }).catch(() => {});
                 }}
                 onShare={typeof navigator !== "undefined" && typeof navigator.share === "function" ? async () => {
-                  const gi = gridData.find((g) => g.osNumber === alertaMsg.osNumber);
-                  const texto = alertaMsg.vehicle
-                    ? await generateReportAsync(alertaMsg.vehicle, gi || null)
-                    : alertaMsg.message;
+                  const ficha = resolverFichaAlerta(
+                    { osNumber: alertaMsg.osNumber, serviceOrderId: alertaMsg.serviceOrderId },
+                    onlyVehicles,
+                    gridData,
+                  );
+                  const preparado = prepararRelatorioAlerta(ficha, {
+                    osNumber: alertaMsg.osNumber,
+                    serviceOrderId: alertaMsg.serviceOrderId,
+                    message: alertaMsg.message,
+                    missionStep: alertaMsg.missionStep,
+                    driver: alertaMsg.driver,
+                    latitude: alertaMsg.latitude,
+                    longitude: alertaMsg.longitude,
+                  });
+                  const formulario = await generateReportAsync(
+                    preparado.vehicle as unknown as TrackedVehicle,
+                    (preparado.gridItem as unknown as GridItem | null) || null,
+                  );
+                  const texto = formulario.trim() ? formulario : alertaMsg.message;
                   let photo = alertaMsg.photoUrl;
                   if ((!photo || photo === "[has_photo]") && alertaMsg.hasPhoto) {
                     try {
@@ -7944,16 +7980,17 @@ export default function OperationalGridPage() {
                     toast({ title: "Não foi possível compartilhar a foto e o texto", variant: "destructive" });
                   }
                 } : undefined}
-                linkAction={alertaMsg.vehicle ? (
+                linkAction={viaturaAlerta ? (
                   <VincularOsButton
-                    inicial={vinculoDaViatura(alertaMsg.vehicle)}
+                    inicial={vinculoDaViatura(viaturaAlerta)}
                     testId="button-alerta-vincular-os"
                     label="Vincular OS"
                     buttonClassName="w-full py-3.5 h-auto text-xs font-black uppercase tracking-widest text-cyan-200 rounded-xl bg-gradient-to-b from-cyan-950/80 to-slate-900 border border-cyan-400/40 shadow-none hover:brightness-125"
                   />
                 ) : undefined}
               />
-            ) : null}
+              );
+            })() : null}
             {leituraMapa ? (
               <PainelLeituraMensagem
                 itens={leituraMapa}

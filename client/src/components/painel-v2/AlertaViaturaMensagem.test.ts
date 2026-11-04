@@ -27,3 +27,18 @@ test("sem compartilhamento o aviso não mostra o botão", () => {
   const html = renderToStaticMarkup(createElement(AlertaViaturaMensagem, base));
   assert.equal(html.includes("button-alerta-whatsapp"), false);
 });
+
+test("o aviso mostra cliente, origem e destino da missão", () => {
+  const html = renderToStaticMarkup(createElement(AlertaViaturaMensagem, {
+    ...base,
+    clientName: "TRANSPORTES LOPES",
+    origin: "Rua da Origem, 10, Campinas - SP",
+    destination: "Avenida do Destino, 20, Santos - SP",
+  }));
+  assert.match(html, /data-testid="alerta-cliente"/);
+  assert.match(html, /Transportes Lopes/);
+  assert.match(html, /data-testid="alerta-origem"/);
+  assert.match(html, /Rua da Origem, 10, Campinas - SP/);
+  assert.match(html, /data-testid="alerta-destino"/);
+  assert.match(html, /Avenida do Destino, 20, Santos - SP/);
+});
