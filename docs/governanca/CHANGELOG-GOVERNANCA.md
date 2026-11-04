@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Telefone e os dois serviços no socorro
+
+- A lista só fecha quando já tem borracharia e mecânico, ou quando acaba o teto de 25 km. O degrau é o menor que alcança o mais perto de cada um.
+- O telefone sai do cadastro do ponto no mapa. Entra no cartão no formato (11) 4688-2029. Sem número no cadastro, o cartão fica com o endereço e o Waze.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Socorro de borracharia e mecânico sob demanda
 
 - O botão no celular consulta só quando o vigilante toca. Não baixa o cadastro da Receita e não grava tabela.

@@ -3,12 +3,15 @@ import { test } from "node:test";
 import { maxRadiusStepKm } from "./anp-onde-abastecer";
 import {
   classifyOficina,
+  formatOficinaPhone,
+  hasOficinaMixWithin,
   noOficinaMessage,
   oficinaBbox,
   oficinaFromPhoton,
   oficinaFromPlace,
   oficinaTelHref,
   oficinasPayload,
+  phoneFromOsmTags,
   rankOficinas,
   type OficinaHit,
 } from "./emergencia-oficina";
@@ -47,6 +50,40 @@ test("a régua para no menor degrau e não usa o centro de São Paulo", () => {
   assert.equal(ranked.shops[0].kindLabel, "Borracharia");
   assert.equal(oficinaTelHref(ranked.shops[1].phone), "tel:+5511999998888");
   assert.equal(oficinaTelHref(null), null);
+  assert.equal(formatOficinaPhone("+55 11 4688 2029"), "(11) 4688-2029");
+  assert.equal(formatOficinaPhone("+55 11 9 6576-4224"), "(11) 96576-4224");
+  assert.equal(formatOficinaPhone("sem numero"), null);
+  assert.equal(phoneFromOsmTags({ "contact:phone": "+55 11 4198 7567" }), "(11) 4198-7567");
+  assert.equal(phoneFromOsmTags({}), null);
+});
+
+test("borracharia e mecânico cabem no mesmo degrau", () => {
+  const rows = [
+    hit({ id: "W:1", name: "Rubinho Pneus", kind: "borracharia", latitude: -23.49357, longitude: -46.84258, address: "Barueri", phone: null }),
+    hit({ id: "W:2", name: "Shop Car Pneus", kind: "borracharia", latitude: -23.50991, longitude: -46.88325, address: null, phone: null }),
+    hit({ id: "W:3", name: "Voltrac", kind: "mecanico", latitude: -23.5184, longitude: -46.86707, address: "Barueri", phone: "(11) 4198-7567" }),
+    hit({ id: "W:4", name: "Longe", kind: "mecanico", latitude: -23.566, longitude: -46.86707, address: null, phone: null }),
+  ];
+  for (let index = 0; index < 12; index += 1) {
+    rows.push(hit({
+      id: `N:${index}`,
+      name: `Borracharia ${index}`,
+      kind: "borracharia",
+      latitude: ORIGIN.lat + 0.008,
+      longitude: ORIGIN.lng,
+      address: null,
+      phone: null,
+    }));
+  }
+  const ranked = rankOficinas(ORIGIN.lat, ORIGIN.lng, rows);
+  assert.ok(ranked);
+  assert.equal(ranked.radiusKm, 15);
+  assert.equal(ranked.shops.some((shop) => shop.kind === "borracharia"), true);
+  assert.equal(ranked.shops.some((shop) => shop.name === "Voltrac"), true);
+  assert.equal(ranked.shops.some((shop) => shop.name === "Longe"), false);
+  assert.equal(ranked.shops.length <= 12, true);
+  assert.equal(hasOficinaMixWithin(ORIGIN.lat, ORIGIN.lng, rows, 10), false);
+  assert.equal(hasOficinaMixWithin(ORIGIN.lat, ORIGIN.lng, rows, 15), true);
 });
 
 test("sem resposta não vira lista vazia", () => {

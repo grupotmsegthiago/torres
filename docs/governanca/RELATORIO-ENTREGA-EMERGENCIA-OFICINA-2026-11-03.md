@@ -17,7 +17,8 @@
 
 ### O que foi alterado
 - Botão Socorro, ao lado de Hospitais. Ao abrir, o celular manda o GPS uma vez.
-- A consulta pede borracharia (`shop=tyres`) e mecânico (`shop=car_repair`) numa caixa em volta da posição. O menor degrau com resultado fica na tela.
+- A consulta pede borracharia (`shop=tyres`) e mecânico (`shop=car_repair`) numa caixa em volta da posição. A lista segue até os dois serviços aparecerem. O degrau é o menor que alcança o mais perto de cada um.
+- O telefone vem do cadastro do ponto. Rubinho Pneus traz (11) 4688-2029. Voltrac traz (11) 4198-7567. Tonhão e Shop Car não têm número nesse cadastro.
 - Autopeças e guincho isolado não entram. O ponto aceito abre o Waze.
 - Se a consulta não responder, a frase é "A busca não respondeu" e o mapa do celular tenta de novo. Isso não vira "nenhum em 25 km".
 
@@ -37,8 +38,8 @@
 ### Testes executados
 | Comando | Resultado |
 |---|---|
-| `npx tsx --test shared/emergencia-oficina.test.ts shared/hospitais-cnes.test.ts shared/anp-onde-abastecer.test.ts client/src/components/mobile/posicao-confirmada.test.ts` | 23 pass |
-| Consulta real no GPS −23.42202, −46.86707 | degrau 10 km: Rubinho Pneus 8,3 km, Tonhão BORRACHARIA 8,5 km, Shop Car Pneus 9,9 km. Os três em Barueri. |
+| `npx tsx --test shared/emergencia-oficina.test.ts shared/hospitais-cnes.test.ts shared/anp-onde-abastecer.test.ts client/src/components/mobile/posicao-confirmada.test.ts` | 24 pass |
+| Consulta real no GPS −23.42202, −46.86707 | degrau 15 km, com borracharia e mecânico. Rubinho (11) 4688-2029 a 8,3 km. Voltrac (11) 4198-7567 a 10,7 km. Tonhão e Shop Car sem telefone no cadastro. |
 
 ### Resultados
 O vigilante pede borracharia ou mecânico só quando precisa, em volta do GPS, e segue no Waze. Não há carga da Receita.

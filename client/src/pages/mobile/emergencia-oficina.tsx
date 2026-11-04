@@ -124,6 +124,7 @@ function ShopCard({ shop, primary }: { shop: RankedOficina; primary?: boolean })
           {shop.distanceKm.toFixed(1)} km · cerca de {shop.driveMinutes} min
         </p>
         {shop.address && <p className="text-xs text-neutral-400 mt-1">{shop.address}</p>}
+        {shop.phone && <p className="text-xs font-semibold text-neutral-800 mt-1" data-testid={primary ? "text-telefone" : `text-telefone-${shop.id}`}>{shop.phone}</p>}
       </div>
       <p className="text-xs font-bold text-amber-950 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2" data-testid={primary ? "text-tipo-oficina" : undefined}>
         {shop.kindLabel}

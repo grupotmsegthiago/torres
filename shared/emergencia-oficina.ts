@@ -5,6 +5,7 @@ import {
   isMunicipalCentroid,
   maxRadiusStepKm,
   pickRadiusStep,
+  radiusStepForDistance,
 } from "./anp-onde-abastecer";
 
 /** Borracharia ou mecânico. Guincho não entra: a frota já tem seguro. */
@@ -74,9 +75,33 @@ export function noOficinaMessage(radiusKm: number): string {
 
 /** Liga só quando o número já veio na resposta. Sem telefone, o cartão fica só com o Waze. */
 export function oficinaTelHref(phone: string | null): string | null {
-  const digits = (phone ?? "").replace(/\D/g, "");
-  if (digits.length < 10 || digits.length > 13) return null;
-  return `tel:+${digits.startsWith("55") ? digits : `55${digits}`}`;
+  const formatted = formatOficinaPhone(phone);
+  if (!formatted) return null;
+  const digits = formatted.replace(/\D/g, "");
+  return `tel:+55${digits}`;
+}
+
+/** Número do cadastro do ponto, no formato (11) 4688-2029. Sem dígito suficiente, fica vazio. */
+export function formatOficinaPhone(raw: string | null | undefined): string | null {
+  const chunks = String(raw ?? "").split(/[;/|]/);
+  for (const chunk of chunks) {
+    let digits = chunk.replace(/\D/g, "");
+    if (digits.startsWith("55") && digits.length > 11) digits = digits.slice(2);
+    if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  return null;
+}
+
+const PHONE_TAG_KEYS = ["phone", "contact:phone", "mobile", "contact:mobile"] as const;
+
+export function phoneFromOsmTags(tags: Record<string, string | undefined> | null | undefined): string | null {
+  if (!tags) return null;
+  for (const key of PHONE_TAG_KEYS) {
+    const phone = formatOficinaPhone(tags[key]);
+    if (phone) return phone;
+  }
+  return null;
 }
 
 export function oficinaBbox(lat: number, lng: number, radiusKm: number): {
@@ -165,7 +190,7 @@ export function oficinaFromPhoton(feature: PhotonOficinaFeature): OficinaHit | n
     latitude: lat,
     longitude: lng,
     address: oficinaAddress(props),
-    phone: (props.phone ?? "").trim() || null,
+    phone: formatOficinaPhone(props.phone),
   };
 }
 
@@ -229,14 +254,53 @@ export function rankOficinas(
       driveMinutes: estimateDriveMinutes(distanceKm),
     });
   }
-  const step = pickRadiusStep(measured.map((row) => row.distanceKm));
+  const step = stepForBothKinds(measured) ?? pickRadiusStep(measured.map((row) => row.distanceKm));
   if (step === null) return null;
-  const shops = measured
+  let shops = measured
     .filter((row) => row.distanceKm <= step)
-    .sort((a, b) => a.distanceKm - b.distanceKm)
-    .slice(0, OFICINA_LIST_LIMIT);
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+  if (shops.length > OFICINA_LIST_LIMIT) {
+    const kept = shops.slice(0, OFICINA_LIST_LIMIT);
+    for (const kind of ["borracharia", "mecanico"] as const) {
+      if (kept.some((row) => row.kind === kind)) continue;
+      const nearest = shops.find((row) => row.kind === kind);
+      if (!nearest) continue;
+      kept[kept.length - 1] = nearest;
+    }
+    shops = kept.sort((a, b) => a.distanceKm - b.distanceKm);
+  }
   if (!shops.length) return null;
   return { radiusKm: step, shops };
+}
+
+/** Os dois serviços dentro desta caixa. A busca segue até achar o par ou esgotar os 25 km. */
+export function hasOficinaMixWithin(
+  originLat: number,
+  originLng: number,
+  rows: OficinaHit[],
+  radiusKm: number,
+): boolean {
+  let tire = false;
+  let mechanic = false;
+  for (const row of rows) {
+    if (!Number.isFinite(row.latitude) || !Number.isFinite(row.longitude)) continue;
+    if (!isInsideBrazil(row.latitude, row.longitude) || isMunicipalCentroid(row.latitude, row.longitude)) continue;
+    if (haversineKm(originLat, originLng, row.latitude, row.longitude) > radiusKm) continue;
+    if (row.kind === "borracharia") tire = true;
+    if (row.kind === "mecanico") mechanic = true;
+  }
+  return tire && mechanic;
+}
+
+function stepForBothKinds(measured: RankedOficina[]): number | null {
+  let tire = Number.POSITIVE_INFINITY;
+  let mechanic = Number.POSITIVE_INFINITY;
+  for (const row of measured) {
+    if (row.kind === "borracharia") tire = Math.min(tire, row.distanceKm);
+    if (row.kind === "mecanico") mechanic = Math.min(mechanic, row.distanceKm);
+  }
+  if (!Number.isFinite(tire) || !Number.isFinite(mechanic)) return null;
+  return radiusStepForDistance(Math.max(tire, mechanic));
 }
 
 export function oficinasPayload(
