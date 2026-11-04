@@ -185,7 +185,7 @@ interface StationRow {
   state: string | null;
 }
 
-async function reverseCity(lat: number, lng: number): Promise<{ city: string; label: string; state: string; cep: string } | null> {
+export async function reverseCity(lat: number, lng: number): Promise<{ city: string; label: string; state: string; cep: string } | null> {
   const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`;
   const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
   if (!res.ok) return null;
