@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import React, { type ReactNode } from "react";
+import { SiWhatsapp } from "react-icons/si";
 
 interface AlertaViaturaProps {
   plate: string;
@@ -8,6 +9,7 @@ interface AlertaViaturaProps {
   imageUrl: string;
   onClose: () => void;
   onMarkRead: () => void;
+  onShare?: () => void;
   linkAction?: ReactNode;
 }
 
@@ -19,6 +21,7 @@ export function AlertaViaturaMensagem({
   imageUrl,
   onClose,
   onMarkRead,
+  onShare,
   linkAction,
 }: AlertaViaturaProps) {
   return (
@@ -74,6 +77,17 @@ export function AlertaViaturaMensagem({
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
+            {onShare ? (
+              <button
+                type="button"
+                onClick={onShare}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-3.5 text-xs font-black uppercase tracking-widest text-white rounded-xl bg-green-600 hover:bg-green-700"
+                data-testid="button-alerta-whatsapp"
+              >
+                <SiWhatsapp className="w-4 h-4" />
+                WhatsApp · foto e texto
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onMarkRead}

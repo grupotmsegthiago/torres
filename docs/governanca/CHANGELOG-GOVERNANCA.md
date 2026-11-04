@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-04 — WhatsApp de novo leva a foto e o texto da atualização
+
+- No layout novo, a lista que compartilhava a atualização do vigilante ficou escondida. O aviso no celular só marcava como lida.
+- O botão verde volta no aviso e na leitura da mensagem. No celular ele abre o compartilhamento com a foto e o texto juntos, para o WhatsApp.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-03 — O hospital ganha pino a partir do endereço
 
 - A lista do CNES já estava no sistema, com 6.746 hospitais e nenhuma latitude. A tela fechava em "nenhum em 25 km" sem marcar o endereço.

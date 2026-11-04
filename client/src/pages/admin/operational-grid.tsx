@@ -2012,25 +2012,47 @@ function PainelLeituraMensagem({
     if (real) fireCopyAudit(real.id);
   };
 
-  const copiarFoto = async () => {
-    if (!comFoto) return;
-    let photo = comFoto.foto;
-    if ((!photo || photo === "[has_photo]") && comFoto.id > 0) {
+  const resolverFoto = async (item: MensagemMapa | undefined): Promise<string | null> => {
+    if (!item) return null;
+    let photo = item.foto;
+    if ((!photo || photo === "[has_photo]") && item.id > 0) {
       try {
-        const resposta = await authFetch(`/api/mission/updates/${comFoto.id}/photo`);
+        const resposta = await authFetch(`/api/mission/updates/${item.id}/photo`);
         const dados = await resposta.json();
         photo = dados.photoUrl || null;
       } catch {
         photo = null;
       }
     }
-    if (!photo || photo === "[has_photo]") {
+    if (!photo || photo === "[has_photo]") return null;
+    return photo;
+  };
+
+  const copiarFoto = async () => {
+    if (!comFoto) return;
+    const photo = await resolverFoto(comFoto);
+    if (!photo) {
       toast({ title: "Foto não disponível", variant: "destructive" });
       return;
     }
     const ok = await copyPhotoToClipboard(photo);
     toast({ title: ok ? "Foto copiada" : "Erro ao copiar foto", variant: ok ? "default" : "destructive" });
     if (comFoto.id > 0) fireCopyAudit(comFoto.id);
+  };
+
+  const compartilharWhatsapp = async () => {
+    const texto = veiculo
+      ? await generateReportAsync(veiculo, gridItem || null)
+      : itens.map((item) => `${item.hora} ${item.autor}: ${item.texto}`).join("\n");
+    const photo = await resolverFoto(comFoto);
+    const result = await shareMobileReportWithPhoto(texto, photo);
+    if (result === "shared") {
+      toast({ title: "Foto e texto prontos no WhatsApp" });
+      const real = itens.find((item) => item.id > 0);
+      if (real) fireCopyAudit(real.id);
+    } else if (result !== "cancelled") {
+      toast({ title: "Não foi possível compartilhar a foto e o texto", variant: "destructive" });
+    }
   };
 
   return (
@@ -2085,6 +2107,16 @@ function PainelLeituraMensagem({
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
+          {typeof navigator !== "undefined" && typeof navigator.share === "function" ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white"
+              onClick={compartilharWhatsapp}
+              data-testid="button-leitura-whatsapp"
+            >
+              <SiWhatsapp className="w-3.5 h-3.5" /> WhatsApp · foto e texto
+            </button>
+          ) : null}
           <button type="button" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white" onClick={copiarMensagem} data-testid="button-leitura-copiar-msg">Copiar mensagem</button>
           {comFoto ? (
             <button type="button" className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white" onClick={copiarFoto} data-testid="button-leitura-copiar-foto">Copiar foto</button>
@@ -7308,6 +7340,7 @@ function MolduraTv({ children }: { children: ReactNode }) {
 
 export default function OperationalGridPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   syncMoacirUi(user);
   const restricted = isMoacirRestrito(user);
   const [lastRefresh, setLastRefresh] = useState(Date.now());
@@ -7330,6 +7363,9 @@ export default function OperationalGridPage() {
     time: string;
     imageUrl: string;
     vehicle: TrackedVehicle | null;
+    osNumber: string | null;
+    photoUrl: string | null;
+    hasPhoto: boolean;
   } | null>(null);
   const alertaConhecidos = useRef<Set<number> | null>(null);
   const alertaDispensados = useRef<Set<number>>(new Set());
@@ -7412,6 +7448,9 @@ export default function OperationalGridPage() {
         time: u.createdAt ? formatTimeBRT(u.createdAt) : "",
         imageUrl: painelEscoltaThumb(v?.model),
         vehicle: v,
+        osNumber: u.osNumber || v?.activeOs?.osNumber || null,
+        photoUrl: u.photoUrl || null,
+        hasPhoto: Boolean(u.hasPhoto || (u.photoUrl && u.photoUrl !== "[has_photo]")),
       };
     };
     const porRecente = (a: any, b: any) => parseUTCDate(b.createdAt || 0).getTime() - parseUTCDate(a.createdAt || 0).getTime();
@@ -7881,6 +7920,30 @@ export default function OperationalGridPage() {
                     queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
                   }).catch(() => {});
                 }}
+                onShare={typeof navigator !== "undefined" && typeof navigator.share === "function" ? async () => {
+                  const gi = gridData.find((g) => g.osNumber === alertaMsg.osNumber);
+                  const texto = alertaMsg.vehicle
+                    ? await generateReportAsync(alertaMsg.vehicle, gi || null)
+                    : alertaMsg.message;
+                  let photo = alertaMsg.photoUrl;
+                  if ((!photo || photo === "[has_photo]") && alertaMsg.hasPhoto) {
+                    try {
+                      const resposta = await authFetch(`/api/mission/updates/${alertaMsg.id}/photo`);
+                      const dados = await resposta.json();
+                      photo = dados.photoUrl || null;
+                    } catch {
+                      photo = null;
+                    }
+                  }
+                  if (!photo || photo === "[has_photo]") photo = null;
+                  const result = await shareMobileReportWithPhoto(texto, photo);
+                  if (result === "shared") {
+                    toast({ title: "Foto e texto prontos no WhatsApp" });
+                    fireCopyAudit(alertaMsg.id);
+                  } else if (result !== "cancelled") {
+                    toast({ title: "Não foi possível compartilhar a foto e o texto", variant: "destructive" });
+                  }
+                } : undefined}
                 linkAction={alertaMsg.vehicle ? (
                   <VincularOsButton
                     inicial={vinculoDaViatura(alertaMsg.vehicle)}
