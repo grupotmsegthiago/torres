@@ -2,7 +2,7 @@ import MobileLayout from "@/components/mobile/layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign, FileText, MapPin, Hospital } from "lucide-react";
+import { Crosshair, Clock, Car, Shield, ChevronRight, AlertCircle, Fingerprint, Fuel, AlertTriangle, Timer, CircleDollarSign, FileText, MapPin, Hospital, Wrench } from "lucide-react";
 import { DriverContactCard } from "@/components/mobile/driver-contact";
 
 export default function MobileHomePage() {
@@ -165,6 +165,13 @@ export default function MobileHomePage() {
               <Hospital className="w-6 h-6 text-rose-700 mx-auto mb-2" />
               <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Hospitais</p>
               <p className="text-[10px] text-neutral-400 mt-0.5">SUS e particular</p>
+            </div>
+          </Link>
+          <Link href="/mobile/emergencia-oficina">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center active:bg-neutral-50 transition-colors" data-testid="link-emergencia-oficina">
+              <Wrench className="w-6 h-6 text-amber-700 mx-auto mb-2" />
+              <p className="text-xs font-bold text-neutral-700 uppercase tracking-wider">Socorro</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Borracharia / mecânico</p>
             </div>
           </Link>
           <Link href="/mobile/pedagio">

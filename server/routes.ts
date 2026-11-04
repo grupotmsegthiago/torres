@@ -721,6 +721,7 @@ async function ensureSystemSettingsTable() {
   import { registerMobileRoutes } from "./routes/mobile";
   import { registerAnpStationRoutes } from "./routes/anp-stations";
   import { registerHospitalRoutes } from "./routes/hospitais";
+  import { registerEmergenciaOficinaRoutes } from "./routes/emergencia-oficina";
   import { registerChatRoutes } from "./routes/chat";
   import { registerBoletimApprovalRoutes } from "./routes/boletim-approval";
   import { registerLeadRoutes } from "./routes/leads";
@@ -1476,6 +1477,7 @@ async function ensureSystemSettingsTable() {
     registerMobileRoutes(app);
     registerAnpStationRoutes(app);
     registerHospitalRoutes(app);
+    registerEmergenciaOficinaRoutes(app);
     registerProbationContractRoutes(app);
     registerPermanentContractRoutes(app);
     registerPendenciasRoutes(app);
