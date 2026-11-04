@@ -42,7 +42,7 @@ function geocodificar(endereco: string): Promise<{ lat: number; lng: number } | 
   });
 }
 
-export function MapaRotaOs({ detalhe }: { detalhe: EnderecoRota }) {
+export function MapaRotaOs({ detalhe, altura = "h-56" }: { detalhe: EnderecoRota; altura?: string }) {
   const caixa = useRef<HTMLDivElement>(null);
   const mapa = useRef<any>(null);
   const camadas = useRef<any[]>([]);
@@ -204,7 +204,7 @@ export function MapaRotaOs({ detalhe }: { detalhe: EnderecoRota }) {
   const legenda = [detalhe.origem, detalhe.destino].filter(Boolean).join(" → ");
 
   return (
-    <div className="relative h-56 overflow-hidden rounded-xl border border-cyan-500/25 bg-[#071019]" data-testid="mapa-rota-os">
+    <div className={`relative ${altura} overflow-hidden rounded-xl border border-cyan-500/25 bg-[#071019]`} data-testid="mapa-rota-os">
       <p className="pointer-events-none absolute left-2 top-2 z-10 rounded-md bg-[#071019]/80 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-100">
         Rota da origem ao destino
       </p>

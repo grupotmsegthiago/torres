@@ -102,6 +102,59 @@ function coord(valor: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** O compartilhamento com foto fica na visão do celular. No computador o painel copia o texto. */
+export function mostrarWhatsappNoCelular(celular: boolean, sabeCompartilhar: boolean): boolean {
+  return celular && sabeCompartilhar;
+}
+
+export interface RotaAlerta {
+  osId: number | null;
+  origem: string | null;
+  destino: string | null;
+  origemLat: unknown;
+  origemLng: unknown;
+  destinoLat: unknown;
+  destinoLng: unknown;
+  posLat: number | null;
+  posLng: number | null;
+}
+
+export function rotaDaAtualizacao(origem: {
+  serviceOrderId?: number | null;
+  origem?: string | null;
+  destino?: string | null;
+  origemLat?: unknown;
+  origemLng?: unknown;
+  destinoLat?: unknown;
+  destinoLng?: unknown;
+  latitude?: unknown;
+  longitude?: unknown;
+  trackerLat?: unknown;
+  trackerLng?: unknown;
+}): RotaAlerta {
+  return {
+    osId: origem.serviceOrderId ?? null,
+    origem: texto(origem.origem) || null,
+    destino: texto(origem.destino) || null,
+    origemLat: origem.origemLat ?? null,
+    origemLng: origem.origemLng ?? null,
+    destinoLat: origem.destinoLat ?? null,
+    destinoLng: origem.destinoLng ?? null,
+    posLat: coord(origem.latitude) ?? coord(origem.trackerLat),
+    posLng: coord(origem.longitude) ?? coord(origem.trackerLng),
+  };
+}
+
+export function temRotaNoAlerta(rota: RotaAlerta): boolean {
+  return Boolean(
+    rota.origem
+    || rota.destino
+    || (rota.posLat != null && rota.posLng != null)
+    || (coord(rota.origemLat) != null && coord(rota.origemLng) != null)
+    || (coord(rota.destinoLat) != null && coord(rota.destinoLng) != null),
+  );
+}
+
 export function resolverFichaAlerta(
   ref: RefAlerta,
   vehicles: ViaturaAlerta[],

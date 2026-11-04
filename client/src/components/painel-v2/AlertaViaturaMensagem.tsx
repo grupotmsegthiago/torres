@@ -14,6 +14,7 @@ interface AlertaViaturaProps {
   onClose: () => void;
   onMarkRead: () => void;
   onShare?: () => void;
+  map?: ReactNode;
   linkAction?: ReactNode;
 }
 
@@ -29,6 +30,7 @@ export function AlertaViaturaMensagem({
   onClose,
   onMarkRead,
   onShare,
+  map,
   linkAction,
 }: AlertaViaturaProps) {
   const cliente = titleCase(clientName) || "—";
@@ -93,6 +95,8 @@ export function AlertaViaturaMensagem({
               </div>
             </div>
           </div>
+
+          {map ? <div data-testid="alerta-mapa">{map}</div> : null}
 
           <div className="p-5 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-[inset_0_2px_12px_rgba(0,0,0,0.8)] relative">
             <div className="absolute top-3 right-4 text-[10px] font-mono text-slate-500">{time}</div>

@@ -13,7 +13,7 @@
 Operação de campo. A atualização é fato (`mission_updates`). Cliente, origem e destino são fatos da ordem de serviço, só lidos. Satélite de interface. Não altera boletim, balanço nem `calcularEscolta`.
 
 ### O que foi alterado
-O aviso mostra o nome do cliente, a origem e o destino. O botão verde manda a foto e o formulário completo da missão, com a frase que acabou de chegar no campo de atualização. Se a viatura do rastreamento ainda não casou com a OS, a grade operacional preenche a ficha.
+O aviso mostra o nome do cliente, a origem e o destino, e o mapa da rota da ordem de serviço. O botão verde, só no celular, manda a foto e o formulário completo da missão, com a frase que acabou de chegar no campo de atualização. Se a viatura do rastreamento ainda não casou com a OS, a grade operacional preenche a ficha e o mapa usa o endereço.
 
 ### O que não foi alterado
 A lista antiga continua oculta. Copiar foto e copiar texto no computador permanecem. O modelo do formulário não mudou. Custo, NFS-e e Mobi não entram.

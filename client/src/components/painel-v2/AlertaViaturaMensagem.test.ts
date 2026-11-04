@@ -42,3 +42,18 @@ test("o aviso mostra cliente, origem e destino da missão", () => {
   assert.match(html, /data-testid="alerta-destino"/);
   assert.match(html, /Avenida do Destino, 20, Santos - SP/);
 });
+
+test("o aviso mostra o mapa da rota quando ele é passado", () => {
+  const html = renderToStaticMarkup(createElement(AlertaViaturaMensagem, {
+    ...base,
+    map: createElement("div", { "data-testid": "mapa-rota-os" }, "Rota da origem ao destino"),
+  }));
+  assert.match(html, /data-testid="alerta-mapa"/);
+  assert.match(html, /data-testid="mapa-rota-os"/);
+  assert.match(html, /Rota da origem ao destino/);
+});
+
+test("sem mapa o aviso não reserva o bloco", () => {
+  const html = renderToStaticMarkup(createElement(AlertaViaturaMensagem, base));
+  assert.equal(html.includes("alerta-mapa"), false);
+});

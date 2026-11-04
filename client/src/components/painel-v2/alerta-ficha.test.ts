@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { prepararRelatorioAlerta, resolverFichaAlerta } from "./alerta-ficha";
+import { mostrarWhatsappNoCelular, prepararRelatorioAlerta, resolverFichaAlerta, rotaDaAtualizacao, temRotaNoAlerta } from "./alerta-ficha";
 
 const grade = [{
   id: 90,
@@ -68,6 +68,30 @@ test("o formulário usa a mensagem desta atualização e não a OS de outra miss
   assert.equal(preparado.gridItem?.origin, "Rua da Origem, 10, Campinas - SP");
   assert.equal(preparado.gridItem?.destination, "Avenida do Destino, 20, Santos - SP");
   assert.equal(preparado.gridItem?.lastAgentUpdate?.message, "Missão segue padrão, sem novidades");
+});
+
+test("o WhatsApp com foto só entra na visão do celular", () => {
+  assert.equal(mostrarWhatsappNoCelular(true, true), true);
+  assert.equal(mostrarWhatsappNoCelular(false, true), false);
+  assert.equal(mostrarWhatsappNoCelular(true, false), false);
+});
+
+test("a rota da atualização usa o GPS da mensagem e o endereço da OS", () => {
+  const rota = rotaDaAtualizacao({
+    serviceOrderId: 90,
+    origem: "Rua da Origem, 10, Campinas - SP",
+    destino: "Avenida do Destino, 20, Santos - SP",
+    latitude: "-22.9",
+    longitude: "-47.06",
+    trackerLat: -23.5,
+    trackerLng: -46.6,
+  });
+  assert.equal(rota.origem, "Rua da Origem, 10, Campinas - SP");
+  assert.equal(rota.destino, "Avenida do Destino, 20, Santos - SP");
+  assert.equal(rota.posLat, -22.9);
+  assert.equal(rota.posLng, -47.06);
+  assert.equal(temRotaNoAlerta(rota), true);
+  assert.equal(temRotaNoAlerta(rotaDaAtualizacao({})), false);
 });
 
 test("com a OS ativa, o formulário troca a atualização pela frase que chegou agora", () => {

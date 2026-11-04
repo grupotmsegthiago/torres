@@ -45,7 +45,8 @@ import { KpiCard3D, KpiGlyphRelief } from "@/components/painel-v2/KpiCard3D";
 import { FleetCard3D, type CartaPainel, type RotaCard3D } from "@/components/painel-v2/FleetCard3D";
 import { OSDetailModal, type OsDetalhePainel } from "@/components/painel-v2/OSDetailModal";
 import { AlertaViaturaMensagem } from "@/components/painel-v2/AlertaViaturaMensagem";
-import { prepararRelatorioAlerta, resolverFichaAlerta } from "@/components/painel-v2/alerta-ficha";
+import { mostrarWhatsappNoCelular, prepararRelatorioAlerta, resolverFichaAlerta, rotaDaAtualizacao, temRotaNoAlerta } from "@/components/painel-v2/alerta-ficha";
+import { MapaRotaOs } from "@/components/painel-v2/MapaRotaOs";
 import type { ViaturaStatusType } from "@/components/painel-v2/StatusBadge3D";
 
 type OpNotifStatus = "pending" | "success" | "error";
@@ -2108,7 +2109,7 @@ function PainelLeituraMensagem({
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {typeof navigator !== "undefined" && typeof navigator.share === "function" ? (
+          {mostrarWhatsappNoCelular(IS_MOBILE, typeof navigator !== "undefined" && typeof navigator.share === "function") ? (
             <button
               type="button"
               className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white"
@@ -7913,6 +7914,20 @@ export default function OperationalGridPage() {
               const viaturaAlerta = fichaAlerta.vehicle?.id
                 ? onlyVehicles.find((viatura) => viatura.id === fichaAlerta.vehicle?.id) || alertaMsg.vehicle
                 : alertaMsg.vehicle;
+              const osAtiva = viaturaAlerta?.activeOs?.osNumber === alertaMsg.osNumber ? viaturaAlerta.activeOs : null;
+              const rotaAlerta = rotaDaAtualizacao({
+                serviceOrderId: alertaMsg.serviceOrderId,
+                origem: fichaAlerta.origem,
+                destino: fichaAlerta.destino,
+                origemLat: osAtiva?.originLat,
+                origemLng: osAtiva?.originLng,
+                destinoLat: osAtiva?.destinationLat,
+                destinoLng: osAtiva?.destinationLng,
+                latitude: alertaMsg.latitude,
+                longitude: alertaMsg.longitude,
+                trackerLat: viaturaAlerta?.tracker?.latitude ?? fichaAlerta.gridItem?.tracker?.latitude,
+                trackerLng: viaturaAlerta?.tracker?.longitude ?? fichaAlerta.gridItem?.tracker?.longitude,
+              });
               return (
               <AlertaViaturaMensagem
                 plate={fichaAlerta.plate}
@@ -7923,6 +7938,7 @@ export default function OperationalGridPage() {
                 message={alertaMsg.message}
                 time={alertaMsg.time}
                 imageUrl={fichaAlerta.vehicle?.model ? painelEscoltaThumb(fichaAlerta.vehicle.model) : alertaMsg.imageUrl}
+                map={temRotaNoAlerta(rotaAlerta) ? <MapaRotaOs detalhe={rotaAlerta} altura="h-44" /> : undefined}
                 onClose={() => {
                   alertaDispensados.current.add(alertaMsg.id);
                   setAlertaMsg(null);
@@ -7941,7 +7957,7 @@ export default function OperationalGridPage() {
                     queryClient.invalidateQueries({ queryKey: ["/api/operational-grid"] });
                   }).catch(() => {});
                 }}
-                onShare={typeof navigator !== "undefined" && typeof navigator.share === "function" ? async () => {
+                onShare={mostrarWhatsappNoCelular(IS_MOBILE, typeof navigator !== "undefined" && typeof navigator.share === "function") ? async () => {
                   const ficha = resolverFichaAlerta(
                     { osNumber: alertaMsg.osNumber, serviceOrderId: alertaMsg.serviceOrderId },
                     onlyVehicles,

@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-04 — WhatsApp da atualização só no celular, com o mapa da rota
+
+- O botão de compartilhar no WhatsApp fica na visão do celular. No computador ele sai do aviso e da leitura da mensagem.
+- O aviso da atualização mostra o mapa da origem ao destino, o mesmo da ordem de serviço, com o ponto da viatura quando há GPS.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-04 — O aviso da atualização mostra a missão e manda o formulário
 
 - A tela da atualização do agente passa a mostrar cliente, origem e destino da ordem de serviço. A leitura usa a OS que está na viatura ou, se o rastreamento ainda não casou, a grade operacional.
