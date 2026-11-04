@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — O hospital ganha pino a partir do endereço
+
+- A lista do CNES já estava no sistema, com 6.746 hospitais e nenhuma latitude. A tela fechava em "nenhum em 25 km" sem marcar o endereço.
+- A consulta lê a rua e o número. Entra o nome do hospital ou o número na rua certa. Número igual em outra rua e o centro de São Paulo ficam de fora.
+- No GPS de Santana de Parnaíba o degrau fica em 10 km, com o Santa Ana a 5,1 km.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — Telefone e os dois serviços no socorro
 
 - A lista só fecha quando já tem borracharia e mecânico, ou quando acaba o teto de 25 km. O degrau é o menor que alcança o mais perto de cada um.

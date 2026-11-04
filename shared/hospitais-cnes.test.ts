@@ -7,6 +7,8 @@ import {
   hospitalCatalogPhrase,
   hospitalCategoryPhrase,
   hospitalGeocodeQuery,
+  hospitalStreetQuery,
+  pickHospitalPoint,
   hospitalPhoneDigits,
   noHospitalMessage,
   parseCnesHospitalCsv,
@@ -50,6 +52,40 @@ test("o CNES fica só com hospital e pronto-socorro ativos", () => {
   assert.equal(
     hospitalGeocodeQuery(rows[0].address, rows[0].city, rows[0].state),
     "AV ALBERT EINSTEIN, 627 - MORUMBI, São Paulo, SP, Brasil",
+  );
+});
+
+test("o endereço vira pino na rua certa e não em outro número 399", () => {
+  const origin = { lat: -23.422, lng: -46.86707 };
+  const santaAna = pickHospitalPoint({
+    originLat: origin.lat,
+    originLng: origin.lng,
+    address: "AVENIDA GERALDO DE CEZAR, 613 - CAMPO DA VILA",
+    hospitalName: "HOSPITAL E MATERNIDADE MUNICIPAL SANTA ANA",
+    cep: "06501008",
+    hits: [
+      { lat: -23.43986, lng: -46.91792, postcode: "06502-150", name: "Avenida Geraldo de Cezar", street: null },
+      { lat: -23.43862, lng: -46.91366, postcode: "06501-210", name: "Avenida Geraldo de Cezar", street: null },
+      { lat: -23.5475, lng: -46.63611, postcode: "01000-000", name: "São Paulo", street: null },
+      { lat: -23.48, lng: -46.85, postcode: "06502-210", name: "Avenida Geraldo de Oliveira Doglio", street: null },
+    ],
+  });
+  assert.equal(santaAna?.lat, -23.43862);
+  const jose = pickHospitalPoint({
+    originLat: origin.lat,
+    originLng: origin.lng,
+    address: "RUA JOSE MARTINHO, 399 - PARQUE IMPERIAL",
+    hospitalName: "PRONTO SOCORRO MUNICIPAL JOSE AGOSTINHO DOS SANTOS",
+    cep: "06462230",
+    hits: [
+      { lat: -23.51, lng: -46.84, houseNumber: "399", postcode: "06401-000", name: null, street: "Rua Campos Sales" },
+      { lat: -23.48604, lng: -46.80446, houseNumber: null, postcode: "06462-120", name: "Pronto Socorro José Agostinho dos Santos", street: "Rua José Martinho" },
+    ],
+  });
+  assert.equal(jose?.lat, -23.48604);
+  assert.equal(
+    hospitalStreetQuery("AVENIDA GERALDO DE CEZAR, 613 - CAMPO DA VILA", "Santana de Parnaíba", "SP"),
+    "AVENIDA GERALDO DE CEZAR, 613, Santana de Parnaíba, SP, Brasil",
   );
 });
 

@@ -5,10 +5,12 @@ import {
   cepDigits,
   estimateDriveMinutes,
   haversineKm,
+  isInsideBrazil,
   isMunicipalCentroid,
   normalizePlace,
   pickRadiusStep,
   stationGeocodeQuery,
+  STREET_CLUSTER_MAX_KM,
 } from "./anp-onde-abastecer";
 
 /** Hospital geral, especializado e pronto-socorro. Hospital-dia não é porta de urgência. */
@@ -141,6 +143,117 @@ export function hospitalGeocodeQuery(
   state: string | null | undefined,
 ): string {
   return stationGeocodeQuery(address, city, state);
+}
+
+/** Consulta do mapa sem o bairro. O bairro do CNES vem cortado e derruba o número. */
+export function hospitalStreetQuery(
+  address: string | null | undefined,
+  city: string | null | undefined,
+  state: string | null | undefined,
+): string {
+  const street = (address ?? "").split(/\s+-\s+/)[0].trim();
+  return stationGeocodeQuery(street, city, state);
+}
+
+export interface HospitalLookupHit {
+  lat: number;
+  lng: number;
+  houseNumber?: string | null;
+  postcode?: string | null;
+  name?: string | null;
+  street?: string | null;
+}
+
+const STREET_PREFIX = new Set(["rua", "avenida", "av", "alameda", "via", "travessa", "praca", "rodovia", "estrada"]);
+const NAME_STOP = new Set(["hospital", "hospitais", "pronto", "socorro", "municipal", "maternidade", "regional", "unidade", "geral", "especializado", "santa"]);
+
+function foldHospital(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function hospitalStreetPhrase(address: string | null | undefined): string {
+  const head = foldHospital(address ?? "").split(/\s+-\s+/)[0];
+  const withoutNumber = head.replace(/,?\s*\d+[a-z]?\s*$/, "");
+  return withoutNumber.split(/[^a-z0-9]+/).filter((word) => word && !STREET_PREFIX.has(word)).join(" ");
+}
+
+function hospitalNameTokens(name: string): string[] {
+  return foldHospital(name).split(/[^a-z0-9]+/).filter((word) => word.length >= 6 && !NAME_STOP.has(word));
+}
+
+function houseNumberValue(value: string | null | undefined): number | null {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  const n = Number(digits);
+  return Number.isFinite(n) ? n : null;
+}
+
+function lookupText(hit: HospitalLookupHit): string {
+  return foldHospital(`${hit.name ?? ""} ${hit.street ?? ""}`);
+}
+
+function clusterDiameterKm(hits: HospitalLookupHit[]): number {
+  let max = 0;
+  for (let i = 0; i < hits.length; i++) {
+    for (let j = i + 1; j < hits.length; j++) {
+      max = Math.max(max, haversineKm(hits[i].lat, hits[i].lng, hits[j].lat, hits[j].lng));
+    }
+  }
+  return max;
+}
+
+/**
+ * Ponto do hospital para o Waze.
+ * O nome do estabelecimento ou o número na rua certa entram.
+ * Número igual em outra rua, centro do município e avenida espalhada ficam de fora.
+ */
+export function pickHospitalPoint(input: {
+  hits: HospitalLookupHit[];
+  address: string | null;
+  hospitalName: string;
+  cep: string | null;
+  originLat: number;
+  originLng: number;
+}): { lat: number; lng: number } | null {
+  const phrase = hospitalStreetPhrase(input.address);
+  const wanted = houseNumberValue((input.address ?? "").split(/\s+-\s+/)[0]);
+  const tokens = hospitalNameTokens(input.hospitalName);
+  const cep = cepDigits(input.cep);
+  const usable = input.hits.filter((hit) => {
+    if (!Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) return false;
+    if (!isInsideBrazil(hit.lat, hit.lng) || isMunicipalCentroid(hit.lat, hit.lng)) return false;
+    return haversineKm(input.originLat, input.originLng, hit.lat, hit.lng) <= MAP_PIN_MAX_KM;
+  });
+  const onStreet = (hits: HospitalLookupHit[]) => (
+    phrase.length >= 6 ? hits.filter((hit) => lookupText(hit).includes(phrase)) : []
+  );
+  const named = onStreet(usable).filter((hit) => {
+    const text = foldHospital(hit.name ?? "");
+    return tokens.some((token) => text.includes(token));
+  });
+  if (named.length) {
+    const exact = wanted === null ? undefined : named.find((hit) => houseNumberValue(hit.houseNumber) === wanted);
+    const chosen = exact ?? named[0];
+    return { lat: chosen.lat, lng: chosen.lng };
+  }
+  const street = onStreet(usable);
+  const numbered = wanted === null ? undefined : street.find((hit) => houseNumberValue(hit.houseNumber) === wanted);
+  if (numbered && (!cep || cepDigits(numbered.postcode) === cep || lookupText(numbered).includes(phrase))) {
+    return { lat: numbered.lat, lng: numbered.lng };
+  }
+  const sameCep = street.filter((hit) => cep && cepDigits(hit.postcode) === cep);
+  if (sameCep.length && clusterDiameterKm(sameCep) <= STREET_CLUSTER_MAX_KM) {
+    return { lat: sameCep[0].lat, lng: sameCep[0].lng };
+  }
+  if (street.length && clusterDiameterKm(street) <= STREET_CLUSTER_MAX_KM) {
+    const nearestCep = [...street].sort((a, b) => {
+      const da = cep ? Math.abs(Number(cepDigits(a.postcode) || "0") - Number(cep)) : 0;
+      const db = cep ? Math.abs(Number(cepDigits(b.postcode) || "0") - Number(cep)) : 0;
+      return da - db;
+    })[0];
+    return { lat: nearestCep.lat, lng: nearestCep.lng };
+  }
+  return null;
 }
 
 function splitSemi(line: string): string[] {

@@ -225,7 +225,7 @@ export default function HospitaisPage() {
               setPayload({
                 ...data,
                 emptyReason: "no_station",
-                message: ready ? noHospitalMessage(25) : "O mapa não carregou para ler o endereço do hospital.",
+                message: ready ? "O mapa não marcou o hospital. Toque de novo." : "O mapa não carregou para ler o endereço do hospital.",
                 toLocate: [],
               });
             }

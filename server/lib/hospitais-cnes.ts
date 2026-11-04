@@ -23,12 +23,14 @@ import {
   cnesDigits,
   cnesHeaderIndex,
   draftFromCnesLine,
-  hospitalGeocodeQuery,
+  hospitalStreetQuery,
   noHospitalMessage,
   parseHospitalPinList,
+  pickHospitalPoint,
   rankHospitals,
   type CnesHospitalDraft,
   type HospitalCare,
+  type HospitalLookupHit,
   type HospitalPin,
   type HospitalToLocate,
   type RankedHospital,
@@ -186,6 +188,58 @@ async function rememberPins(rows: HospitalRow[], pins: HospitalPin[]) {
   }
 }
 
+async function photonHospitalHits(query: string, lat: number, lng: number): Promise<HospitalLookupHit[]> {
+  if (!query) return [];
+  try {
+    const res = await fetch(
+      `https://photon.komoot.io/api/?limit=5&lat=${lat}&lon=${lng}&q=${encodeURIComponent(query)}`,
+      { headers: { "User-Agent": UA, Accept: "application/json" }, signal: AbortSignal.timeout(4000) },
+    );
+    if (!res.ok) return [];
+    const body = await res.json() as {
+      features?: {
+        geometry?: { coordinates?: number[] };
+        properties?: { countrycode?: string; housenumber?: string; postcode?: string; name?: string; street?: string };
+      }[];
+    };
+    const hits: HospitalLookupHit[] = [];
+    for (const feature of body.features ?? []) {
+      if (feature.properties?.countrycode && feature.properties.countrycode !== "BR") continue;
+      const [foundLng, foundLat] = feature.geometry?.coordinates ?? [];
+      if (!Number.isFinite(foundLat) || !Number.isFinite(foundLng)) continue;
+      const props = feature.properties ?? {};
+      hits.push({
+        lat: foundLat,
+        lng: foundLng,
+        houseNumber: props.housenumber ?? null,
+        postcode: props.postcode ?? null,
+        name: props.name ?? null,
+        street: props.street ?? null,
+      });
+    }
+    return hits;
+  } catch {
+    return [];
+  }
+}
+
+async function locateHospitalAddresses(originLat: number, originLng: number, rows: HospitalToLocate[]): Promise<HospitalPin[]> {
+  const found = await Promise.all(rows.map(async (row) => {
+    const hits = await photonHospitalHits(row.query, originLat, originLng);
+    const point = pickHospitalPoint({
+      hits,
+      address: row.address,
+      hospitalName: row.name,
+      cep: row.cep,
+      originLat,
+      originLng,
+    });
+    if (!point) return null;
+    return { cnes: row.cnes, lat: point.lat, lng: point.lng };
+  }));
+  return found.filter((pin): pin is HospitalPin => pin !== null);
+}
+
 function toLocate(rows: HospitalRow[], userCep: string): HospitalToLocate[] {
   const byCep = new Map<string, HospitalRow>();
   for (const row of rows) {
@@ -203,7 +257,7 @@ function toLocate(rows: HospitalRow[], userCep: string): HospitalToLocate[] {
       city: row.city,
       state: row.state,
       cep,
-      query: hospitalGeocodeQuery(row.address, row.city, row.state),
+      query: hospitalStreetQuery(row.address, row.city, row.state),
       phone: row.phone,
       care: row.care,
       attendsSus: row.attends_sus === true,
@@ -317,7 +371,12 @@ export async function recommendHospitals(lat: number, lng: number, pinText = "")
     .filter((pin): pin is HospitalPin => pin !== null);
   await rememberPins(merged, accepted);
 
-  const opened = rankedFrom(merged, lat, lng);
+  let opened = rankedFrom(merged, lat, lng);
+  if (!opened) {
+    const locateNow = toLocate(merged, place.cep);
+    await rememberPins(merged, await locateHospitalAddresses(lat, lng, locateNow));
+    opened = rankedFrom(merged, lat, lng);
+  }
   if (opened) {
     return {
       mode: "nearest",
