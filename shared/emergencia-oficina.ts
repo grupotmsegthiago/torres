@@ -25,6 +25,7 @@ export interface RankedOficina extends OficinaHit {
   kindLabel: string;
   distanceKm: number;
   driveMinutes: number;
+  source?: string;
 }
 
 export interface OficinasPayload {
@@ -204,16 +205,21 @@ export interface PlaceOficinaDraft {
   businessStatus?: string | null;
 }
 
-/** Leitura do mapa do celular quando a consulta do servidor não responde. */
-export function oficinaFromPlace(draft: PlaceOficinaDraft): OficinaHit | null {
+/**
+ * Leitura do Google. A busca já diz se era borracharia ou mecânico:
+ * um nome que o mapa não classificou entra com essa dica. Guincho e autopeças continuam de fora.
+ */
+export function oficinaFromPlace(draft: PlaceOficinaDraft, kindHint?: OficinaKind | null): OficinaHit | null {
   if ((draft.businessStatus ?? "").toUpperCase() === "CLOSED_PERMANENTLY") return null;
   const types = (draft.types ?? []).map((item) => item.toLowerCase());
   const repair = types.includes("car_repair");
+  const name = foldOficinaName(draft.name ?? "");
+  const blocked = (TOW_NAME.test(name) && !TIRE_NAME.test(name)) || (PARTS_NAME.test(name) && !TIRE_NAME.test(name));
   const kind = classifyOficina({
     name: draft.name,
     osmKey: repair ? "amenity" : null,
     osmValue: repair ? "car_repair" : null,
-  });
+  }) ?? (kindHint && !blocked ? kindHint : null);
   if (!kind) return null;
   const placeId = draft.placeId.trim();
   if (!placeId || !Number.isFinite(draft.lat) || !Number.isFinite(draft.lng)) return null;

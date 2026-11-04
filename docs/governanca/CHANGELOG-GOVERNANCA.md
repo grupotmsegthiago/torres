@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-04 — Posto, hospital, borracharia e mecânico buscam de novo
+
+- O celular consulta o Google sempre, junto com a lista oficial. Posto mantém a ANP na frente. Hospital mantém o CNES. Borracharia e mecânico mantêm o mapa aberto. O que o Google não tem continua no cartão.
+- Cada cartão diz a fonte: ANP, CNES, Mapa ou Google. O Google não ganha nota da ANP nem ficha do Ministério da Saúde.
+- A lista recalcula com o GPS novo, ao andar cerca de 1 km e no botão Atualizar lista. O raio abre o próximo degrau quando o lugar novo está mais longe.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-04 — WhatsApp da atualização só no celular, com o mapa da rota
 
 - O botão de compartilhar no WhatsApp fica na visão do celular. No computador ele sai do aviso e da leitura da mensagem.

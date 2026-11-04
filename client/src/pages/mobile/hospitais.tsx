@@ -18,7 +18,9 @@ import {
   type HospitalToLocate,
   type RankedHospital,
 } from "@shared/hospitais-cnes";
-import { useEffect, useState } from "react";
+import { hospitalFromGoogle, juntarApoio, textoFonte, type HospitalGoogle } from "@shared/apoio-lista";
+import { lugaresGoogle } from "@/lib/lugares-google";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { AlertCircle, ArrowLeft, Loader2, MapPin, Phone } from "lucide-react";
 
@@ -119,6 +121,28 @@ function RadiusRuler({ activeKm, opening }: { activeKm: number | null; opening: 
   );
 }
 
+async function comHospitaisGoogle(latitude: number, longitude: number, data: Payload): Promise<Payload> {
+  try {
+    const oficiais = (data.hospitals ?? []).map((hospital) => ({ ...hospital, source: hospital.source || "CNES" }));
+    const drafts = await lugaresGoogle({ lat: latitude, lng: longitude }, [{ type: "hospital" }]);
+    const google = drafts
+      .map((draft) => hospitalFromGoogle(draft, latitude, longitude))
+      .filter((item): item is HospitalGoogle => item !== null);
+    const junto = juntarApoio(oficiais, google, oficiais.length ? (data.radiusKm ?? null) : null);
+    if (!junto.itens.length) return { ...data, hospitals: oficiais };
+    return {
+      ...data,
+      hospitals: junto.itens,
+      radiusKm: junto.radiusKm ?? data.radiusKm,
+      mode: "nearest",
+      emptyReason: null,
+      message: oficiais.length ? data.message : null,
+    };
+  } catch {
+    return data;
+  }
+}
+
 function telHref(phone: string | null): string | null {
   if (!phone) return null;
   return `tel:+55${phone}`;
@@ -138,6 +162,7 @@ function HospitalCard({ hospital, primary }: { hospital: RankedHospital; primary
           {hospital.distanceKm.toFixed(1)} km · cerca de {hospital.driveMinutes} min · {hospital.unitLabel}
         </p>
         {hospital.address && <p className="text-xs text-neutral-400 mt-1">{hospital.address}</p>}
+        <p className="text-[11px] font-bold text-neutral-500 mt-1" data-testid={primary ? "text-fonte" : undefined}>{textoFonte(hospital.source, "CNES")}</p>
       </div>
       <p className="text-xs font-bold text-emerald-900 bg-emerald-50/70 border border-emerald-100 rounded-xl px-3 py-2" data-testid={primary ? "text-categoria" : undefined}>
         {hospital.categoryPhrase}
@@ -169,6 +194,8 @@ export default function HospitaisPage() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [fix, setFix] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const recalculando = useRef(false);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -177,6 +204,10 @@ export default function HospitaisPage() {
       return;
     }
     let cancelled = false;
+    if (attempt > 0) {
+      setLoading(true);
+      setErrorMsg(null);
+    }
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         if (cancelled) return;
@@ -187,8 +218,12 @@ export default function HospitaisPage() {
           const data = await res.json();
           if (!res.ok) throw new Error(data.message || "Erro ao buscar hospitais próximos.");
           if (cancelled) return;
-          setPayload(data);
           const todo = (data.toLocate ?? []) as HospitalToLocate[];
+          if (data.hospitals?.length || !todo.length) {
+            const lista = await comHospitaisGoogle(latitude, longitude, data);
+            if (cancelled) return;
+            setPayload(lista);
+          }
           if (!data.hospitals?.length && todo.length) {
             setLendoMapa(true);
             setLocating(true);
@@ -219,16 +254,16 @@ export default function HospitaisPage() {
               }
             }
             const ranked = rankHospitals(latitude, longitude, located);
-            if (ranked) {
-              setPayload({ ...data, ...ranked, mode: "nearest", emptyReason: null, message: null, pendingGeo: 0, toLocate: [] });
-            } else {
-              setPayload({
-                ...data,
-                emptyReason: "no_station",
-                message: ready ? "O mapa não marcou o hospital. Toque de novo." : "O mapa não carregou para ler o endereço do hospital.",
-                toLocate: [],
-              });
-            }
+            const lido: Payload = ranked
+              ? { ...data, ...ranked, mode: "nearest", emptyReason: null, message: null, pendingGeo: 0, toLocate: [] }
+              : {
+                  ...data,
+                  emptyReason: "no_station",
+                  message: ready ? "O mapa não marcou o hospital. Toque de novo." : "O mapa não carregou para ler o endereço do hospital.",
+                  toLocate: [],
+                };
+            const listaLida = await comHospitaisGoogle(latitude, longitude, lido);
+            if (!cancelled) setPayload(listaLida);
             if (cancelled) return;
             setLendoMapa(false);
             setLocating(false);
@@ -237,7 +272,10 @@ export default function HospitaisPage() {
               try {
                 const savedRes = await authFetch(`/api/mobile/hospitais?lat=${latitude}&lng=${longitude}&pins=${encodeURIComponent(formatHospitalPinList(pins))}`);
                 const saved = await savedRes.json();
-                if (!cancelled && savedRes.ok && saved.hospitals?.length) setPayload(saved);
+                if (!cancelled && savedRes.ok && saved.hospitals?.length) {
+                  const lista = await comHospitaisGoogle(latitude, longitude, saved);
+                  if (!cancelled) setPayload(lista);
+                }
               } catch {
                 /* a lista já lida no mapa continua nesta abertura */
               }
@@ -256,12 +294,25 @@ export default function HospitaisPage() {
         setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
         setLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
+    recalculando.current = false;
+    const watch = navigator.geolocation.watchPosition((position) => {
+      if (cancelled || recalculando.current) return;
+      const { latitude, longitude } = position.coords;
+      setFix((atual) => {
+        if (atual && haversineKm(atual.lat, atual.lng, latitude, longitude) >= 1) {
+          recalculando.current = true;
+          setAttempt((valor) => valor + 1);
+        }
+        return atual;
+      });
+    });
     return () => {
       cancelled = true;
+      navigator.geolocation.clearWatch(watch);
     };
-  }, []);
+  }, [attempt]);
 
   const primary = payload?.hospitals?.[0];
   const others = payload?.hospitals?.slice(1) || [];
@@ -275,6 +326,14 @@ export default function HospitaisPage() {
             <ArrowLeft className="w-5 h-5 text-neutral-700" />
           </Link>
           <h1 className="text-base font-bold text-neutral-900">Hospitais</h1>
+          <button
+            type="button"
+            onClick={() => setAttempt((valor) => valor + 1)}
+            className="ml-auto text-[11px] font-bold uppercase tracking-wider text-emerald-800"
+            data-testid="button-atualizar-lista"
+          >
+            Atualizar lista
+          </button>
         </div>
         {!notLoaded && <RadiusRuler activeKm={payload?.radiusKm ?? null} opening={loading || locating} />}
         {fix && (

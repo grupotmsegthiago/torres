@@ -1,18 +1,16 @@
 import MobileLayout from "@/components/mobile/layout";
 import { PosicaoConfirmada } from "@/components/mobile/posicao-confirmada";
-import { loadGoogleMapsScript } from "@/components/places-autocomplete";
 import { authFetch } from "@/lib/queryClient";
-import { ONDE_ABASTECER_RADIUS_STEPS_KM, maxRadiusStepKm } from "@shared/anp-onde-abastecer";
+import { lugaresGoogle } from "@/lib/lugares-google";
+import { ONDE_ABASTECER_RADIUS_STEPS_KM, haversineKm, maxRadiusStepKm } from "@shared/anp-onde-abastecer";
+import { juntarApoio, oficinaGoogle, textoFonte } from "@shared/apoio-lista";
 import {
   OFICINA_SEARCH_FAILED,
   noOficinaMessage,
-  oficinaFromPlace,
   oficinaTelHref,
-  oficinasPayload,
-  type OficinaHit,
   type RankedOficina,
 } from "@shared/emergencia-oficina";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { AlertCircle, ArrowLeft, Loader2, MapPin, Phone } from "lucide-react";
 
@@ -43,70 +41,33 @@ function RadiusRuler({ activeKm, opening }: { activeKm: number | null; opening: 
   );
 }
 
-function mapsPlacesReady(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY) {
-      resolve(false);
-      return;
-    }
-    let settled = false;
-    const finish = (ok: boolean) => {
-      if (settled) return;
-      settled = true;
-      resolve(ok);
+async function comOficinasGoogle(latitude: number, longitude: number, data: Payload): Promise<Payload> {
+  try {
+    const oficiais = (data.shops ?? []).map((shop) => ({
+      ...shop,
+      source: shop.source || (shop.id.startsWith("g:") ? "Google" : "Mapa"),
+    }));
+    const [borracharias, mecanicos] = await Promise.all([
+      lugaresGoogle({ lat: latitude, lng: longitude }, [{ keyword: "borracharia" }]),
+      lugaresGoogle({ lat: latitude, lng: longitude }, [{ keyword: "oficina mecânica" }, { type: "car_repair" }]),
+    ]);
+    const google = [
+      ...borracharias.map((draft) => oficinaGoogle(draft, "borracharia", latitude, longitude)),
+      ...mecanicos.map((draft) => oficinaGoogle(draft, "mecanico", latitude, longitude)),
+    ].filter((item): item is RankedOficina & { source: "Google" } => item !== null);
+    const junto = juntarApoio(oficiais, google, oficiais.length ? (data.radiusKm ?? null) : null);
+    if (!junto.itens.length) return { ...data, shops: oficiais };
+    return {
+      ...data,
+      shops: junto.itens,
+      radiusKm: junto.radiusKm ?? data.radiusKm,
+      mode: "nearest",
+      emptyReason: null,
+      message: null,
     };
-    loadGoogleMapsScript(() => finish(!!window.google?.maps?.places?.PlacesService));
-    window.setTimeout(() => finish(!!window.google?.maps?.places?.PlacesService), 5000);
-  });
-}
-
-function nearbyPlaces(keyword: string, origin: { lat: number; lng: number }): Promise<OficinaHit[]> {
-  return new Promise((resolve) => {
-    const Ctor = window.google?.maps?.places?.PlacesService;
-    if (!Ctor) {
-      resolve([]);
-      return;
-    }
-    const service = new Ctor(document.createElement("div"));
-    const timer = window.setTimeout(() => resolve([]), 8000);
-    service.nearbySearch(
-      { location: origin, radius: maxRadiusStepKm() * 1000, keyword },
-      (results: Array<{ place_id?: string; name?: string; vicinity?: string; business_status?: string; types?: string[]; geometry?: { location?: { lat: () => number; lng: () => number } } }> | null, status: string) => {
-        window.clearTimeout(timer);
-        if (status !== "OK" || !results) {
-          resolve([]);
-          return;
-        }
-        const hits: OficinaHit[] = [];
-        for (const result of results) {
-          const loc = result.geometry?.location;
-          if (!loc || !result.place_id || !result.name) continue;
-          const hit = oficinaFromPlace({
-            placeId: result.place_id,
-            name: result.name,
-            lat: loc.lat(),
-            lng: loc.lng(),
-            vicinity: result.vicinity,
-            types: result.types,
-            businessStatus: result.business_status,
-          });
-          if (hit) hits.push(hit);
-        }
-        resolve(hits);
-      },
-    );
-  });
-}
-
-async function shopsFromPhoneMap(origin: { lat: number; lng: number }): Promise<Payload | null> {
-  const ready = await mapsPlacesReady();
-  if (!ready) return null;
-  const batches = await Promise.all([
-    nearbyPlaces("borracharia", origin),
-    nearbyPlaces("oficina mecânica", origin),
-  ]);
-  const ranked = oficinasPayload(origin.lat, origin.lng, batches.flat(), true);
-  return ranked.shops.length ? ranked : null;
+  } catch {
+    return data;
+  }
 }
 
 function ShopCard({ shop, primary }: { shop: RankedOficina; primary?: boolean }) {
@@ -124,6 +85,7 @@ function ShopCard({ shop, primary }: { shop: RankedOficina; primary?: boolean })
           {shop.distanceKm.toFixed(1)} km · cerca de {shop.driveMinutes} min
         </p>
         {shop.address && <p className="text-xs text-neutral-400 mt-1">{shop.address}</p>}
+        <p className="text-[11px] font-bold text-neutral-500 mt-1" data-testid={primary ? "text-fonte" : undefined}>{textoFonte(shop.source, "Mapa")}</p>
         {shop.phone && <p className="text-xs font-semibold text-neutral-800 mt-1" data-testid={primary ? "text-telefone" : `text-telefone-${shop.id}`}>{shop.phone}</p>}
       </div>
       <p className="text-xs font-bold text-amber-950 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2" data-testid={primary ? "text-tipo-oficina" : undefined}>
@@ -156,6 +118,7 @@ export default function EmergenciaOficinaPage() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [fix, setFix] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const recalculando = useRef(false);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -164,6 +127,10 @@ export default function EmergenciaOficinaPage() {
       return;
     }
     let cancelled = false;
+    if (attempt > 0) {
+      setLoading(true);
+      setErrorMsg(null);
+    }
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         if (cancelled) return;
@@ -175,21 +142,18 @@ export default function EmergenciaOficinaPage() {
           const data = await res.json().catch(() => ({}));
           if (cancelled) return;
           if (res.status === 400) throw new Error(data.message || "Latitude e longitude são obrigatórias.");
-          const serverFailed = !res.ok || data.emptyReason === "search_failed";
-          if (!serverFailed) {
-            setPayload(data);
-            setLoading(false);
-            return;
-          }
+          const base: Payload = {
+            mode: data.mode === "nearest" ? "nearest" : "empty",
+            emptyReason: data.emptyReason ?? (!res.ok ? "search_failed" : null),
+            message: data.message || (!res.ok ? OFICINA_SEARCH_FAILED : null),
+            shops: Array.isArray(data.shops) ? data.shops : [],
+            radiusKm: data.radiusKm,
+          };
           setLendoMapa(true);
-          const fromMap = await shopsFromPhoneMap({ lat: latitude, lng: longitude });
+          const lista = await comOficinasGoogle(latitude, longitude, base);
           if (cancelled) return;
-          setPayload(fromMap ?? {
-            mode: "empty",
-            emptyReason: "search_failed",
-            message: data.message || OFICINA_SEARCH_FAILED,
-            shops: [],
-          });
+          setPayload(lista);
+          setLendoMapa(false);
           setLoading(false);
         } catch (err: any) {
           if (cancelled) return;
@@ -202,10 +166,23 @@ export default function EmergenciaOficinaPage() {
         setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
         setLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
+    recalculando.current = false;
+    const watch = navigator.geolocation.watchPosition((position) => {
+      if (cancelled || recalculando.current) return;
+      const { latitude, longitude } = position.coords;
+      setFix((atual) => {
+        if (atual && haversineKm(atual.lat, atual.lng, latitude, longitude) >= 1) {
+          recalculando.current = true;
+          setAttempt((valor) => valor + 1);
+        }
+        return atual;
+      });
+    });
     return () => {
       cancelled = true;
+      navigator.geolocation.clearWatch(watch);
     };
   }, [attempt]);
 
@@ -220,7 +197,15 @@ export default function EmergenciaOficinaPage() {
           <Link href="/mobile" className="p-1 rounded-xl hover:bg-neutral-100" data-testid="button-back">
             <ArrowLeft className="w-5 h-5 text-neutral-700" />
           </Link>
-          <h1 className="text-base font-bold text-neutral-900">Socorro: borracharia / mecânico</h1>
+          <h1 className="min-w-0 flex-1 text-sm font-bold leading-tight text-neutral-900">Socorro: borracharia / mecânico</h1>
+          <button
+            type="button"
+            onClick={() => setAttempt((valor) => valor + 1)}
+            className="ml-auto shrink-0 text-[11px] font-bold uppercase tracking-wider text-amber-800"
+            data-testid="button-atualizar-lista"
+          >
+            Atualizar lista
+          </button>
         </div>
         <RadiusRuler activeKm={payload?.radiusKm ?? null} opening={loading} />
         {fix && (
@@ -239,7 +224,7 @@ export default function EmergenciaOficinaPage() {
             <div className="flex flex-col items-center justify-center py-20 space-y-3">
               <Loader2 className="w-8 h-8 animate-spin text-amber-700" />
               <p className="text-sm text-neutral-500 font-medium text-center">
-                {lendoMapa ? "A busca não respondeu. Lendo o mapa do celular..." : "Buscando borracharia e mecânico em volta de você..."}
+                {lendoMapa ? "Consultando o mapa e o Google..." : "Buscando borracharia e mecânico em volta de você..."}
               </p>
             </div>
           )}

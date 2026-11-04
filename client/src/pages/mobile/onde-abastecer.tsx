@@ -18,7 +18,9 @@ import {
   type EmptyReason,
   type StationToLocate,
 } from "@shared/anp-onde-abastecer";
-import { useEffect, useState } from "react";
+import { juntarApoio, postoFromGoogle, textoFonte, type PostoGoogle } from "@shared/apoio-lista";
+import { lugaresGoogle } from "@/lib/lugares-google";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { AlertCircle, ArrowLeft, Loader2, MapPin, ShieldCheck } from "lucide-react";
 
@@ -35,6 +37,7 @@ interface StationCard {
   researchLabel: string | null;
   qualityPhrase: string;
   priced: boolean;
+  source?: string;
 }
 
 interface Payload {
@@ -144,6 +147,28 @@ function money(value: number | null): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}`;
 }
 
+async function comPostosGoogle(latitude: number, longitude: number, data: Payload): Promise<Payload> {
+  try {
+    const oficiais = (data.stations ?? []).map((station) => ({ ...station, source: station.source || "ANP" }));
+    const drafts = await lugaresGoogle({ lat: latitude, lng: longitude }, [{ type: "gas_station" }]);
+    const google = drafts
+      .map((draft) => postoFromGoogle(draft, latitude, longitude))
+      .filter((item): item is PostoGoogle => item !== null);
+    const junto = juntarApoio(oficiais, google, oficiais.length ? (data.radiusKm ?? null) : null);
+    if (!junto.itens.length) return { ...data, stations: oficiais };
+    return {
+      ...data,
+      stations: junto.itens,
+      radiusKm: junto.radiusKm ?? data.radiusKm,
+      mode: oficiais.length ? data.mode : "nearest",
+      emptyReason: null,
+      message: oficiais.length ? data.message : null,
+    };
+  } catch {
+    return data;
+  }
+}
+
 function rememberStation(name: string) {
   try {
     sessionStorage.setItem(ONDE_ABASTECER_STATION_KEY, name);
@@ -197,6 +222,8 @@ export default function OndeAbastecerPage() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [fix, setFix] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const recalculando = useRef(false);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -206,7 +233,11 @@ export default function OndeAbastecerPage() {
     }
     let cancelled = false;
     let timer = 0;
-    const ask = (attempt: number) => {
+    if (attempt > 0) {
+      setLoading(true);
+      setErrorMsg(null);
+    }
+    const ask = (passo: number) => {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           if (cancelled) return;
@@ -219,10 +250,13 @@ export default function OndeAbastecerPage() {
               throw new Error(data.message || "Erro ao buscar postos próximos.");
             }
             if (cancelled) return;
-            setPayload(data);
-            const first = data.stations?.[0];
-            if (first?.name) rememberStation(first.name);
             const todo = (data.toLocate ?? []) as StationToLocate[];
+            if (data.stations?.length || !todo.length) {
+              const lista = await comPostosGoogle(latitude, longitude, data);
+              if (cancelled) return;
+              setPayload(lista);
+              if (lista.stations?.[0]?.name) rememberStation(lista.stations[0].name);
+            }
             if (!data.stations?.length && todo.length) {
               setLendoMapa(true);
               setLocating(true);
@@ -253,29 +287,18 @@ export default function OndeAbastecerPage() {
                 }
               }
               const ranked = rankFromCoordinates(latitude, longitude, located);
-              if (ranked) {
-                setPayload({
-                  ...data,
-                  ...ranked,
-                  emptyReason: null,
-                  pendingGeo: 0,
-                  toLocate: [],
-                });
-                if (ranked.stations[0]?.name) rememberStation(ranked.stations[0].name);
-              } else if (!ready) {
-                setPayload({
-                  ...data,
-                  emptyReason: "no_station",
-                  message: "O mapa não carregou para ler o endereço do posto.",
-                  toLocate: [],
-                });
-              } else {
-                setPayload({
-                  ...data,
-                  emptyReason: "no_station",
-                  message: noStationMessage(25),
-                  toLocate: [],
-                });
+              const lido = ranked
+                ? { ...data, ...ranked, emptyReason: null, pendingGeo: 0, toLocate: [] }
+                : {
+                    ...data,
+                    emptyReason: "no_station" as const,
+                    message: ready ? noStationMessage(25) : "O mapa não carregou para ler o endereço do posto.",
+                    toLocate: [],
+                  };
+              const listaLida = await comPostosGoogle(latitude, longitude, lido);
+              if (!cancelled) {
+                setPayload(listaLida);
+                if (listaLida.stations?.[0]?.name) rememberStation(listaLida.stations[0].name);
               }
               if (cancelled) return;
               setLendoMapa(false);
@@ -288,8 +311,11 @@ export default function OndeAbastecerPage() {
                   );
                   const saved = await savedRes.json();
                   if (!cancelled && savedRes.ok && saved.stations?.length) {
-                    setPayload(saved);
-                    if (saved.stations[0]?.name) rememberStation(saved.stations[0].name);
+                    const lista = await comPostosGoogle(latitude, longitude, saved);
+                    if (!cancelled) {
+                      setPayload(lista);
+                      if (lista.stations?.[0]?.name) rememberStation(lista.stations[0].name);
+                    }
                   }
                 } catch {
                   /* a lista já lida no mapa continua nesta abertura */
@@ -297,9 +323,9 @@ export default function OndeAbastecerPage() {
               }
               return;
             }
-            if (data.emptyReason === "locating" && attempt < 2) {
+            if (data.emptyReason === "locating" && passo < 2) {
               setLocating(true);
-              timer = window.setTimeout(() => ask(attempt + 1), 900);
+              timer = window.setTimeout(() => ask(passo + 1), 900);
               return;
             }
             setLocating(false);
@@ -315,15 +341,28 @@ export default function OndeAbastecerPage() {
           setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
           setLoading(false);
         },
-        { enableHighAccuracy: attempt === 0, timeout: 15000, maximumAge: 60000 },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
       );
     };
     ask(0);
+    recalculando.current = false;
+    const watch = navigator.geolocation.watchPosition((position) => {
+      if (cancelled || recalculando.current) return;
+      const { latitude, longitude } = position.coords;
+      setFix((atual) => {
+        if (atual && haversineKm(atual.lat, atual.lng, latitude, longitude) >= 1) {
+          recalculando.current = true;
+          setAttempt((valor) => valor + 1);
+        }
+        return atual;
+      });
+    });
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      navigator.geolocation.clearWatch(watch);
     };
-  }, []);
+  }, [attempt]);
 
   const primary = payload?.stations?.[0];
   const others = payload?.stations?.slice(1) || [];
@@ -336,6 +375,14 @@ export default function OndeAbastecerPage() {
             <ArrowLeft className="w-5 h-5 text-neutral-700" />
           </Link>
           <h1 className="text-base font-bold text-neutral-900">Onde abastecer</h1>
+          <button
+            type="button"
+            onClick={() => setAttempt((valor) => valor + 1)}
+            className="ml-auto text-[11px] font-bold uppercase tracking-wider text-emerald-800"
+            data-testid="button-atualizar-lista"
+          >
+            Atualizar lista
+          </button>
         </div>
 
         {!isAnpBaseNotLoaded(payload) && (
@@ -431,6 +478,7 @@ export default function OndeAbastecerPage() {
                   {payload?.radiusKm && payload.radiusKm > 5 ? ` · régua em ${payload.radiusKm} km` : ""}
                 </p>
                 {primary.address && <p className="text-xs text-neutral-400 mt-1">{primary.address}</p>}
+                <p className="text-[11px] font-bold text-neutral-500 mt-1" data-testid="text-fonte">{textoFonte(primary.source, "ANP")}</p>
               </div>
 
               <div className="bg-neutral-50 rounded-2xl p-3.5 space-y-2 border border-neutral-100">
@@ -498,6 +546,7 @@ export default function OndeAbastecerPage() {
                         <p className="text-xs text-neutral-500">
                           {st.distanceKm.toFixed(1)} km · cerca de {st.driveMinutes} min
                         </p>
+                        <p className="text-[11px] font-bold text-neutral-500 mt-1">{textoFonte(st.source, "ANP")}</p>
                       </div>
                       <div className="flex justify-between text-xs bg-white p-2.5 rounded-xl border border-neutral-100">
                         <span>Gasolina: <strong className="text-neutral-900">{money(st.gasolinePrice)}</strong></span>

@@ -74,6 +74,7 @@ export interface RankedHospital {
   longitude: number;
   distanceKm: number;
   driveMinutes: number;
+  source?: string;
 }
 
 const PIN_PART = /^(\d{7}):(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)$/;
