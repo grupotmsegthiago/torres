@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Socorro de borracharia e mecânico sob demanda
+
+- O botão no celular consulta só quando o vigilante toca. Não baixa o cadastro da Receita e não grava tabela.
+- Entram borracharia e mecânico em volta do GPS, na mesma régua de 5 a 25 km. Autopeças e guincho ficam de fora. O Waze abre o ponto aceito.
+- Se a consulta não responder, a tela diz isso e tenta o mapa do celular. Lista vazia só fecha em "até 25 km".
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-03 — Hospitais do CNES na mesma régua do posto
 
 - A lista oficial é o CSV diário de estabelecimentos do Ministério da Saúde. Entram hospital geral, hospital especializado e pronto-socorro ativos. Clínica, laboratório e hospital-dia ficam de fora.

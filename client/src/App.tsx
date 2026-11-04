@@ -86,6 +86,7 @@ const MobilePontoPage = lazy(() => import("@/pages/mobile/ponto"));
 const MobileAbastecimentoPage = lazy(() => import("@/pages/mobile/abastecimento"));
 const MobileOndeAbastecerPage = lazy(() => import("@/pages/mobile/onde-abastecer"));
 const MobileHospitaisPage = lazy(() => import("@/pages/mobile/hospitais"));
+const MobileEmergenciaOficinaPage = lazy(() => import("@/pages/mobile/emergencia-oficina"));
 const MobilePedagioPage = lazy(() => import("@/pages/mobile/pedagio"));
 const MobileOcorrenciaPage = lazy(() => import("@/pages/mobile/ocorrencia"));
 const MobilePontoOperacionalPage = lazy(() => import("@/pages/mobile/ponto-operacional"));
@@ -338,6 +339,7 @@ function Router() {
         <Route path="/mobile/abastecimento">{() => <MobileProtectedRoute component={MobileAbastecimentoPage} />}</Route>
         <Route path="/mobile/onde-abastecer">{() => <MobileProtectedRoute component={MobileOndeAbastecerPage} />}</Route>
         <Route path="/mobile/hospitais">{() => <MobileProtectedRoute component={MobileHospitaisPage} />}</Route>
+        <Route path="/mobile/emergencia-oficina">{() => <MobileProtectedRoute component={MobileEmergenciaOficinaPage} />}</Route>
         <Route path="/mobile/pedagio">{() => <MobileProtectedRoute component={MobilePedagioPage} />}</Route>
         <Route path="/mobile/ocorrencia">{() => <MobileProtectedRoute component={MobileOcorrenciaPage} />}</Route>
         <Route path="/mobile/chat">{() => <MobileProtectedRoute component={MobileChatPage} />}</Route>
