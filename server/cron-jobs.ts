@@ -1135,6 +1135,45 @@ export async function runAnpStationsCron(): Promise<void> {
   });
 }
 
+/** Base vazia: tenta de novo, sem uma segunda carga paralela. */
+export async function runHospitalsIfEmptyCron(): Promise<void> {
+  if (!isSupabaseHealthy()) return;
+  try {
+    const { count, error } = await supabaseAdmin.from("cnes_hospital").select("cnes", { count: "exact", head: true });
+    if (error) throw new Error(error.message);
+    if ((count ?? 0) > 0) return;
+    await runHospitalsCron();
+  } catch (e: any) {
+    log(`[cnes] contagem da base: ${e?.message || e}`, "cron");
+  }
+}
+
+const CNES_SYNC_LOCK = "cnes_hospital_sync_lock";
+
+/** Uma vez por dia, depois da publicação do CNES. A carga manual continua em POST /api/admin/hospitais-cnes/sync. */
+export async function runHospitalsCron(): Promise<void> {
+  await withCronLock("cnes-hospitais", async () => {
+    if (!isSupabaseHealthy()) return;
+    const stamp = new Date().toISOString();
+    const { error } = await supabaseAdmin.from("system_settings").insert({ key: CNES_SYNC_LOCK, value: stamp });
+    if (error && error.code !== "23505") return;
+    if (error?.code === "23505") {
+      const { data } = await supabaseAdmin.from("system_settings").select("updated_at, value").eq("key", CNES_SYNC_LOCK).maybeSingle();
+      const at = new Date(data?.updated_at || data?.value || 0).getTime();
+      if (Number.isFinite(at) && Date.now() - at < 20 * 60 * 1000) return;
+      await supabaseAdmin.from("system_settings").update({ value: stamp, updated_at: stamp }).eq("key", CNES_SYNC_LOCK);
+    }
+    try {
+      const { syncCnesHospitals } = await import("./lib/hospitais-cnes");
+      const result = await syncCnesHospitals();
+      log(`[cnes] carga ok hospitais=${result.hospitals}`, "cron");
+      await supabaseAdmin.from("system_settings").delete().eq("key", CNES_SYNC_LOCK);
+    } catch (e: any) {
+      log(`[cnes] carga interrompida: ${e?.message || e}`, "cron");
+    }
+  });
+}
+
 /** Base vazia ou qualidade incompleta: o minuto seguinte tenta de novo, sem uma segunda carga paralela. */
 export async function runAnpStationsIfEmptyCron(): Promise<void> {
   if (!isSupabaseHealthy()) return;

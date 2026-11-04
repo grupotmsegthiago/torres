@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-03 — Hospitais do CNES na mesma régua do posto
+
+- A lista oficial é o CSV diário de estabelecimentos do Ministério da Saúde. Entram hospital geral, hospital especializado e pronto-socorro ativos. Clínica, laboratório e hospital-dia ficam de fora.
+- Público, particular e filantrópico saem da natureza jurídica. "Atende SUS" sai do campo do próprio CNES. A esfera municipal não separa particular de público.
+- A latitude do arquivo não é usada. O mapa do celular lê o endereço e grava o ponto, com a mesma regra do posto. Não entra no custo do abastecimento.
+
 ## 2026-11-03 — O mapa do celular lê o endereço do posto
 
 - A lista da ANP já estava no sistema, com 5.940 postos, e nenhuma latitude gravada. Photon e Nominatim, chamados do servidor, não deixaram pino nenhum.

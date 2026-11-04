@@ -301,6 +301,24 @@ async function ensureFinancialOriginColumns() {
        longitude DECIMAL(11,7),
        looked_up_at TIMESTAMP DEFAULT NOW()
      )`,
+    `CREATE TABLE IF NOT EXISTS cnes_hospital (
+       cnes VARCHAR(7) PRIMARY KEY,
+       name TEXT NOT NULL,
+       address TEXT,
+       city TEXT,
+       city_norm TEXT,
+       state VARCHAR(2),
+       cep VARCHAR(8),
+       phone VARCHAR(16),
+       care VARCHAR(16) NOT NULL,
+       attends_sus BOOLEAN NOT NULL DEFAULT FALSE,
+       unit_label TEXT,
+       latitude DECIMAL(10,7),
+       longitude DECIMAL(11,7),
+       updated_at TIMESTAMP DEFAULT NOW()
+     )`,
+    "CREATE INDEX IF NOT EXISTS idx_cnes_hospital_city ON cnes_hospital(state, city_norm)",
+    "CREATE INDEX IF NOT EXISTS idx_cnes_hospital_geo ON cnes_hospital(latitude, longitude)",
   ];
 
   let ok = false;
@@ -702,6 +720,7 @@ async function ensureSystemSettingsTable() {
   import { registerEscortRoutes } from "./routes/escort";
   import { registerMobileRoutes } from "./routes/mobile";
   import { registerAnpStationRoutes } from "./routes/anp-stations";
+  import { registerHospitalRoutes } from "./routes/hospitais";
   import { registerChatRoutes } from "./routes/chat";
   import { registerBoletimApprovalRoutes } from "./routes/boletim-approval";
   import { registerLeadRoutes } from "./routes/leads";
@@ -1456,6 +1475,7 @@ async function ensureSystemSettingsTable() {
     registerEscortRoutes(app);
     registerMobileRoutes(app);
     registerAnpStationRoutes(app);
+    registerHospitalRoutes(app);
     registerProbationContractRoutes(app);
     registerPermanentContractRoutes(app);
     registerPendenciasRoutes(app);

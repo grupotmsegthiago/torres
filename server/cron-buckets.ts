@@ -87,6 +87,7 @@ async function runBrtScheduledJobs(brt: BrtClock): Promise<void> {
     if (isWeekday) await jobs.runResumoFinanceiroCron();
   }
   if (hour === 6 && minute === 30 && isWeekday) await jobs.runRodizioCron();
+  if (hour === 6 && minute === 40) await jobs.runHospitalsCron();
   if (hour === 7 && minute === 0) {
     await jobs.runVencimentosCron();
     await jobs.runAlertaFrotaCron();
@@ -129,6 +130,7 @@ export async function runCronBucket(bucket: CronBucket): Promise<void> {
       await jobs.runAgentCentralEscalationCron();
       await runBrtScheduledJobs(getBrtClock());
       await jobs.runAnpStationsIfEmptyCron();
+      if (getBrtClock().minute % 10 === 0) await jobs.runHospitalsIfEmptyCron();
       break;
     }
     case "three-min": {
