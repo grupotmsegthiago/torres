@@ -202,7 +202,7 @@ export default function EmergenciaOficinaPage() {
         setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
         setLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
     return () => {
       cancelled = true;

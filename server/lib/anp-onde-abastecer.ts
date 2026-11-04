@@ -7,6 +7,7 @@ import {
   addressHouseNumber,
   cepBandBounds,
   cepDigits,
+  cepsCloserThanKnown,
   coordinateOrNull,
   emptyReasonAfterGeo,
   emptyReasonForUnmatchedCity,
@@ -538,21 +539,19 @@ export async function recommendStations(lat: number, lng: number, pinText = ""):
     .filter((pin): pin is ClientPin => pin !== null);
   await rememberClientPins([...merged.values()], acceptedPins);
 
-  const streetDistances = () => {
-    const distances: number[] = [];
-    for (const row of merged.values()) {
-      const latitude = num(row.latitude);
-      const longitude = num(row.longitude);
-      if (latitude === null || longitude === null) continue;
-      distances.push(haversineKm(lat, lng, latitude, longitude));
-    }
-    return distances;
-  };
-
-  const pending = [...merged.values()].filter((row) => num(row.latitude) === null || num(row.longitude) === null);
-  if (pickRadiusStep(streetDistances()) !== null) {
-    pending.length = 0;
-  }
+  const cepOf = (row: StationRow) => cepDigits(row.cep);
+  const knownCeps = () => [...merged.values()].flatMap((row) => {
+    if (num(row.latitude) === null || num(row.longitude) === null) return [];
+    const cep = cepOf(row);
+    return cep ? [cep] : [];
+  });
+  const unknownCeps = () => [...merged.values()].flatMap((row) => {
+    if (num(row.latitude) !== null && num(row.longitude) !== null) return [];
+    const cep = cepOf(row);
+    return cep ? [cep] : [];
+  });
+  const pendingCeps = new Set(cepsCloserThanKnown(place.cep, unknownCeps(), knownCeps()));
+  const pending = [...merged.values()].filter((row) => pendingCeps.has(cepOf(row)));
   const queryByCep = new Map<string, string>();
   const houseByCep = new Map<string, string | null>();
   const placeByCep = new Map<string, { city: string | null; state: string | null }>();
@@ -656,6 +655,11 @@ export async function recommendStations(lat: number, lng: number, pinText = ""):
   });
 
   const ranked = rankStations(candidates, step);
+  const still = stationsToLocate(
+    [...merged.values()].filter((row) => pendingCeps.has(cepOf(row)) && (num(row.latitude) === null || num(row.longitude) === null)),
+    place.cep,
+  );
+  const stillPrices = await pricesFor(still.map((row) => row.cnpj));
   return {
     ...ranked,
     radiusKm: step,
@@ -666,6 +670,22 @@ export async function recommendStations(lat: number, lng: number, pinText = ""):
     emptyReason: null,
     origin,
     catalog: { ...base, inCity, inPlace: pool.size, clean: merged.size },
-    toLocate: [],
+    toLocate: still.map((row) => {
+      const price = stillPrices.get(row.cnpj);
+      return {
+        cnpj: row.cnpj,
+        name: row.station_name || "Posto",
+        address: row.address,
+        city: row.city || row.city_norm,
+        state: row.state,
+        cep: cepOf(row),
+        query: stationGeocodeQuery(row.address, row.city || row.city_norm, row.state),
+        houseNumber: addressHouseNumber(row.address),
+        anpScore: row.anp_score,
+        gasolinePrice: price?.gasoline ?? null,
+        ethanolPrice: price?.ethanol ?? null,
+        researchDate: price?.researchDate ?? null,
+      };
+    }),
   };
 }

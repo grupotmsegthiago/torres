@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-04 — Cada abertura consulta o GPS de agora
+
+- Onde abastecer, hospitais e borracharia/mecânico pedem uma posição nova ao abrir. Um pino já gravado não esconde o CEP mais perto do GPS atual.
+- O nome do posto no abastecimento só volta se a posição nova está a até 5 km de onde ele foi escolhido. Posto de outra região sai do campo.
+- Não entra no custo do abastecimento.
+
 ## 2026-11-03 — O hospital ganha pino a partir do endereço
 
 - A lista do CNES já estava no sistema, com 6.746 hospitais e nenhuma latitude. A tela fechava em "nenhum em 25 km" sem marcar o endereço.

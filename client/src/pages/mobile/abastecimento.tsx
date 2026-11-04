@@ -1,5 +1,5 @@
 import { parseBRL, maskBRL } from "@/lib/utils";
-import { ONDE_ABASTECER_STATION_KEY } from "@shared/anp-onde-abastecer";
+import { haversineKm, ONDE_ABASTECER_STATION_KEY } from "@shared/anp-onde-abastecer";
 import { compressImageFile } from "@/lib/image-compress";
 import MobileLayout from "@/components/mobile/layout";
 import { PosicaoConfirmada, usePosicaoConfirmada } from "@/components/mobile/posicao-confirmada";
@@ -42,13 +42,34 @@ export default function MobileAbastecimentoPage() {
   const [acrescimo, setAcrescimo] = useState("");
   const [etanolPrice, setEtanolPrice] = useState("");
   const [gasolinaPrice, setGasolinaPrice] = useState("");
-  const [station, setStation] = useState(() => {
+  const [station, setStation] = useState("");
+
+  useEffect(() => {
+    if (!posicao) return;
     try {
-      return sessionStorage.getItem(ONDE_ABASTECER_STATION_KEY) || "";
+      const raw = sessionStorage.getItem(ONDE_ABASTECER_STATION_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { name?: string; lat?: number; lng?: number };
+      if (
+        typeof saved?.name !== "string"
+        || !Number.isFinite(saved.lat)
+        || !Number.isFinite(saved.lng)
+        || haversineKm(posicao.lat, posicao.lng, saved.lat, saved.lng) > 5
+      ) {
+        sessionStorage.removeItem(ONDE_ABASTECER_STATION_KEY);
+        setStation("");
+        return;
+      }
+      setStation(saved.name);
     } catch {
-      return "";
+      try {
+        sessionStorage.removeItem(ONDE_ABASTECER_STATION_KEY);
+      } catch {
+        /* sessão antiga em texto puro não volta a preencher o posto */
+      }
+      setStation("");
     }
-  });
+  }, [posicao]);
 
   useEffect(() => {
     if (!gasolinaPrice || !etanolPrice) return;

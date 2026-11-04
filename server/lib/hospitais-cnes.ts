@@ -9,6 +9,8 @@ import { reverseCity } from "./anp-onde-abastecer";
 import { IBGE_MUNICIPIOS } from "@shared/ibge-municipios";
 import {
   cepBandBounds,
+  cepDigits,
+  cepsCloserThanKnown,
   coordinateOrNull,
   emptyReasonAfterGeo,
   MAP_LOCATE_LIMIT,
@@ -371,13 +373,22 @@ export async function recommendHospitals(lat: number, lng: number, pinText = "")
     .filter((pin): pin is HospitalPin => pin !== null);
   await rememberPins(merged, accepted);
 
-  let opened = rankedFrom(merged, lat, lng);
-  if (!opened) {
-    const locateNow = toLocate(merged, place.cep);
+  const knownHospitalCeps = () => merged.flatMap((row) => {
+    if (num(row.latitude) === null || num(row.longitude) === null) return [];
+    const cep = cepDigits(row.cep);
+    return cep ? [cep] : [];
+  });
+  const closerHospitals = (rows: HospitalToLocate[]) => {
+    const allowed = new Set(cepsCloserThanKnown(place.cep, rows.map((row) => row.cep), knownHospitalCeps()));
+    return rows.filter((row) => allowed.has(row.cep));
+  };
+  let locateNow = closerHospitals(toLocate(merged, place.cep));
+  if (locateNow.length) {
     await rememberPins(merged, await locateHospitalAddresses(lat, lng, locateNow));
-    opened = rankedFrom(merged, lat, lng);
+    locateNow = closerHospitals(toLocate(merged, place.cep));
   }
-  if (opened) {
+  const opened = rankedFrom(merged, lat, lng);
+  if (opened && !locateNow.length) {
     return {
       mode: "nearest",
       message: null,
@@ -391,6 +402,22 @@ export async function recommendHospitals(lat: number, lng: number, pinText = "")
       origin,
       catalog: { hospitals: total, inCity, inPlace: pool.size },
       toLocate: [],
+    };
+  }
+  if (opened) {
+    return {
+      mode: "nearest",
+      message: null,
+      hospitals: opened.hospitals,
+      radiusKm: opened.radiusKm,
+      city: place.city,
+      cityLabel: place.label,
+      state: place.state,
+      pendingGeo: locateNow.length,
+      emptyReason: null,
+      origin,
+      catalog: { hospitals: total, inCity, inPlace: pool.size },
+      toLocate: locateNow,
     };
   }
 
