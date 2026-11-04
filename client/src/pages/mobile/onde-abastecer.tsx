@@ -144,21 +144,21 @@ function money(value: number | null): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}`;
 }
 
-function rememberStation(name: string) {
+function rememberStation(name: string, origin: { lat: number; lng: number }) {
   try {
-    sessionStorage.setItem(ONDE_ABASTECER_STATION_KEY, name);
+    sessionStorage.setItem(ONDE_ABASTECER_STATION_KEY, JSON.stringify({ name, lat: origin.lat, lng: origin.lng }));
   } catch {
     /* sessão indisponível não impede a rota */
   }
 }
 
 function openWaze(lat: number, lng: number, name: string) {
-  rememberStation(name);
+  rememberStation(name, { lat, lng });
   window.open(`https://waze.com/ul?ll=${lat},${lng}&navigate=yes`, "_blank", "noopener,noreferrer");
 }
 
 function openGoogleMaps(lat: number, lng: number, name: string) {
-  rememberStation(name);
+  rememberStation(name, { lat, lng });
   window.open(
     `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${lat},${lng}&travelmode=driving`,
     "_blank",
@@ -220,10 +220,9 @@ export default function OndeAbastecerPage() {
             }
             if (cancelled) return;
             setPayload(data);
-            const first = data.stations?.[0];
-            if (first?.name) rememberStation(first.name);
             const todo = (data.toLocate ?? []) as StationToLocate[];
-            if (!data.stations?.length && todo.length) {
+            const here = { lat: latitude, lng: longitude };
+            if (todo.length) {
               setLendoMapa(true);
               setLocating(true);
               const ready = await mapsGeocoderReady();
@@ -252,7 +251,18 @@ export default function OndeAbastecerPage() {
                   });
                 }
               }
-              const ranked = rankFromCoordinates(latitude, longitude, located);
+              const previous = (data.stations ?? []).map((station) => ({
+                cnpj: station.cnpj,
+                name: station.name,
+                address: station.address,
+                latitude: station.latitude,
+                longitude: station.longitude,
+                anpScore: null as number | null,
+                gasolinePrice: station.gasolinePrice,
+                ethanolPrice: station.ethanolPrice,
+                researchDate: null as string | null,
+              }));
+              const ranked = rankFromCoordinates(latitude, longitude, [...previous, ...located]);
               if (ranked) {
                 setPayload({
                   ...data,
@@ -261,7 +271,9 @@ export default function OndeAbastecerPage() {
                   pendingGeo: 0,
                   toLocate: [],
                 });
-                if (ranked.stations[0]?.name) rememberStation(ranked.stations[0].name);
+                if (ranked.stations[0]?.name) rememberStation(ranked.stations[0].name, here);
+              } else if (data.stations?.length) {
+                if (data.stations[0]?.name) rememberStation(data.stations[0].name, here);
               } else if (!ready) {
                 setPayload({
                   ...data,
@@ -289,7 +301,7 @@ export default function OndeAbastecerPage() {
                   const saved = await savedRes.json();
                   if (!cancelled && savedRes.ok && saved.stations?.length) {
                     setPayload(saved);
-                    if (saved.stations[0]?.name) rememberStation(saved.stations[0].name);
+                    if (saved.stations[0]?.name) rememberStation(saved.stations[0].name, here);
                   }
                 } catch {
                   /* a lista já lida no mapa continua nesta abertura */
@@ -297,6 +309,7 @@ export default function OndeAbastecerPage() {
               }
               return;
             }
+            if (data.stations?.[0]?.name) rememberStation(data.stations[0].name, here);
             if (data.emptyReason === "locating" && attempt < 2) {
               setLocating(true);
               timer = window.setTimeout(() => ask(attempt + 1), 900);
@@ -315,7 +328,7 @@ export default function OndeAbastecerPage() {
           setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
           setLoading(false);
         },
-        { enableHighAccuracy: attempt === 0, timeout: 15000, maximumAge: 60000 },
+        { enableHighAccuracy: attempt === 0, timeout: 15000, maximumAge: 0 },
       );
     };
     ask(0);

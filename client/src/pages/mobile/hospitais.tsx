@@ -189,7 +189,7 @@ export default function HospitaisPage() {
           if (cancelled) return;
           setPayload(data);
           const todo = (data.toLocate ?? []) as HospitalToLocate[];
-          if (!data.hospitals?.length && todo.length) {
+          if (todo.length) {
             setLendoMapa(true);
             setLocating(true);
             const ready = await mapsGeocoderReady();
@@ -218,10 +218,21 @@ export default function HospitaisPage() {
                 });
               }
             }
-            const ranked = rankHospitals(latitude, longitude, located);
+            const previous = (data.hospitals ?? []).map((hospital) => ({
+              cnes: hospital.cnes,
+              name: hospital.name,
+              address: hospital.address,
+              phone: hospital.phone,
+              care: hospital.care,
+              attendsSus: hospital.attendsSus,
+              unitLabel: hospital.unitLabel,
+              latitude: hospital.latitude,
+              longitude: hospital.longitude,
+            }));
+            const ranked = rankHospitals(latitude, longitude, [...previous, ...located]);
             if (ranked) {
               setPayload({ ...data, ...ranked, mode: "nearest", emptyReason: null, message: null, pendingGeo: 0, toLocate: [] });
-            } else {
+            } else if (!data.hospitals?.length) {
               setPayload({
                 ...data,
                 emptyReason: "no_station",
@@ -256,7 +267,7 @@ export default function HospitaisPage() {
         setErrorMsg("Não foi possível obter sua localização. Verifique as permissões do GPS.");
         setLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
     return () => {
       cancelled = true;

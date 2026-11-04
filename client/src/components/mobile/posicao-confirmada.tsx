@@ -152,7 +152,7 @@ export function PosicaoConfirmada({
 const POSICAO_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
   timeout: 15000,
-  maximumAge: 60000,
+  maximumAge: 0,
 };
 
 /**

@@ -6,6 +6,7 @@ import {
   digitsCnpj,
   addressHouseNumber,
   cepBandBounds,
+  cepsCloserThanKnown,
   classifyFoundPoint,
   formatPinList,
   parsePinList,
@@ -317,6 +318,14 @@ test("o raio vazio só fecha depois que o CEP da faixa foi localizado", () => {
   assert.equal(emptyReasonAfterGeo(0), "no_station");
   const ordered = orderCepsByProximity("02939040", ["04506000", "02938000", "02924000"]);
   assert.deepEqual(ordered, ["02938000", "02924000", "04506000"]);
+  assert.deepEqual(
+    cepsCloserThanKnown("05170000", ["05180000", "06460000"], ["06455000"]),
+    ["05180000"],
+  );
+  assert.deepEqual(
+    cepsCloserThanKnown("05170000", ["05180000", "06460000"], []),
+    ["05180000", "06460000"],
+  );
   assert.equal(isCepInBand("02939040", "02901000"), true);
   assert.equal(isCepInBand("02939040", "04506000"), false);
   assert.deepEqual(cepBandBounds("02939040"), { from: "02859040", to: "03019040" });

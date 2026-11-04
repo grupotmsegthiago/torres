@@ -117,6 +117,26 @@ export function orderCepsByProximity(userCep: string, ceps: Iterable<string>): s
 }
 
 /**
+ * CEPs ainda sem pino que ficam mais perto do GPS do que um pino já gravado.
+ * Um posto de Alphaville com latitude não esconde o CEP de Pirituba.
+ */
+export function cepsCloserThanKnown(
+  userCep: string,
+  unknownCeps: Iterable<string>,
+  knownCeps: Iterable<string>,
+  limit = MAP_LOCATE_LIMIT,
+): string[] {
+  let nearestKnown = Number.POSITIVE_INFINITY;
+  for (const cep of knownCeps) {
+    const distance = cepDistance(userCep, cep);
+    if (distance < nearestKnown) nearestKnown = distance;
+  }
+  return orderCepsByProximity(userCep, unknownCeps)
+    .filter((cep) => cepDistance(userCep, cep) < nearestKnown)
+    .slice(0, limit);
+}
+
+/**
  * `no_station` só quando não sobrou CEP da faixa para localizar.
  * CEP ainda sem consulta fica em `locating`.
  */
