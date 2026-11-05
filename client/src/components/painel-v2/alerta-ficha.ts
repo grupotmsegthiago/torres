@@ -68,6 +68,7 @@ interface ViaturaAlerta {
 interface ItemGrade {
   id?: number;
   osNumber?: string | null;
+  status?: string | null;
   clientName?: string | null;
   origin?: string | null;
   destination?: string | null;
@@ -77,6 +78,9 @@ interface ItemGrade {
   lastAgentUpdate?: AtualizacaoOs | null;
   employee1?: unknown;
   employee2?: unknown;
+  escortedDriverName?: string | null;
+  escortedDriverPhone?: string | null;
+  escortedVehiclePlate?: string | null;
 }
 
 export interface FichaAlerta {
@@ -247,6 +251,25 @@ export function prepararRelatorioAlerta(ficha: FichaAlerta, atualizacao: Atualiz
       lastAgentUpdate: null,
     };
   }
+  // Grade da OS alvo: não deixa a missão ativa de outra OS emprestar a rota.
+  if (!activeOs && gridItem) {
+    activeOs = {
+      id: gridItem.id || atualizacao.serviceOrderId || 0,
+      osNumber: gridItem.osNumber || osNumber || "—",
+      status: gridItem.status || "",
+      missionStatus: gridItem.missionStatus || atualizacao.missionStep || "",
+      clientName: texto(gridItem.clientName) || ficha.cliente || "—",
+      origin: texto(gridItem.origin) || null,
+      destination: texto(gridItem.destination) || null,
+      priority: "",
+      employee1: gridItem.employee1 || null,
+      employee2: gridItem.employee2 || null,
+      escortedDriverName: (gridItem as { escortedDriverName?: string | null }).escortedDriverName || null,
+      escortedDriverPhone: (gridItem as { escortedDriverPhone?: string | null }).escortedDriverPhone || null,
+      escortedVehiclePlate: (gridItem as { escortedVehiclePlate?: string | null }).escortedVehiclePlate || null,
+      lastAgentUpdate: null,
+    };
+  }
   if (!activeOs && !gridItem) {
     activeOs = {
       id: atualizacao.serviceOrderId || 0,
@@ -264,11 +287,13 @@ export function prepararRelatorioAlerta(ficha: FichaAlerta, atualizacao: Atualiz
   }
   if (activeOs) {
     const anterior = activeOs.lastAgentUpdate || {};
+    const mesmaOsFicha = !osNumber || !ficha.origem || texto(activeOs.origin) === texto(ficha.origem) || texto(gridItem?.origin) === texto(ficha.origem);
     activeOs = {
       ...activeOs,
-      clientName: texto(activeOs.clientName) || ficha.cliente || texto(gridItem?.clientName) || "—",
-      origin: texto(activeOs.origin) || ficha.origem || texto(gridItem?.origin) || null,
-      destination: texto(activeOs.destination) || ficha.destino || texto(gridItem?.destination) || null,
+      clientName: texto(activeOs.clientName) || texto(gridItem?.clientName) || ficha.cliente || "—",
+      // Só completa origem/destino com a ficha se for a mesma OS — senão a TOR-1178 vaza na TOR-1215.
+      origin: texto(activeOs.origin) || texto(gridItem?.origin) || (mesmaOsFicha ? texto(ficha.origem) : "") || null,
+      destination: texto(activeOs.destination) || texto(gridItem?.destination) || (mesmaOsFicha ? texto(ficha.destino) : "") || null,
       lastAgentUpdate: {
         ...anterior,
         message: atualizacao.message,

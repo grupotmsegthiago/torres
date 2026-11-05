@@ -63,11 +63,13 @@ test("o formulário usa a mensagem desta atualização e não a OS de outra miss
     message: "Missão segue padrão, sem novidades",
     driver: "Maycon Andrade Lopes Agostinho",
   });
-  assert.equal(preparado.vehicle.activeOs, null);
-  assert.equal(preparado.gridItem?.clientName, "TRANSPORTES LOPES");
-  assert.equal(preparado.gridItem?.origin, "Rua da Origem, 10, Campinas - SP");
-  assert.equal(preparado.gridItem?.destination, "Avenida do Destino, 20, Santos - SP");
+  assert.equal(preparado.vehicle.activeOs?.osNumber, "TOR-1842");
+  assert.equal(preparado.vehicle.activeOs?.clientName, "TRANSPORTES LOPES");
+  assert.equal(preparado.vehicle.activeOs?.origin, "Rua da Origem, 10, Campinas - SP");
+  assert.equal(preparado.vehicle.activeOs?.destination, "Avenida do Destino, 20, Santos - SP");
+  assert.notEqual(preparado.vehicle.activeOs?.origin, "Outra origem");
   assert.equal(preparado.gridItem?.lastAgentUpdate?.message, "Missão segue padrão, sem novidades");
+  assert.equal(preparado.vehicle.activeOs?.lastAgentUpdate?.message, "Missão segue padrão, sem novidades");
 });
 
 test("o WhatsApp com foto só entra na visão do celular", () => {

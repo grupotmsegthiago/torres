@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-05 — Origem e destino do formulário ficam na OS certa
+
+- O WhatsApp e o encaminhamento usam origem, destino e escoltado só da OS do relatório. Outra missão aberta na mesma viatura não empresta a rota.
+- Na TMG0E84, a TOR-1215 (Omega / Embragen → Osasco) deixa de sair com a rota da TOR-1178 (RJC → Viracopos).
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-05 — Uma viatura, uma OS no cartão e no formulário
 
 - Quando duas OS abertas apontam para a mesma viatura, o cartão e o formulário ficam com a OS que já iniciou a missão e está mais avançada. Empate de horário deixa de misturar número de uma OS com agentes de outra.

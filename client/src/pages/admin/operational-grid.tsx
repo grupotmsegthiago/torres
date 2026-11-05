@@ -48,6 +48,7 @@ import { AlertaViaturaMensagem } from "@/components/painel-v2/AlertaViaturaMensa
 import { mostrarWhatsappNoCelular, prepararRelatorioAlerta, resolverFichaAlerta, rotaDaAtualizacao, temRotaNoAlerta } from "@/components/painel-v2/alerta-ficha";
 import { MapaRotaOs } from "@/components/painel-v2/MapaRotaOs";
 import type { ViaturaStatusType } from "@/components/painel-v2/StatusBadge3D";
+import { camposRotaDoFormulario, resolverOsDoFormulario, type OsFormulario } from "@shared/formulario-os";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -305,6 +306,7 @@ interface TrackedVehicle {
     id: number;
     osNumber: string;
     status: string;
+    missionStatus?: string | null;
     priority: string;
     scheduledDate: string | null;
     clientName: string;
@@ -1108,8 +1110,58 @@ function applyTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "—");
 }
 
+function gradeParaFormulario(gridItem?: GridItem | null): OsFormulario | null {
+  if (!gridItem?.osNumber) return null;
+  return {
+    id: gridItem.id,
+    osNumber: gridItem.osNumber,
+    status: gridItem.status,
+    missionStatus: gridItem.missionStatus,
+    clientName: gridItem.clientName,
+    origin: gridItem.origin,
+    destination: gridItem.destination,
+    scheduledDate: gridItem.scheduledDate,
+    escortedDriverName: gridItem.escortedDriverName,
+    escortedDriverPhone: gridItem.escortedDriverPhone,
+    escortedVehiclePlate: gridItem.escortedVehiclePlate,
+    employee1: gridItem.employee1,
+    employee2: gridItem.employee2,
+    lastAgentUpdate: gridItem.lastAgentUpdate,
+    waypoints: (gridItem as { waypoints?: OsFormulario["waypoints"] }).waypoints || [],
+    originLat: (gridItem as { originLat?: number | null }).originLat ?? null,
+    originLng: (gridItem as { originLng?: number | null }).originLng ?? null,
+    destinationLat: (gridItem as { destinationLat?: number | null }).destinationLat ?? null,
+    destinationLng: (gridItem as { destinationLng?: number | null }).destinationLng ?? null,
+    route: (gridItem as { route?: string | null }).route ?? null,
+  };
+}
+
+function osDoRelatorio(v: TrackedVehicle, gridItem?: GridItem | null): OsFormulario | null {
+  return resolverOsDoFormulario(
+    {
+      plate: v.plate,
+      activeOs: v.activeOs || null,
+      upcomingOrders: (v.upcomingOrders || []).map((ordem) => ({
+        id: ordem.id,
+        osNumber: ordem.osNumber,
+        status: ordem.status,
+        missionStatus: ordem.missionStatus,
+        clientName: ordem.clientName,
+        origin: ordem.origin,
+        destination: ordem.destination,
+        escortedDriverName: ordem.escortedDriverName,
+        escortedDriverPhone: ordem.escortedDriverPhone,
+        escortedVehiclePlate: ordem.escortedVehiclePlate,
+        employee1: ordem.employee1Name ? { name: ordem.employee1Name, fullName: ordem.employee1Name, phone: ordem.employee1Phone } : null,
+        employee2: ordem.employee2Name ? { name: ordem.employee2Name, fullName: ordem.employee2Name, phone: ordem.employee2Phone } : null,
+      })),
+    },
+    gradeParaFormulario(gridItem),
+  );
+}
+
 function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<string, string> | null {
-  const os = v.activeOs || (gridItem ? { osNumber: gridItem.osNumber, status: gridItem.status, missionStatus: gridItem.missionStatus, clientName: gridItem.clientName, scheduledDate: gridItem.scheduledDate, employee1: gridItem.employee1, employee2: gridItem.employee2, lastAgentUpdate: gridItem.lastAgentUpdate } as any : null);
+  const os = osDoRelatorio(v, gridItem);
   if (!os) return null;
 
   const now = new Date();
@@ -1121,12 +1173,12 @@ function buildReportVars(v: TrackedVehicle, gridItem?: GridItem | null): Record<
     ? getMissionLabel(os.lastAgentUpdate.missionStep)
     : getMissionLabel(os.missionStatus);
 
-  const pick = (...vals: (string | null | undefined)[]) => vals.find(v => v && v.trim()) || "—";
-  const origin = pick(gridItem?.origin, os.origin, v.activeOs?.origin);
-  const destination = pick(gridItem?.destination, os.destination, v.activeOs?.destination);
-  const driverName = pick(gridItem?.escortedDriverName, os.escortedDriverName, v.activeOs?.escortedDriverName);
-  const driverPhone = pick(gridItem?.escortedDriverPhone, os.escortedDriverPhone, v.activeOs?.escortedDriverPhone);
-  const driverPlate = pick(gridItem?.escortedVehiclePlate, os.escortedVehiclePlate, v.activeOs?.escortedVehiclePlate);
+  const rota = camposRotaDoFormulario(os);
+  const origin = rota.origin;
+  const destination = rota.destination;
+  const driverName = rota.driverName;
+  const driverPhone = rota.driverPhone;
+  const driverPlate = rota.driverPlate;
   const vehiclePlate = gridItem?.vehicle?.plate || v.plate || "—";
   const agent1 = getFirstLastName(os.employee1?.fullName || os.employee1?.name);
   const agent2 = getFirstLastName(os.employee2?.fullName || os.employee2?.name);
@@ -1227,7 +1279,7 @@ async function generateReportAsync(v: TrackedVehicle, gridItem?: GridItem | null
     }
   }
 
-  const os = v.activeOs || (gridItem as any);
+  const os = osDoRelatorio(v, gridItem);
   const destLat = os?.destinationLat;
   const destLng = os?.destinationLng;
   if (lat && lng && destLat && destLng) {
@@ -6227,8 +6279,12 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
     for (const u of updates) {
       const key = u.osNumber || `unknown-${u.id}`;
       if (!map.has(key)) {
-        const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === u.osNumber);
         const gridItem = gridData.find((g: GridItem) => g.osNumber === u.osNumber);
+        const matchedVehicle = vehicles.find((veh: TrackedVehicle) =>
+          veh.activeOs?.osNumber === u.osNumber
+          || veh.upcomingOrders?.some((ordem) => ordem.osNumber === u.osNumber)
+          || (gridItem?.vehicle?.plate && placaIgual(veh.plate, gridItem.vehicle.plate))
+        );
         const plate = gridItem?.vehicle?.plate || matchedVehicle?.plate || "—";
         const vehicleId = matchedVehicle?.id ?? gridItem?.vehicle?.id;
         const ssxIntegrationCode = (matchedVehicle as any)?.ssxIntegrationCode ?? (gridItem?.vehicle as any)?.ssxIntegrationCode ?? null;
@@ -6416,10 +6472,15 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           const latest = group.updates[0];
           const latestTime = latest?.createdAt ? formatTimeBRT(latest.createdAt) : "—";
           const gridItem = gridData.find((g: GridItem) => g.osNumber === group.osNumber);
-          const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === group.osNumber);
-          const originText = gridItem?.origin || matchedVehicle?.activeOs?.origin || null;
-          const destText = gridItem?.destination || matchedVehicle?.activeOs?.destination || null;
-          const clientName = gridItem?.clientName || matchedVehicle?.activeOs?.clientName || "";
+          const matchedVehicle = vehicles.find((veh: TrackedVehicle) =>
+            veh.activeOs?.osNumber === group.osNumber
+            || veh.upcomingOrders?.some((ordem) => ordem.osNumber === group.osNumber)
+            || (gridItem?.vehicle?.plate && placaIgual(veh.plate, gridItem.vehicle.plate))
+          );
+          const osForm = matchedVehicle ? osDoRelatorio(matchedVehicle, gridItem || null) : gradeParaFormulario(gridItem);
+          const originText = osForm?.origin || null;
+          const destText = osForm?.destination || null;
+          const clientName = osForm?.clientName || "";
           const routeLabel = originDestLabel(originText, destText);
           const routeTitle = originDestTitle(originText, destText);
           const originDestLine = [clientName && clientName !== "—" ? clientName : "", routeLabel].filter(Boolean).join(" · ");
@@ -6661,9 +6722,15 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
           </DialogHeader>
 
           {forwardUpdate && (() => {
-            const matchedVehicle = vehicles.find((veh: TrackedVehicle) => veh.activeOs?.osNumber === forwardUpdate.osNumber);
             const gridItem = gridData.find((g: GridItem) => g.osNumber === forwardUpdate.osNumber);
-            const os = matchedVehicle?.activeOs || (gridItem ? { osNumber: gridItem.osNumber, status: gridItem.status, missionStatus: gridItem.missionStatus, clientName: gridItem.clientName, employee1: gridItem.employee1, employee2: gridItem.employee2, lastAgentUpdate: gridItem.lastAgentUpdate } as any : null);
+            const matchedVehicle = vehicles.find((veh: TrackedVehicle) =>
+              veh.activeOs?.osNumber === forwardUpdate.osNumber
+              || veh.upcomingOrders?.some((ordem) => ordem.osNumber === forwardUpdate.osNumber)
+              || (gridItem?.vehicle?.plate && placaIgual(veh.plate, gridItem.vehicle.plate))
+            );
+            const os = matchedVehicle
+              ? osDoRelatorio(matchedVehicle, gridItem || null)
+              : gradeParaFormulario(gridItem);
             const vehiclePlate = gridItem?.vehicle?.plate || matchedVehicle?.plate || "—";
             const agent1 = getFirstLastName(os?.employee1?.fullName || os?.employee1?.name);
             const agent2 = getFirstLastName(os?.employee2?.fullName || os?.employee2?.name);
@@ -6678,8 +6745,8 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
             const dateStr = now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
             const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
             const routeP = getRouteProgress({
-              originLat: matchedVehicle?.activeOs?.originLat, originLng: matchedVehicle?.activeOs?.originLng,
-              destLat: matchedVehicle?.activeOs?.destinationLat, destLng: matchedVehicle?.activeOs?.destinationLng,
+              originLat: os?.originLat ?? null, originLng: os?.originLng ?? null,
+              destLat: os?.destinationLat ?? null, destLng: os?.destinationLng ?? null,
               currentLat: lat ? Number(lat) : null, currentLng: lng ? Number(lng) : null,
               missionStatus: os?.missionStatus,
               vehicleId: matchedVehicle?.id,
