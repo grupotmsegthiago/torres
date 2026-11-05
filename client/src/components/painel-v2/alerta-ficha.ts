@@ -172,13 +172,16 @@ export function resolverFichaAlerta(
     (osNumber != null && item.osNumber === osNumber) || (soId != null && item.id === soId),
   ) || null;
 
+  // SSOT: alerta só casa com missão ativa / agendada / fila — nunca lastOs (vaza OS antiga).
   const vehicle = vehicles.find((viatura) => {
     if (osNumber && (
       viatura.activeOs?.osNumber === osNumber
       || viatura.scheduledOs?.osNumber === osNumber
-      || viatura.lastOs?.osNumber === osNumber
       || viatura.upcomingOrders?.some((ordem) => ordem.osNumber === osNumber)
     )) return true;
+    if (osNumber && viatura.activeOs?.osNumber && viatura.activeOs.osNumber !== osNumber) {
+      return false;
+    }
     const placaGrid = placaLimpa(gridItem?.vehicle?.plate);
     return placaGrid !== "" && placaLimpa(viatura.plate) === placaGrid;
   }) || null;

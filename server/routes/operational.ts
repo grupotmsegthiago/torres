@@ -9,7 +9,7 @@ import type { Express } from "express";
   import { osCobraMarkupPedagio, pedagioCustoOsAprovada, sumPedagioComprovante } from "../../shared/pedagio-markup";
   import { haversineDist } from "./_helpers";
   import { resolveVehicleIcon } from "@shared/vehicle-icons";
-  import { escolherOsAtivaDaViatura } from "@shared/os-viatura";
+  import { getActiveMissionByVehicle } from "@shared/os-viatura";
   import { withSwrCache } from "../lib/swr-cache";
   import { brtDateKey, currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
@@ -1141,7 +1141,7 @@ import type { Express } from "express";
 
         const vehicleOrders = vehicleActiveOrders.filter((o) => o.vehicleId === v.id);
         // Sessão ativa da viatura: desempata quando duas OS abertas competem pelo mesmo cartão.
-        const linkedOrder = escolherOsAtivaDaViatura(vehicleOrders, sessaoPorViatura.get(v.id) || null);
+        const linkedOrder = getActiveMissionByVehicle(vehicleOrders, sessaoPorViatura.get(v.id) || null);
 
         // Última OS do veículo (qualquer status), pra manter os agentes visíveis
         // mesmo quando o veículo está livre/sem missão hoje.

@@ -49,6 +49,7 @@ import { mostrarWhatsappNoCelular, prepararRelatorioAlerta, resolverFichaAlerta,
 import { MapaRotaOs } from "@/components/painel-v2/MapaRotaOs";
 import type { ViaturaStatusType } from "@/components/painel-v2/StatusBadge3D";
 import { camposRotaDoFormulario, resolverOsDoFormulario, type OsFormulario } from "@shared/formulario-os";
+import { osNumerosDaMissaoAtiva } from "@shared/os-viatura";
 
 type OpNotifStatus = "pending" | "success" | "error";
 type OpNotifType = "mirror" | "command";
@@ -1137,6 +1138,10 @@ function gradeParaFormulario(gridItem?: GridItem | null): OsFormulario | null {
 }
 
 function osDoRelatorio(v: TrackedVehicle, gridItem?: GridItem | null): OsFormulario | null {
+  // WhatsApp / central: só a OS ativa canônica. Grade só entra se for a mesma OS.
+  const grade = gradeParaFormulario(gridItem);
+  const ativaNum = (v.activeOs?.osNumber || "").trim();
+  const gradeMesmaAtiva = grade?.osNumber && ativaNum && grade.osNumber === ativaNum ? grade : null;
   return resolverOsDoFormulario(
     {
       plate: v.plate,
@@ -1156,7 +1161,7 @@ function osDoRelatorio(v: TrackedVehicle, gridItem?: GridItem | null): OsFormula
         employee2: ordem.employee2Name ? { name: ordem.employee2Name, fullName: ordem.employee2Name, phone: ordem.employee2Phone } : null,
       })),
     },
-    gradeParaFormulario(gridItem),
+    gradeMesmaAtiva,
   );
 }
 
@@ -1624,15 +1629,9 @@ function placaIgual(a?: string | null, b?: string | null): boolean {
   return esquerda !== "" && esquerda === limpa(b);
 }
 
-function osNumerosDaViatura(v: TrackedVehicle, grid: GridItem[] = []): Set<string> {
-  const osNums = new Set<string>();
-  if (v.activeOs?.osNumber) osNums.add(v.activeOs.osNumber);
-  if (v.scheduledOs?.osNumber) osNums.add(v.scheduledOs.osNumber);
-  if (v.lastOs?.osNumber) osNums.add(v.lastOs.osNumber);
-  for (const item of grid) {
-    if (item.osNumber && placaIgual(item.vehicle?.plate, v.plate)) osNums.add(item.osNumber);
-  }
-  return osNums;
+/** Mapa/cartas: só a OS ativa canônica da viatura (SSOT shared/os-viatura). */
+function osNumerosDaViatura(v: TrackedVehicle, _grid: GridItem[] = []): Set<string> {
+  return osNumerosDaMissaoAtiva(v.activeOs?.osNumber);
 }
 
 function quandoMensagem(v: TrackedVehicle, updates: any[], grid: GridItem[] = []): number {

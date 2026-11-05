@@ -20,7 +20,7 @@ import type { Express } from "express";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
 import { checklistViaturaObrigatorio } from "../../shared/mission-checklist";
 import { avisarMensagensLidas } from "../lib/mission-lidas-broadcast";
-import { escolherOsAtivaDaViatura, outraMissaoEmCursoNaViatura } from "../../shared/os-viatura";
+import { getActiveMissionByVehicle, outraMissaoEmCursoNaViatura } from "../../shared/os-viatura";
 
   const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition" | "odometer" | "agent" | "weapon" | "scene"; expectedItem?: string }> = {
     viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
@@ -2506,7 +2506,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
       const ordersMesmaViatura = (await storage.getServiceOrders()).filter((o) => o.vehicleId === so.vehicleId);
       const concorrente = outraMissaoEmCursoNaViatura(ordersMesmaViatura, so.id);
       if (concorrente) {
-        const vigente = escolherOsAtivaDaViatura([so, concorrente]);
+        const vigente = getActiveMissionByVehicle([so, concorrente]);
         if (vigente && vigente.id !== so.id) {
           return res.status(409).json({
             message: `A viatura já está na OS ${vigente.osNumber || vigente.id}. Finalize essa missão ou troque a viatura antes de avançar a ${so.osNumber || so.id}.`,

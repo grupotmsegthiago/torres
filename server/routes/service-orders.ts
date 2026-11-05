@@ -31,6 +31,14 @@ import type { Express } from "express";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
   import { osListCalendarMonthFetchWindow, osListDateRangeFetchWindow, osMatchesDateRange } from "@shared/os-list-period";
   import { CLIENT_INACTIVE_BLOCK_MSG, isClientActive } from "@shared/client-duplicates";
+  import { outraMissaoEmCursoNaViatura } from "@shared/os-viatura";
+
+  /** Bloqueia vincular viatura se já existe missão iniciada/em trânsito nela (SSOT). */
+  async function conflitoViaturaMissaoAtiva(vehicleId: number | null | undefined, osId: number) {
+    if (!vehicleId) return null;
+    const mesmaViatura = (await storage.getServiceOrders()).filter((o) => o.vehicleId === vehicleId);
+    return outraMissaoEmCursoNaViatura(mesmaViatura, osId) || null;
+  }
 
   /** A RPC de billing lê escort_contract_id já gravado na OS. Alinha antes e devolve true se trocou. */
   async function alignServiceOrderContractForBilling(
@@ -1241,6 +1249,17 @@ import type { Express } from "express";
     if (req.body.escortedDriverPhone !== undefined) (parsed.data as any).escortedDriverPhone = req.body.escortedDriverPhone;
     if (req.body.escortedVehiclePlate !== undefined) (parsed.data as any).escortedVehiclePlate = req.body.escortedVehiclePlate;
     console.log(`[DEBUG-OS] POST final escorted going to storage:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
+    if (parsed.data.vehicleId) {
+      const conflito = await conflitoViaturaMissaoAtiva(parsed.data.vehicleId, 0);
+      if (conflito) {
+        return res.status(409).json({
+          message: `A viatura já está na OS ${conflito.osNumber || conflito.id} (missão em andamento). Finalize ou troque a viatura antes de vincular outra OS.`,
+          code: "VEHICLE_OS_CONFLICT",
+          activeOsNumber: conflito.osNumber || null,
+          activeOsId: conflito.id,
+        });
+      }
+    }
     const data = await storage.createServiceOrder(parsed.data);
     if (data.kitId) {
       await storage.updateWeaponKit(data.kitId, { status: "em_uso" });
@@ -1405,6 +1424,29 @@ import type { Express } from "express";
     }
 
     const existing = await storage.getServiceOrder(Number(req.params.id));
+
+    if (existing) {
+      const vehicleIdFinal = parsed.data.vehicleId !== undefined ? parsed.data.vehicleId : existing.vehicleId;
+      const vehicleMudou = parsed.data.vehicleId !== undefined && parsed.data.vehicleId !== existing.vehicleId;
+      const statusVirandoAndamento =
+        parsed.data.status === "em_andamento" && existing.status !== "em_andamento";
+      const missaoSaindoAguardando =
+        Boolean(parsed.data.missionStatus)
+        && parsed.data.missionStatus !== "aguardando"
+        && (existing.missionStatus === "aguardando" || !existing.missionStatus);
+      // Trava ao vincular viatura ou colocar a OS em curso — edição de campos livres continua.
+      if (vehicleIdFinal && (vehicleMudou || statusVirandoAndamento || missaoSaindoAguardando)) {
+        const conflito = await conflitoViaturaMissaoAtiva(vehicleIdFinal, existing.id);
+        if (conflito) {
+          return res.status(409).json({
+            message: `A viatura já está na OS ${conflito.osNumber || conflito.id}. Não é permitido colocar outra OS em andamento na mesma viatura.`,
+            code: "VEHICLE_OS_CONFLICT",
+            activeOsNumber: conflito.osNumber || null,
+            activeOsId: conflito.id,
+          });
+        }
+      }
+    }
 
     if (existing && existing.status === "em_andamento" && existing.missionStatus !== "aguardando") {
       const changedA1 = parsed.data.assignedEmployeeId !== undefined && parsed.data.assignedEmployeeId !== existing.assignedEmployeeId;

@@ -23,7 +23,7 @@ test("a ficha sai da grade quando a viatura ainda não chegou no rastreamento", 
   assert.equal(ficha.plate, "ABC1D23");
 });
 
-test("a OS ativa da própria viatura prevalece sobre outra missão da mesma placa", () => {
+test("atualização de outra OS não pega a viatura só pela placa/lastOs", () => {
   const ficha = resolverFichaAlerta(
     { osNumber: "TOR-1842" },
     [{
@@ -34,9 +34,11 @@ test("a OS ativa da própria viatura prevalece sobre outra missão da mesma plac
         origin: "Outra origem",
         destination: "Outro destino",
       },
+      lastOs: { osNumber: "TOR-1842" },
     }],
     grade,
   );
+  assert.equal(ficha.vehicle, null);
   assert.equal(ficha.cliente, "TRANSPORTES LOPES");
   assert.equal(ficha.origem, "Rua da Origem, 10, Campinas - SP");
   assert.equal(ficha.destino, "Avenida do Destino, 20, Santos - SP");

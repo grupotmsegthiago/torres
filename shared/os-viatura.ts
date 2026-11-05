@@ -1,8 +1,13 @@
 /**
- * Uma viatura só pode ter uma OS ativa no cartão, no formulário e no painel.
- * Se a missão ainda aberta não terminou, a outra OS da mesma placa não aparece.
- * Entre duas abertas, manda a que ainda não iniciou a viagem (sem missionStartedAt)
- * ou a de menor passo — a operação precisa fechar essa antes da seguinte.
+ * Fonte única da verdade: qual é a OS ativa de uma viatura.
+ *
+ * Precedência canônica (incontestável):
+ *   EM_TRANSITO / passo mais avançado > CHECKIN > AGENDADA / aguardando
+ * Desempate: missão já iniciada (missionStartedAt) > sessão do condutor >
+ * agenda mais cedo > id menor.
+ *
+ * Card, painel, formulário, mapa e WhatsApp DEVEM usar só estas funções.
+ * Nenhuma tela pode inventar ORDER BY próprio.
  */
 
 export const PASSOS_MISSAO = [
@@ -78,9 +83,8 @@ function casaComSessao(os: OsCandidataViatura, sessao?: SessaoViatura | null): n
 }
 
 /**
- * Escolhe a OS que o cartão, o formulário e o painel devem mostrar.
- * Missão ainda aberta (sem início de viagem / passo menor) tem prioridade:
- * a outra da mesma viatura fica escondida até essa acabar.
+ * Escolhe a única OS ativa da viatura.
+ * Alias oficial para consumidores novos: `getActiveMissionByVehicle`.
  */
 export function escolherOsAtivaDaViatura<T extends OsCandidataViatura>(
   candidatas: T[],
@@ -100,14 +104,15 @@ export function escolherOsAtivaDaViatura<T extends OsCandidataViatura>(
     const bCurso = missaoEmCursoNaViatura(b) ? 1 : 0;
     if (aCurso !== bCurso) return bCurso - aCurso;
 
-    // Sem início de viagem primeiro: a Omega parada no check-in manda sobre a RJC já em trânsito.
-    const aInicio = a.missionStartedAt ? 1 : 0;
-    const bInicio = b.missionStartedAt ? 1 : 0;
-    if (aInicio !== bInicio) return aInicio - bInicio;
-
+    // Precedência canônica: passo mais avançado (EM_TRANSITO > CHECKIN > …).
     const aPasso = indicePassoMissao(a.missionStatus);
     const bPasso = indicePassoMissao(b.missionStatus);
-    if (aPasso !== bPasso) return aPasso - bPasso;
+    if (aPasso !== bPasso) return bPasso - aPasso;
+
+    // Já iniciou a viagem manda sobre a que só fez check-in.
+    const aInicio = a.missionStartedAt ? 1 : 0;
+    const bInicio = b.missionStartedAt ? 1 : 0;
+    if (aInicio !== bInicio) return bInicio - aInicio;
 
     const aSessao = casaComSessao(a, sessao);
     const bSessao = casaComSessao(b, sessao);
@@ -120,6 +125,9 @@ export function escolherOsAtivaDaViatura<T extends OsCandidataViatura>(
     return Number(a.id) - Number(b.id);
   })[0];
 }
+
+/** Nome canônico pedido pela governança operacional. */
+export const getActiveMissionByVehicle = escolherOsAtivaDaViatura;
 
 /** Outra OS já em curso na mesma viatura (não a própria). */
 export function outraMissaoEmCursoNaViatura<T extends OsCandidataViatura>(
@@ -146,7 +154,7 @@ export function osOcultaNoPainelPorMissaoAnterior<T extends OsComViatura>(
     return { oculta: false, aguardaOsNumber: null };
   }
   const mesmaViatura = todas.filter((item) => Number(item.vehicleId) === vehicleId);
-  const ativa = escolherOsAtivaDaViatura(mesmaViatura);
+  const ativa = getActiveMissionByVehicle(mesmaViatura);
   if (!ativa || ativa.id === os.id) {
     return { oculta: false, aguardaOsNumber: null };
   }
@@ -161,4 +169,15 @@ export function osOcultaNoPainelPorMissaoAnterior<T extends OsComViatura>(
     oculta: true,
     aguardaOsNumber: (ativa.osNumber || String(ativa.id)).trim() || null,
   };
+}
+
+/**
+ * Números de OS permitidos no mapa / bolhas / coluna de mensagens da viatura.
+ * Só a missão ativa canônica — nunca lastOs nem “todas da placa”.
+ */
+export function osNumerosDaMissaoAtiva(activeOsNumber?: string | null): Set<string> {
+  const set = new Set<string>();
+  const num = (activeOsNumber || "").trim();
+  if (num) set.add(num);
+  return set;
 }
