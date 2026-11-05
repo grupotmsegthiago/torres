@@ -28,7 +28,7 @@
 BEGIN;
 
 -- 1) Encerra a sessão fantasma na TMG0E84.
-UPDATE driver_sessions
+UPDATE public.driver_sessions
 SET
   status = 'finalizado',
   ended_at = COALESCE(ended_at, NOW())
