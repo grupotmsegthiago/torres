@@ -125,3 +125,37 @@ export function outraMissaoEmCursoNaViatura<T extends OsCandidataViatura>(
 ): T | undefined {
   return candidatas.find((os) => os.id !== osIdAtual && missaoEmCursoNaViatura(os));
 }
+
+export interface OsComViatura extends OsCandidataViatura {
+  vehicleId?: number | null;
+}
+
+/**
+ * Enquanto a missão em curso da viatura não acabar, a próxima OS dessa placa
+ * não entra no painel. Só a OS ativa da viatura permanece visível.
+ */
+export function osOcultaNoPainelPorMissaoAnterior<T extends OsComViatura>(
+  os: T,
+  todas: T[],
+): { oculta: boolean; aguardaOsNumber: string | null } {
+  const vehicleId = Number(os.vehicleId);
+  if (!Number.isInteger(vehicleId) || vehicleId <= 0) {
+    return { oculta: false, aguardaOsNumber: null };
+  }
+  const mesmaViatura = todas.filter((item) => Number(item.vehicleId) === vehicleId);
+  const ativa = escolherOsAtivaDaViatura(mesmaViatura);
+  if (!ativa || ativa.id === os.id) {
+    return { oculta: false, aguardaOsNumber: null };
+  }
+  if (!missaoEmCursoNaViatura(ativa)) {
+    return { oculta: false, aguardaOsNumber: null };
+  }
+  const status = (os.status || "").toLowerCase();
+  if (status === "concluida" || status === "concluída" || status === "cancelada" || status === "recusada") {
+    return { oculta: false, aguardaOsNumber: null };
+  }
+  return {
+    oculta: true,
+    aguardaOsNumber: (ativa.osNumber || String(ativa.id)).trim() || null,
+  };
+}

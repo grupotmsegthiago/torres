@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-05 — Próxima OS some do painel enquanto a missão da viatura não acaba
+
+- No painel de OS, se a viatura ainda tem missão em curso, a próxima OS da mesma placa não aparece. Só a OS ativa da viatura fica na lista.
+- Na busca pelo número da OS a linha continua acessível. O avanço da segunda missão na mesma viatura já estava bloqueado.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-05 — Origem e destino do formulário ficam na OS certa
 
 - O WhatsApp e o encaminhamento usam origem, destino e escoltado só da OS do relatório. Outra missão aberta na mesma viatura não empresta a rota.

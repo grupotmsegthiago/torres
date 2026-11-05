@@ -22,6 +22,7 @@ import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
 import { isClientActive } from "@shared/client-duplicates";
 import { applyPedagioClientMarkup, osCobraMarkupPedagio, pedagioCobrancaCliente } from "@shared/pedagio-markup";
 import { currentBrtCalendarMonthYm, formatOsListRangeLabel, osListCalendarMonthRange, osListDateRange, osMatchesDateRange } from "@shared/os-list-period";
+import { osOcultaNoPainelPorMissaoAnterior } from "@shared/os-viatura";
 
 type EnrichedKit = WeaponKit & { items: (WeaponKitItem & { weapon: Weapon | null })[] };
 
@@ -3101,7 +3102,7 @@ export default function ServiceOrdersPage() {
       })()}
 
       {(() => {
-        const allOrds = orders || [];
+        const allOrds = (orders || []).filter((o) => !osOcultaNoPainelPorMissaoAnterior(o, orders || []).oculta);
         const getOsStatus = (o: ServiceOrder) => {
           if (o.status === "cancelada") return "cancelada";
           if (o.status === "recusada") return "recusada";
@@ -3254,8 +3255,12 @@ export default function ServiceOrdersPage() {
             if (o.status === "em_andamento") return "em_andamento";
             return "pendente";
           };
-          let filtered = filterVehicleId ? (orders || []).filter(o => o.vehicleId === filterVehicleId) : (orders || []);
+          const baseOrders = orders || [];
           const isSearching = !!searchOS.trim();
+          // Missão anterior na viatura ainda aberta: a próxima OS não aparece no painel.
+          // Na busca pelo número da OS, a linha continua acessível para correção.
+          let filtered = (isSearching ? baseOrders : baseOrders.filter((o) => !osOcultaNoPainelPorMissaoAnterior(o, baseOrders).oculta));
+          if (filterVehicleId) filtered = filtered.filter(o => o.vehicleId === filterVehicleId);
           if (filterStatus && !isSearching) {
             if (filterStatus === "reaproveitada") {
               filtered = filtered.filter(o => o.priority === "reaproveitamento");

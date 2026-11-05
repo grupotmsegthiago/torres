@@ -19,6 +19,7 @@
 - Evidência: TOR-1215 no banco é Embragen → DHL Osasco; TOR-1178 é RJC Lorena → Viracopos. O formulário da TOR-1215 saía com a rota da TOR-1178 porque `pick()` caía na `activeOs` da outra missão.
 - O formulário resolve a OS alvo (grade / upcoming / activeOs com o mesmo número) e não mistura rota entre OS.
 - O aviso de atualização monta a ficha pela grade da OS quando a ativa na viatura é outra.
+- No painel de OS, enquanto a missão em curso da viatura não acaba, a próxima OS da mesma placa não aparece na lista (só na busca pelo número).
 
 ### O que NÃO foi alterado
 - Billing, boletim, `calcularEscolta`.
