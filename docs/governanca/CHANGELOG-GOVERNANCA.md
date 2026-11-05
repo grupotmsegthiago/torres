@@ -1,5 +1,12 @@
 # Changelog — Governança Torres
 
+## 2026-11-05 — Uma viatura, uma OS no cartão e no formulário
+
+- Quando duas OS abertas apontam para a mesma viatura, o cartão e o formulário ficam com a OS que já iniciou a missão e está mais avançada. Empate de horário deixa de misturar número de uma OS com agentes de outra.
+- Avançar missão numa segunda OS na mesma viatura é bloqueado enquanto a primeira estiver em curso.
+- Vincular/Alterar OS não pré-preenche mais a equipe da última OS antiga.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-04 — Posto, hospital, borracharia e mecânico buscam de novo
 
 - O celular consulta o Google sempre, junto com a lista oficial. Posto mantém a ANP na frente. Hospital mantém o CNES. Borracharia e mecânico mantêm o mapa aberto. O que o Google não tem continua no cartão.

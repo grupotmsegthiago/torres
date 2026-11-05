@@ -196,12 +196,12 @@ declare global {
 }
 
 function vinculoDaViatura(v: TrackedVehicle): VinculoInicial {
+  // Só a OS ativa no cartão. A última OS não pode pré-preencher agentes de outra missão.
   const os = v.activeOs;
-  const last = v.lastOs;
   return {
     vehicleId: v.id,
-    agent1: os?.employee1?.id ?? last?.employee1?.id ?? null,
-    agent2: os?.employee2?.id ?? last?.employee2?.id ?? null,
+    agent1: os?.employee1?.id ?? null,
+    agent2: os?.employee2?.id ?? null,
     kitId: os?.kitId ?? null,
   };
 }
@@ -1420,7 +1420,14 @@ function equipeDosCards(vehicles: TrackedVehicle[], sessoes: SessaoCondutor[]): 
     const quandoOs = fonte?.quando || 0;
     let condutor: Slot | null = null;
     let agente: Slot | null = null;
-    if (sessao && quandoSessao > 0 && quandoSessao >= quandoOs) {
+    // Com OS no cartão, nomes vêm da própria OS — a sessão não pode misturar
+    // outra equipe no número de uma OS diferente (formulário e painel ficam iguais).
+    if (os) {
+      const condutorId = idPessoa(fonte?.condutor?.id);
+      const agenteId = idPessoa(fonte?.agente?.id);
+      condutor = condutorId ? { id: condutorId, nome: fonte?.condutor?.name || "Condutor", quando: quandoOs } : null;
+      agente = agenteId ? { id: agenteId, nome: fonte?.agente?.name || "Agente", quando: quandoOs } : null;
+    } else if (sessao && quandoSessao > 0 && quandoSessao >= quandoOs) {
       const condutorId = idPessoa(sessao.driver_id);
       const agenteId = idPessoa(sessao.partner_id);
       condutor = condutorId ? { id: condutorId, nome: sessao.driver_name || "Condutor", quando: quandoSessao } : null;

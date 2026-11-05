@@ -20,6 +20,7 @@ import type { Express } from "express";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
 import { checklistViaturaObrigatorio } from "../../shared/mission-checklist";
 import { avisarMensagensLidas } from "../lib/mission-lidas-broadcast";
+import { escolherOsAtivaDaViatura, outraMissaoEmCursoNaViatura } from "../../shared/os-viatura";
 
   const INSPECTION_STEPS: Record<string, { type: "plate" | "equipment" | "vehicle_condition" | "odometer" | "agent" | "weapon" | "scene"; expectedItem?: string }> = {
     viatura_frente: { type: "plate", expectedItem: "Dianteira da viatura com placa visível" },
@@ -2499,6 +2500,23 @@ Responda APENAS com JSON: {"km_lido": number}`;
 
     const currentStep = MISSION_STEPS[currentIdx];
 
+    // Uma viatura não pode tocar duas missões ao mesmo tempo. Se outra OS já está
+    // em curso no mesmo vehicle_id, só a OS vigente pode avançar.
+    if (so.vehicleId) {
+      const ordersMesmaViatura = (await storage.getServiceOrders()).filter((o) => o.vehicleId === so.vehicleId);
+      const concorrente = outraMissaoEmCursoNaViatura(ordersMesmaViatura, so.id);
+      if (concorrente) {
+        const vigente = escolherOsAtivaDaViatura([so, concorrente]);
+        if (vigente && vigente.id !== so.id) {
+          return res.status(409).json({
+            message: `A viatura já está na OS ${vigente.osNumber || vigente.id}. Finalize essa missão ou troque a viatura antes de avançar a ${so.osNumber || so.id}.`,
+            code: "VEHICLE_OS_CONFLICT",
+            activeOsNumber: vigente.osNumber || null,
+            activeOsId: vigente.id,
+          });
+        }
+      }
+    }
 
     // Início antecipado liberado: agente pode avançar assim que confirmar ciência da missão,
     // independente do horário agendado ou de aprovação da central (pedido da operação).

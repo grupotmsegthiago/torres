@@ -9,6 +9,7 @@ import type { Express } from "express";
   import { osCobraMarkupPedagio, pedagioCustoOsAprovada, sumPedagioComprovante } from "../../shared/pedagio-markup";
   import { haversineDist } from "./_helpers";
   import { resolveVehicleIcon } from "@shared/vehicle-icons";
+  import { escolherOsAtivaDaViatura } from "@shared/os-viatura";
   import { withSwrCache } from "../lib/swr-cache";
   import { brtDateKey, currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
@@ -937,6 +938,20 @@ import type { Express } from "express";
     const plates = allVehicles.map(v => v.plate);
     const lastAlertMap = await storage.getLastAlertByPlates(plates);
     const agentLocs = await storage.getAgentLocations();
+    const { data: sessoesAtivas } = await supabaseAdmin
+      .from("driver_sessions")
+      .select("vehicle_id, driver_id, partner_id, started_at")
+      .eq("status", "ativo")
+      .is("ended_at", null);
+    const sessaoPorViatura = new Map<number, { driverId: number | null; partnerId: number | null }>();
+    for (const sessao of sessoesAtivas || []) {
+      const vehicleId = Number(sessao.vehicle_id);
+      if (!Number.isInteger(vehicleId) || vehicleId <= 0) continue;
+      sessaoPorViatura.set(vehicleId, {
+        driverId: sessao.driver_id != null ? Number(sessao.driver_id) : null,
+        partnerId: sessao.partner_id != null ? Number(sessao.partner_id) : null,
+      });
+    }
 
     const tracked = await Promise.all(
       allVehicles.map(async (v) => {
@@ -1121,16 +1136,8 @@ import type { Express } from "express";
         }
 
         const vehicleOrders = vehicleActiveOrders.filter((o) => o.vehicleId === v.id);
-        const linkedOrder = vehicleOrders.length > 0
-          ? vehicleOrders.sort((a, b) => {
-              const aInProgress = a.status === "em_andamento" && a.missionStatus !== "aguardando" ? 1 : 0;
-              const bInProgress = b.status === "em_andamento" && b.missionStatus !== "aguardando" ? 1 : 0;
-              if (aInProgress !== bInProgress) return bInProgress - aInProgress;
-              const da = a.scheduledDate ? new Date(a.scheduledDate).getTime() : 0;
-              const db2 = b.scheduledDate ? new Date(b.scheduledDate).getTime() : 0;
-              return da - db2;
-            })[0]
-          : undefined;
+        // Sessão ativa da viatura: desempata quando duas OS abertas competem pelo mesmo cartão.
+        const linkedOrder = escolherOsAtivaDaViatura(vehicleOrders, sessaoPorViatura.get(v.id) || null);
 
         // Última OS do veículo (qualquer status), pra manter os agentes visíveis
         // mesmo quando o veículo está livre/sem missão hoje.
