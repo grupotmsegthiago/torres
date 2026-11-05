@@ -80,10 +80,10 @@ function casaComSessao(os: OsCandidataViatura, sessao?: SessaoViatura | null): n
  * Escolhe a OS que o cartão e o formulário devem mostrar para a viatura.
  * Empate de horário de agenda não pode ficar instável.
  */
-export function escolherOsAtivaDaViatura(
-  candidatas: OsCandidataViatura[],
+export function escolherOsAtivaDaViatura<T extends OsCandidataViatura>(
+  candidatas: T[],
   sessao?: SessaoViatura | null,
-): OsCandidataViatura | undefined {
+): T | undefined {
   const abertas = candidatas.filter((os) => {
     const status = (os.status || "").toLowerCase();
     if (status === "concluida" || status === "concluída" || status === "cancelada" || status === "recusada") return false;
@@ -119,9 +119,9 @@ export function escolherOsAtivaDaViatura(
 }
 
 /** Outra OS já em curso na mesma viatura (não a própria). */
-export function outraMissaoEmCursoNaViatura(
-  candidatas: OsCandidataViatura[],
+export function outraMissaoEmCursoNaViatura<T extends OsCandidataViatura>(
+  candidatas: T[],
   osIdAtual: number,
-): OsCandidataViatura | undefined {
+): T | undefined {
   return candidatas.find((os) => os.id !== osIdAtual && missaoEmCursoNaViatura(os));
 }
