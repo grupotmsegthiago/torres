@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-05 — Missão aberta sem início manda no painel da viatura
+
+- Se a viatura tem uma OS ainda aberta sem início de viagem (ex.: Omega na origem), essa OS manda no cartão e no painel. A outra da mesma placa (ex.: RJC em trânsito) não aparece até a aberta terminar.
+- Na busca pelo número a linha continua acessível. O avanço da OS que não é a ativa na viatura continua bloqueado.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-05 — Próxima OS some do painel enquanto a missão da viatura não acaba
 
 - No painel de OS, se a viatura ainda tem missão em curso, a próxima OS da mesma placa não aparece. Só a OS ativa da viatura fica na lista.

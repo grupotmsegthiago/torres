@@ -1,7 +1,8 @@
 /**
- * Uma viatura só pode ter uma OS ativa no cartão e no formulário.
- * Quando várias OS apontam para o mesmo vehicle_id, escolhemos a que já saiu
- * do aguardando com mais progresso — e, se empatar, a que casa com a sessão.
+ * Uma viatura só pode ter uma OS ativa no cartão, no formulário e no painel.
+ * Se a missão ainda aberta não terminou, a outra OS da mesma placa não aparece.
+ * Entre duas abertas, manda a que ainda não iniciou a viagem (sem missionStartedAt)
+ * ou a de menor passo — a operação precisa fechar essa antes da seguinte.
  */
 
 export const PASSOS_MISSAO = [
@@ -77,8 +78,9 @@ function casaComSessao(os: OsCandidataViatura, sessao?: SessaoViatura | null): n
 }
 
 /**
- * Escolhe a OS que o cartão e o formulário devem mostrar para a viatura.
- * Empate de horário de agenda não pode ficar instável.
+ * Escolhe a OS que o cartão, o formulário e o painel devem mostrar.
+ * Missão ainda aberta (sem início de viagem / passo menor) tem prioridade:
+ * a outra da mesma viatura fica escondida até essa acabar.
  */
 export function escolherOsAtivaDaViatura<T extends OsCandidataViatura>(
   candidatas: T[],
@@ -98,13 +100,14 @@ export function escolherOsAtivaDaViatura<T extends OsCandidataViatura>(
     const bCurso = missaoEmCursoNaViatura(b) ? 1 : 0;
     if (aCurso !== bCurso) return bCurso - aCurso;
 
+    // Sem início de viagem primeiro: a Omega parada no check-in manda sobre a RJC já em trânsito.
     const aInicio = a.missionStartedAt ? 1 : 0;
     const bInicio = b.missionStartedAt ? 1 : 0;
-    if (aInicio !== bInicio) return bInicio - aInicio;
+    if (aInicio !== bInicio) return aInicio - bInicio;
 
     const aPasso = indicePassoMissao(a.missionStatus);
     const bPasso = indicePassoMissao(b.missionStatus);
-    if (aPasso !== bPasso) return bPasso - aPasso;
+    if (aPasso !== bPasso) return aPasso - bPasso;
 
     const aSessao = casaComSessao(a, sessao);
     const bSessao = casaComSessao(b, sessao);
@@ -114,7 +117,7 @@ export function escolherOsAtivaDaViatura<T extends OsCandidataViatura>(
     const bAgenda = instante(b.scheduledDate);
     if (aAgenda !== bAgenda) return aAgenda - bAgenda;
 
-    return Number(b.id) - Number(a.id);
+    return Number(a.id) - Number(b.id);
   })[0];
 }
 

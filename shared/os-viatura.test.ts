@@ -7,7 +7,7 @@ import {
   outraMissaoEmCursoNaViatura,
 } from "./os-viatura";
 
-test("na TMG0E84 ganha a OS que já iniciou a missão, não a Omega parada no check-in", () => {
+test("na TMG0E84 a Omega ainda aberta manda; a RJC em trânsito não toma o painel", () => {
   const tor1178 = {
     id: 1572,
     osNumber: "TOR-1178",
@@ -29,7 +29,7 @@ test("na TMG0E84 ganha a OS que já iniciou a missão, não a Omega parada no ch
     assignedEmployee2Id: 47,
   };
   const escolhida = escolherOsAtivaDaViatura([tor1215, tor1178], { driverId: 56, partnerId: 59 });
-  assert.equal(escolhida?.osNumber, "TOR-1178");
+  assert.equal(escolhida?.osNumber, "TOR-1215");
   assert.equal(outraMissaoEmCursoNaViatura([tor1178, tor1215], 1609)?.osNumber, "TOR-1178");
   assert.equal(missaoEmCursoNaViatura(tor1215), true);
 });
@@ -77,7 +77,7 @@ test("OS só agendada sem passo não compete com missão em curso", () => {
   assert.equal(outraMissaoEmCursoNaViatura([ativa, futura], 4)?.osNumber, "TOR-3");
 });
 
-test("no painel a TOR-1215 some enquanto a TOR-1178 da mesma viatura não acabar", () => {
+test("no painel a RJC some enquanto a Omega da mesma viatura não acabar", () => {
   const tor1178 = {
     id: 1572,
     osNumber: "TOR-1178",
@@ -101,8 +101,8 @@ test("no painel a TOR-1215 some enquanto a TOR-1178 da mesma viatura não acabar
     assignedEmployee2Id: 47,
   };
   const todas = [tor1178, tor1215];
-  assert.equal(osOcultaNoPainelPorMissaoAnterior(tor1178, todas).oculta, false);
-  const fila = osOcultaNoPainelPorMissaoAnterior(tor1215, todas);
+  assert.equal(osOcultaNoPainelPorMissaoAnterior(tor1215, todas).oculta, false);
+  const fila = osOcultaNoPainelPorMissaoAnterior(tor1178, todas);
   assert.equal(fila.oculta, true);
-  assert.equal(fila.aguardaOsNumber, "TOR-1178");
+  assert.equal(fila.aguardaOsNumber, "TOR-1215");
 });
