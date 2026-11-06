@@ -548,7 +548,7 @@ export default function RelatorioNFPage() {
   const [receiveModal, setReceiveModal] = useState<{ invoiceId: number; clientName: string; value: number; method: "PIX" | "DINHEIRO" | "TRANSFERENCIA"; paymentDate: string; notes: string } | null>(null);
   const [ocorrenciaModal, setOcorrenciaModal] = useState<{ invoiceId: number; clientName: string; note: string } | null>(null);
   const [comprovanteModal, setComprovanteModal] = useState<{ invoiceId: number; clientName: string; fileName: string; base64: string; contentType: string } | null>(null);
-  const [dueDateModal, setDueDateModal] = useState<{ invoiceId: number; clientName: string; value: number; currentDueDate: string; newDueDate: string; reason: string } | null>(null);
+  const [dueDateModal, setDueDateModal] = useState<{ invoiceId: number; clientName: string; value: number; currentDueDate: string; newDueDate: string; reason: string; chargeInterest: boolean } | null>(null);
   const [cleanupModal, setCleanupModal] = useState<{ loading: boolean; orphans: Array<{ id: number; client_name: string; value: number; description: string | null; status: string; due_date: string | null; nfse_number: string | null }>; totalValue: number } | null>(null);
 
   // O vínculo de OS↔Fatura é 100% automático: roda dentro de
@@ -645,18 +645,20 @@ export default function RelatorioNFPage() {
   });
 
   const changeDueDateMutation = useMutation({
-    mutationFn: async (payload: { invoiceId: number; dueDate: string; reason: string }) => {
+    mutationFn: async (payload: { invoiceId: number; dueDate: string; reason: string; chargeInterest: boolean }) => {
       const r = await authFetch(`/api/invoices/${payload.invoiceId}/change-due-date`, {
         method: "POST",
-        body: JSON.stringify({ dueDate: payload.dueDate, reason: payload.reason }),
+        body: JSON.stringify({ dueDate: payload.dueDate, reason: payload.reason, chargeInterest: payload.chargeInterest }),
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json?.message || `HTTP ${r.status}`);
       return json;
     },
     onSuccess: (data: any) => {
-      const sync = data?.asaasSynced ? " (atualizado também no Asaas)" : data?.asaasMessage ? ` (Asaas: ${data.asaasMessage})` : "";
-      toast({ title: "Vencimento alterado", description: `Novo vencimento: ${data?.newDueDate}${sync}.` });
+      const sync = data?.asaasSynced ? " Boleto atualizado no Asaas." : data?.asaasMessage ? ` Asaas: ${data.asaasMessage}` : "";
+      const juros = data?.chargeInterest === false ? " Sem juros e sem multa." : " Juros e multa da conta mantidos.";
+      const boleto = data?.paymentValue != null ? ` Valor do boleto: R$ ${Number(data.paymentValue).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.` : "";
+      toast({ title: "Vencimento alterado", description: `Novo vencimento: ${data?.newDueDate}.${juros}${boleto}${sync}` });
       setDueDateModal(null);
       invalidateRelatedQueries("invoice");
     },
@@ -1560,15 +1562,15 @@ export default function RelatorioNFPage() {
                               <MessageSquare className="h-3.5 w-3.5" />
                             </button>
                           )}
-                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
+                          {isFinanceiro && r.source === "INVOICE" && r.invoiceId && r.normalizedStatus !== "PAGO" && r.normalizedStatus !== "NF_CANCELADA" && (
                             <button
                               type="button"
                               onClick={() => {
                                 const current = r.dueDate ? String(r.dueDate).slice(0, 10) : "";
-                                setDueDateModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: Number(r.value || 0), currentDueDate: current, newDueDate: current, reason: "" });
+                                setDueDateModal({ invoiceId: r.invoiceId!, clientName: r.clientName, value: Number(r.value || 0), currentDueDate: current, newDueDate: current, reason: "", chargeInterest: true });
                               }}
                               className="h-7 w-7 inline-flex items-center justify-center text-amber-700 hover:bg-amber-50 hover:text-amber-800 transition-colors"
-                              title="Alterar vencimento (com motivo)"
+                              title="Alterar vencimento / prorrogar"
                               data-testid={`button-change-duedate-${r.id}`}
                             >
                               <CalendarCog className="h-3.5 w-3.5" />
@@ -2361,7 +2363,7 @@ export default function RelatorioNFPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><CalendarCog className="h-5 w-5 text-amber-700" /> Alterar vencimento</DialogTitle>
             <DialogDescription>
-              Atualiza o vencimento local e sincroniza com a cobrança no Asaas (quando existir). O motivo fica registrado no histórico da fatura.
+              Prorroga o boleto no Asaas e atualiza a fatura e o Contas a Receber. Data no formato DD/MM/AAAA, sem dia anterior a hoje.
             </DialogDescription>
           </DialogHeader>
           {dueDateModal && (
@@ -2372,9 +2374,28 @@ export default function RelatorioNFPage() {
                 <div><span className="text-slate-500">Vencimento atual:</span> <strong>{dueDateModal.currentDueDate ? new Date(dueDateModal.currentDueDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</strong></div>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-700 mb-1 block">Novo vencimento</label>
-                <DateInputBR  value={dueDateModal.newDueDate} onChange={e => setDueDateModal({ ...dueDateModal, newDueDate: e.target.value })} data-testid="input-new-due-date" />
+                <label className="text-xs font-medium text-slate-700 mb-1 block">Nova data de vencimento</label>
+                <DateInputBR
+                  value={dueDateModal.newDueDate}
+                  min={new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })}
+                  onChange={e => setDueDateModal({ ...dueDateModal, newDueDate: e.target.value })}
+                  data-testid="input-new-due-date"
+                />
               </div>
+              <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2">
+                <label htmlFor="charge-interest" className="text-sm font-medium text-slate-800">Cobrar juros e multa no recálculo?</label>
+                <Switch
+                  id="charge-interest"
+                  checked={dueDateModal.chargeInterest}
+                  onCheckedChange={(checked) => setDueDateModal({ ...dueDateModal, chargeInterest: checked })}
+                  data-testid="switch-charge-interest"
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                {dueDateModal.chargeInterest
+                  ? "O Asaas mantém a multa e os juros da conta e pode recalcular o boleto."
+                  : "O boleto muda só a data. Juros e multa vão zerados e o valor base permanece."}
+              </p>
               <div>
                 <label className="text-xs font-medium text-slate-700 mb-1 block">Motivo <span className="text-rose-600">*</span></label>
                 <Textarea
@@ -2392,7 +2413,7 @@ export default function RelatorioNFPage() {
             <Button variant="outline" onClick={() => setDueDateModal(null)} disabled={changeDueDateMutation.isPending} data-testid="button-cancel-duedate">Cancelar</Button>
             <Button
               className="bg-amber-700 hover:bg-amber-800"
-              onClick={() => dueDateModal && changeDueDateMutation.mutate({ invoiceId: dueDateModal.invoiceId, dueDate: dueDateModal.newDueDate, reason: dueDateModal.reason.trim() })}
+              onClick={() => dueDateModal && changeDueDateMutation.mutate({ invoiceId: dueDateModal.invoiceId, dueDate: dueDateModal.newDueDate, reason: dueDateModal.reason.trim(), chargeInterest: dueDateModal.chargeInterest })}
               disabled={
                 changeDueDateMutation.isPending ||
                 !dueDateModal?.newDueDate ||

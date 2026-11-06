@@ -266,15 +266,20 @@ export async function syncFocusNfsesForInvoices(
     if (processed >= limit) break;
     if (!focusNfseConsultRef(inv)) continue;
     processed += 1;
-    const r = await syncFocusNfseForInvoice(inv);
-    if (r.nf) {
-      const persisted = await persistFocusNfse(inv.id, r.nf, String(inv.nfse_ref || r.updates.nfse_ref || "").trim(), inv);
-      if (Object.keys(persisted).length > 0 || Object.keys(r.updates).length > 0) updated += 1;
-      continue;
+    try {
+      const r = await syncFocusNfseForInvoice(inv);
+      if (r.nf) {
+        const persisted = await persistFocusNfse(inv.id, r.nf, String(inv.nfse_ref || r.updates.nfse_ref || "").trim(), inv);
+        if (Object.keys(persisted).length > 0 || Object.keys(r.updates).length > 0) updated += 1;
+        continue;
+      }
+      if (Object.keys(r.updates).length === 0) continue;
+      const { error } = await supabaseAdmin.from("invoices").update(invoiceUpdatesNow(r.updates)).eq("id", inv.id);
+      if (!error) updated += 1;
+      else console.error(`[focus-nfe] gravar fatura #${inv.id}: ${error.message}`);
+    } catch (e: any) {
+      console.error(`[focus-nfe] consulta fatura #${inv.id}: ${e?.message || e}`);
     }
-    if (Object.keys(r.updates).length === 0) continue;
-    const { error } = await supabaseAdmin.from("invoices").update(invoiceUpdatesNow(r.updates)).eq("id", inv.id);
-    if (!error) updated += 1;
   }
   return { processed, updated };
 }

@@ -89,6 +89,8 @@ import {
   isManualInvoiceDueDate,
   markInvoiceDueDateFromTorres,
   planDueDateReconcile,
+  buildAsaasDueDatePatch,
+  assertDueDateNotBeforeToday,
   resolveAsaasBaseUrl,
   assertAsaasDate,
   assertAsaasMoney,
@@ -681,6 +683,7 @@ async function collectNfseSyncUpdates(invoice: any): Promise<{ updates: Record<s
           errorMessage: updates.nfse_error_message || invoice.nfse_error_message || "Erro de NFS-e na integração",
         });
       }
+      await mirrorInvoiceReceivable(invoice.id);
     }
 
     // Auto-vínculo OS↔Fatura: roda sempre, independente de mudanças no status,
@@ -5078,22 +5081,18 @@ export function registerAsaasRoutes(app: Express) {
     // histórico financeiro. Grava o motivo + autor + datas em
     // nfse_observations (histórico append-only).
     // ============================================================
-    app.post("/api/invoices/:id/change-due-date", requireAdminRole, async (req: Request, res: Response) => {
+    app.post("/api/invoices/:id/change-due-date", requireFinanceiro, async (req: Request, res: Response) => {
       try {
         const user = (req as any).user;
-        // Regra de negócio: alteração de vencimento é restrita à diretoria
-        // (mesma regra da UI). requireAdminRole também aceita "admin", então
-        // bloqueamos explicitamente aqui para alinhar back e front.
-        if (user?.role !== "diretoria") {
-          return res.status(403).json({ message: "Somente a diretoria pode alterar o vencimento de faturas." });
-        }
         const invoiceId = Number(req.params.id);
         const newDueDate = String(req.body?.dueDate || "").trim();
         const reason = String(req.body?.reason || "").trim();
+        const chargeInterest = req.body?.chargeInterest !== false;
 
         if (!invoiceId) return res.status(400).json({ message: "invoiceId obrigatório" });
         try {
           assertAsaasDate(newDueDate);
+          assertDueDateNotBeforeToday(newDueDate);
         } catch (e: any) {
           return res.status(400).json({ message: e.message });
         }
@@ -5119,12 +5118,34 @@ export function registerAsaasRoutes(app: Express) {
 
         let asaasOk = false;
         let asaasMsg = "";
+        let paymentValue: number | null = null;
+        let paymentNet: number | null = null;
+        let paymentStatus: string | null = null;
         if (invoice.asaas_payment_id) {
           if (!hasAsaasApiKey()) {
             return res.status(503).json({ message: "Cobrança existe no Asaas, mas a API não está configurada. O vencimento manual precisa gravar nos dois lados." });
           }
           try {
-            await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}`, { dueDate: newDueDate });
+            const current = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
+            const baseValue = Number(current?.value ?? invoice.value ?? 0);
+            const patch = buildAsaasDueDatePatch({
+              dueDate: newDueDate,
+              originalValue: baseValue,
+              chargeInterest,
+            });
+            let payment = await asaasRequest("POST", `/payments/${invoice.asaas_payment_id}`, patch);
+            if (!payment?.dueDate) {
+              payment = await asaasRequest("GET", `/payments/${invoice.asaas_payment_id}`);
+            }
+            const confirmed = String(payment?.dueDate || "").slice(0, 10);
+            if (confirmed && confirmed !== newDueDate) {
+              return res.status(502).json({
+                message: `O Asaas devolveu o vencimento ${confirmed}, diferente de ${newDueDate}. Nada foi alterado no Torres.`,
+              });
+            }
+            paymentValue = payment?.value != null ? Number(payment.value) : null;
+            paymentNet = payment?.netValue != null ? Number(payment.netValue) : null;
+            paymentStatus = payment?.status ? String(payment.status) : null;
             asaasOk = true;
           } catch (e: any) {
             asaasMsg = e?.message || String(e);
@@ -5135,16 +5156,21 @@ export function registerAsaasRoutes(app: Express) {
           }
         }
 
-        const noteHistory = `[Vencimento alterado por ${user.email} em ${new Date().toISOString()}: ${oldDueDate} → ${newDueDate} — Motivo: ${reason}${asaasOk ? " — sync Asaas OK" : invoice.asaas_payment_id ? ` — Asaas FALHOU: ${asaasMsg}` : ""}]`;
+        const jurosNota = chargeInterest ? "com juros e multa da conta" : "sem juros e sem multa";
+        const noteHistory = `[Vencimento alterado por ${user.email} em ${new Date().toISOString()}: ${oldDueDate} → ${newDueDate} — ${jurosNota} — Motivo: ${reason}${asaasOk ? " — sync Asaas OK" : invoice.asaas_payment_id ? ` — Asaas FALHOU: ${asaasMsg}` : ""}]`;
+        const localUpdate: Record<string, unknown> = {
+          due_date: newDueDate,
+          nfse_observations: `${noteHistory}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 2000),
+          updated_at: new Date().toISOString(),
+        };
+        if (paymentStatus) localUpdate.status = paymentStatus;
+        if (paymentNet != null && Number.isFinite(paymentNet)) localUpdate.net_value = paymentNet;
         const { error } = await supabaseAdmin
           .from("invoices")
-          .update({
-            due_date: newDueDate,
-            nfse_observations: `${noteHistory}${invoice.nfse_observations ? ` | ${invoice.nfse_observations}` : ""}`.slice(0, 2000),
-            updated_at: new Date().toISOString(),
-          })
+          .update(localUpdate)
           .eq("id", invoiceId);
         if (error) throw error;
+        await mirrorInvoiceReceivable(invoiceId);
 
         try {
           await logSystemAudit({
@@ -5159,8 +5185,18 @@ export function registerAsaasRoutes(app: Express) {
           console.log(`[change-due-date] audit falhou: ${e?.message}`);
         }
 
-        console.log(`[change-due-date] Invoice #${invoiceId}: ${oldDueDate} → ${newDueDate} por ${user.email}. AsaasSync=${asaasOk}. Motivo: ${reason}`);
-        res.json({ success: true, oldDueDate, newDueDate, asaasSynced: asaasOk, asaasMessage: asaasMsg || null });
+        console.log(`[change-due-date] Invoice #${invoiceId}: ${oldDueDate} → ${newDueDate} por ${user.email}. AsaasSync=${asaasOk}. Juros=${chargeInterest}. Motivo: ${reason}`);
+        res.json({
+          success: true,
+          oldDueDate,
+          newDueDate,
+          chargeInterest,
+          asaasSynced: asaasOk,
+          asaasMessage: asaasMsg || null,
+          paymentValue,
+          paymentNet,
+          status: paymentStatus,
+        });
       } catch (err: any) {
         console.error("[change-due-date] error:", err.message);
         res.status(500).json({ message: err.message });

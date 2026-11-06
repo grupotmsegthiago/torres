@@ -87,6 +87,8 @@ import {
   isManualInvoiceDueDate,
   markInvoiceDueDateFromTorres,
   planDueDateReconcile,
+  buildAsaasDueDatePatch,
+  assertDueDateNotBeforeToday,
   resolveAsaasBaseUrl,
   normalizeAsaasUrl,
   isAsaasSandboxKey,
@@ -1270,6 +1272,20 @@ test("asaasDueDateIfDifferent: só devolve se o boleto Asaas divergir", () => {
   assert.equal(asaasDueDateIfDifferent("2026-09-01", "2026-09-18"), "2026-09-01");
   assert.equal(asaasDueDateIfDifferent("2026-09-18", "2026-09-18"), null);
   assert.equal(asaasDueDateIfDifferent(null, "2026-09-18"), null);
+});
+
+test("prorrogar boleto: com juros só manda a data; sem juros zera multa e mantém o valor", () => {
+  assert.deepEqual(buildAsaasDueDatePatch({ dueDate: "2026-11-20", originalValue: 662.25, chargeInterest: true }), {
+    dueDate: "2026-11-20",
+  });
+  assert.deepEqual(buildAsaasDueDatePatch({ dueDate: "2026-11-20", originalValue: 662.256, chargeInterest: false }), {
+    dueDate: "2026-11-20",
+    value: 662.26,
+    interest: { value: 0 },
+    fine: { value: 0, type: "PERCENTAGE" },
+  });
+  assert.throws(() => assertDueDateNotBeforeToday("2026-11-01", "2026-11-06"), /anterior a hoje/);
+  assert.doesNotThrow(() => assertDueDateNotBeforeToday("2026-11-06", "2026-11-06"));
 });
 
 test("isManualInvoiceDueDate: marca de alteração de vencimento", () => {

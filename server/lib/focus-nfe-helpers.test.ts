@@ -31,6 +31,7 @@ import {
   focusMunicipalNumber,
   focusDpsTimestamps,
   focusNfseConsultRef,
+  isFocusSyncPending,
   focusNfseMunicipalResourcePath,
   focusNfseRef,
   focusNfsenEmitPath,
@@ -87,6 +88,15 @@ test("focusNfseRef e isFocusNfseRef", () => {
   assert.equal(isFocusNfseRef("inv_abc"), false);
   assert.equal(isFocusNfseRef("2562"), false);
   assert.throws(() => focusNfseRef(0));
+});
+
+test("isFocusSyncPending: autorização e cancelamento em aberto", () => {
+  assert.equal(isFocusSyncPending("PROCESSING"), true);
+  assert.equal(isFocusSyncPending("processando_autorizacao"), true);
+  assert.equal(isFocusSyncPending("processando cancelamento"), true);
+  assert.equal(isFocusSyncPending("AUTHORIZED"), false);
+  assert.equal(isFocusSyncPending("CANCELADA"), false);
+  assert.equal(isFocusSyncPending(""), false);
 });
 
 test("focusNfseConsultRef: PROCESSING/ERROR usa torres-inv-{id} sem nfse_ref", () => {

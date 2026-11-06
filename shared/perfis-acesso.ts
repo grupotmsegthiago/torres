@@ -89,6 +89,7 @@ export const DEFAULT_PROFILE_PERMISSIONS: Record<string, string[]> = {
   financeiro: [
     "dashboard",
     "clients",
+    "service_orders",
     "relatorio_nf",
     "controle_faturamento",
     "invoice_baixa",
@@ -118,6 +119,12 @@ export const ALLOWED_USER_ROLES = Object.keys(PROFILE_LABELS);
 
 export function isPrivilegedRole(role?: string | null): boolean {
   return role === "diretoria" || role === "admin";
+}
+
+/** Quem pode gravar a OS como cancelada. Comercial já editava a OS; financeiro entra só nesse ato. */
+export function canCancelServiceOrder(role?: string | null): boolean {
+  const r = String(role || "");
+  return r === "diretoria" || r === "admin" || r === "financeiro" || r === "comercial";
 }
 
 /** Aba Gestão + CPF: só admin/diretoria. Funcionário entra pelo CPF na aba Funcionário (app de campo). */

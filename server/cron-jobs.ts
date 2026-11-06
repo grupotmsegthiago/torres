@@ -114,6 +114,39 @@ async function runInterReconcile(diasJanela: number, contexto: string): Promise<
   }
 }
 
+export async function runFocusPendingCron(): Promise<void> {
+  if (!isSupabaseHealthy()) return;
+  try {
+    const { syncFocusNfsesForInvoices } = await import("./lib/focus-nfe");
+    const { isFocusSyncPending } = await import("./lib/focus-nfe-helpers");
+    const { data, error } = await supabaseAdmin
+      .from("invoices")
+      .select("*")
+      .not("nfse_status", "is", null)
+      .or("nfse_status.ilike.%process%,nfse_status.ilike.%pending%,nfse_status.eq.SCHEDULED")
+      .order("updated_at", { ascending: true, nullsFirst: true } as any)
+      .limit(80);
+    if (error) {
+      log(`CRON Focus: ${error.message}`, "cron");
+      return;
+    }
+    const pending = (data || []).filter((inv) => isFocusSyncPending(inv.nfse_status));
+    const result = await syncFocusNfsesForInvoices(pending, { limit: 30 });
+    log(
+      `CRON Focus: ${pending.length} pendente(s), ${result.processed} consultada(s), ${result.updated} atualizada(s)`,
+      "cron",
+    );
+  } catch (e: any) {
+    log(`CRON Focus: ${e?.message || e}`, "cron");
+  }
+}
+
+export async function runGatewaySyncCron(): Promise<void> {
+  log("CRON Gateway-Sync: Asaas e Focus (10 min)", "cron");
+  await runNfReconcileCron();
+  await runFocusPendingCron();
+}
+
 export async function runNfReconcileCron(): Promise<void> {
   log("CRON NF-Reconcile: Iniciando reconciliação de NFs com Asaas", "cron");
   try {

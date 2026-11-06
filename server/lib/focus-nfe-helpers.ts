@@ -190,6 +190,25 @@ export function isFocusManagedInvoice(invoice?: {
   return isFocusNfseRef(invoice.nfse_ref) || isFocusNfseRef(invoice.nfse_number);
 }
 
+const FOCUS_PENDING_STATUSES = new Set([
+  "PROCESSING",
+  "PENDING",
+  "SCHEDULED",
+  "PROCESSANDO",
+  "PROCESSANDO_AUTORIZACAO",
+  "PROCESSANDO_CANCELAMENTO",
+  "CANCELAMENTO_PROCESSANDO",
+  "WAITING_MUNICIPAL_PROCESSING",
+]);
+
+/** NFS-e ainda na Focus: autorização ou cancelamento sem estado final. */
+export function isFocusSyncPending(status: unknown): boolean {
+  const st = String(status || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (!st) return false;
+  if (FOCUS_PENDING_STATUSES.has(st)) return true;
+  return st.includes("PROCESS") && st.includes("CANCEL");
+}
+
 /** Ref usada na consulta Focus: nfse_ref, senão torres-inv-{id} em NF Focus/PROCESSANDO/ERRO. */
 export function focusNfseConsultRef(invoice?: {
   id?: number | null;

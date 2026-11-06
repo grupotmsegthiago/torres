@@ -31,6 +31,7 @@ import type { Express } from "express";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
   import { osListCalendarMonthFetchWindow, osListDateRangeFetchWindow, osMatchesDateRange } from "@shared/os-list-period";
   import { CLIENT_INACTIVE_BLOCK_MSG, isClientActive } from "@shared/client-duplicates";
+  import { canCancelServiceOrder } from "@shared/perfis-acesso";
   import { outraMissaoEmCursoNaViatura } from "@shared/os-viatura";
 
   /** Bloqueia vincular viatura se já existe missão iniciada/em trânsito nela (SSOT). */
@@ -1404,7 +1405,13 @@ import type { Express } from "express";
     res.status(201).json(data);
   });
 
-  app.patch("/api/service-orders/:id", requireAuth, requireComercial, async (req, res) => {
+  app.patch("/api/service-orders/:id", requireAuth, async (req, res) => {
+    const role = String(req.user?.role || "");
+    const canEditOs = role === "diretoria" || role === "admin" || role === "comercial";
+    const financeiroCancela = role === "financeiro" && canCancelServiceOrder(role);
+    if (!canEditOs && !financeiroCancela) {
+      return res.status(403).json({ message: "Acesso restrito a este perfil" });
+    }
     console.log(`[DEBUG-OS] PATCH body escorted:`, JSON.stringify({ dn: req.body.escortedDriverName, dp: req.body.escortedDriverPhone, vp: req.body.escortedVehiclePlate }));
     const parsed = insertServiceOrderSchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
@@ -1413,6 +1420,15 @@ import type { Express } from "express";
       if (!clientIdAllowed(parsed.data.clientId, allowed)) {
         return res.status(400).json({ message: "Cliente não encontrado" });
       }
+    }
+    if (financeiroCancela) {
+      if (String(parsed.data.status || "") !== "cancelada") {
+        return res.status(403).json({ message: "O perfil financeiro só pode cancelar a ordem de serviço." });
+      }
+      parsed.data = {
+        status: "cancelada",
+        cancellationReason: parsed.data.cancellationReason,
+      } as typeof parsed.data;
     }
     console.log(`[DEBUG-OS] PATCH parsed escorted:`, JSON.stringify({ dn: parsed.data.escortedDriverName, dp: parsed.data.escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
 
@@ -1943,9 +1959,11 @@ import type { Express } from "express";
       }
     }
 
-    if (req.body.escortedDriverName !== undefined) (parsed.data as any).escortedDriverName = req.body.escortedDriverName;
-    if (req.body.escortedDriverPhone !== undefined) (parsed.data as any).escortedDriverPhone = req.body.escortedDriverPhone;
-    if (req.body.escortedVehiclePlate !== undefined) (parsed.data as any).escortedVehiclePlate = req.body.escortedVehiclePlate;
+    if (!financeiroCancela) {
+      if (req.body.escortedDriverName !== undefined) (parsed.data as any).escortedDriverName = req.body.escortedDriverName;
+      if (req.body.escortedDriverPhone !== undefined) (parsed.data as any).escortedDriverPhone = req.body.escortedDriverPhone;
+      if (req.body.escortedVehiclePlate !== undefined) (parsed.data as any).escortedVehiclePlate = req.body.escortedVehiclePlate;
+    }
     console.log(`[DEBUG-OS] PATCH final escorted going to storage:`, JSON.stringify({ dn: (parsed.data as any).escortedDriverName, dp: (parsed.data as any).escortedDriverPhone, vp: (parsed.data as any).escortedVehiclePlate }));
 
     let data;
@@ -1959,9 +1977,11 @@ import type { Express } from "express";
     if (!data) return res.status(404).json({ message: "OS não encontrada" });
 
     const driverPatch: Record<string, any> = {};
-    if (req.body.escortedDriverName !== undefined) driverPatch.escorted_driver_name = req.body.escortedDriverName;
-    if (req.body.escortedDriverPhone !== undefined) driverPatch.escorted_driver_phone = req.body.escortedDriverPhone;
-    if (req.body.escortedVehiclePlate !== undefined) driverPatch.escorted_vehicle_plate = req.body.escortedVehiclePlate;
+    if (!financeiroCancela) {
+      if (req.body.escortedDriverName !== undefined) driverPatch.escorted_driver_name = req.body.escortedDriverName;
+      if (req.body.escortedDriverPhone !== undefined) driverPatch.escorted_driver_phone = req.body.escortedDriverPhone;
+      if (req.body.escortedVehiclePlate !== undefined) driverPatch.escorted_vehicle_plate = req.body.escortedVehiclePlate;
+    }
     if (Object.keys(driverPatch).length > 0) {
       const { error: dpErr } = await supabaseAdmin.from("service_orders").update(driverPatch).eq("id", Number(req.params.id));
       if (dpErr) console.error(`[DEBUG-OS] PATCH driver fallback error:`, dpErr.message);

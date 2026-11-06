@@ -149,10 +149,11 @@ export async function runCronBucket(bucket: CronBucket): Promise<void> {
     }
     case "ten-min": {
       await runBillingWithMeta();
+      await jobs.runGatewaySyncCron();
       break;
     }
     case "fifteen-min": {
-      await jobs.runNfReconcileCron();
+      // A reconciliação Asaas + Focus ficou no balde de 10 minutos.
       break;
     }
     case "thirty-min": {

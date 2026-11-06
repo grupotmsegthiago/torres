@@ -1415,6 +1415,33 @@ export type DueDateReconcilePlan =
   | { action: "pull"; dueDate: string }
   | { action: "push"; dueDate: string };
 
+/** Impede prorrogar o boleto para um dia que já passou. */
+export function assertDueDateNotBeforeToday(dueDate: string, today = todayDateStr()): void {
+  if (dueDate < today) {
+    throw new Error("A nova data de vencimento não pode ser anterior a hoje.");
+  }
+}
+
+/**
+ * Corpo do POST /payments/{id}.
+ * Com juros: só a data — o Asaas mantém multa e juros da conta e pode recalcular o boleto.
+ * Sem juros: zera interest/fine e reenvia o valor original da cobrança.
+ */
+export function buildAsaasDueDatePatch(opts: {
+  dueDate: string;
+  originalValue: number;
+  chargeInterest: boolean;
+}): Record<string, unknown> {
+  const patch: Record<string, unknown> = { dueDate: opts.dueDate };
+  if (!opts.chargeInterest) {
+    const value = Math.round(Number(opts.originalValue) * 100) / 100;
+    patch.value = value;
+    patch.interest = { value: 0 };
+    patch.fine = { value: 0, type: "PERCENTAGE" };
+  }
+  return patch;
+}
+
 /**
  * Manual: a data do Torres é a do boleto — empurra para o Asaas, nunca sobrescreve local.
  * Automático: espelha o vencimento vivo do Asaas.

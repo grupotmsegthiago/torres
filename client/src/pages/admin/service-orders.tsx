@@ -4,6 +4,7 @@ import { apiRequest, authFetch, queryClient, getQueryFn, invalidateRelatedQuerie
 import { titleCase, parseBRL, maskBRL, formatDateBRT } from "@/lib/utils";
 import { suggestPriceTableByRouteKm, contractFranquiaKm } from "@/lib/suggest-price-table-by-km";
 import { isCanceladaPriceTable100km3, pickCanceladaPriceTable } from "@shared/cancelada-price-table";
+import { canCancelServiceOrder } from "@shared/perfis-acesso";
 import { isMultilogClient } from "@shared/multilog-refs";
 import { computeRouteTollsBrowser } from "@/lib/google-routes-tolls-browser";
 import AdminLayout from "@/components/admin/layout";
@@ -15,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { CancelReasonBadge } from "@/components/cancel-reason-badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, CheckCircle2, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw, Mail } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Play, Package, Car, Satellite, Camera, Shield, User, MapPin, Download, FileText, ChevronRight, ChevronLeft, ExternalLink, Navigation, Clock, DollarSign, Eye, Undo2, Check, CheckCircle2, Timer, Search, Wrench, Save, AlertTriangle, Loader2, Calendar, Filter, RotateCcw, Mail, Ban } from "lucide-react";
 import { PlacesAutocomplete, calculateRouteInfo, type RouteInfo } from "@/components/places-autocomplete";
 import type { ServiceOrder, Client, Employee, Vehicle, WeaponKit, WeaponKitItem, Weapon, MissionCost } from "@shared/schema";
 import { formatPhoneBR as displayPhoneBR } from "@/lib/format-contact";
@@ -866,12 +867,14 @@ class FormErrorBoundary extends Component<{ children: ReactNode; onClose: () => 
   }
 }
 
-function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled, billings }: {
-  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean; billings?: any[];
+function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrders, prefilledVehicleId, prefilledScheduled, billings, startOnCancel }: {
+  order?: ServiceOrder; clients: Client[]; employees: Employee[]; vehicles: Vehicle[]; kits: EnrichedKit[]; onClose: () => void; allOrders: ServiceOrder[]; prefilledVehicleId?: number | null; prefilledScheduled?: boolean; billings?: any[]; startOnCancel?: boolean;
 }) {
   const { toast } = useToast();
   const { user: formUser } = useAuth();
   const formIsAdmin = formUser?.role === "admin" || formUser?.role === "diretoria";
+  const formCanCancel = canCancelServiceOrder(formUser?.role);
+  const cancelBoot = useRef(false);
   const [step, setStep] = useState(order ? 3 : 1);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const stepAdjHandleRef = useRef<StepAdjustmentHandle | null>(null);
@@ -1055,6 +1058,29 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
   const cancelamentoTabelas = escortContracts.filter(
     (c) => c.client_id === form.clientId && c.status === "Ativo" && isCanceladaPriceTable100km3(c),
   );
+
+  const abrirModalCancelamento = () => {
+    const minima = pickCanceladaPriceTable(cancelamentoTabelas);
+    setCancelDraft({
+      motivo: form.cancellationReason || "",
+      horarioInicio: "",
+      horarioFim: "",
+      kmInicial: "",
+      kmFinal: "",
+      houveDeslocamento: "",
+      contratoTabelaId: minima?.id || "",
+      houvePedagio: "",
+      valorPedagio: "",
+    });
+    setCancelModalOpen(true);
+  };
+
+  useEffect(() => {
+    if (!startOnCancel || !order || cancelBoot.current) return;
+    if (order.status === "cancelada" || order.status === "recusada") return;
+    cancelBoot.current = true;
+    abrirModalCancelamento();
+  }, [startOnCancel, order?.id]);
 
   // Cancelada cobra a tabela ativa de 100 km / 3 h. Se já houver uma válida escolhida, ela permanece.
   useEffect(() => {
@@ -2243,19 +2269,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                   <select value={form.status} onChange={(e) => {
                     const next = e.target.value;
                     if (next === "cancelada" && order && order.status !== "cancelada") {
-                      const minima = pickCanceladaPriceTable(cancelamentoTabelas);
-                      setCancelDraft({
-                        motivo: form.cancellationReason || "",
-                        horarioInicio: "",
-                        horarioFim: "",
-                        kmInicial: "",
-                        kmFinal: "",
-                        houveDeslocamento: "",
-                        contratoTabelaId: minima?.id || "",
-                        houvePedagio: "",
-                        valorPedagio: "",
-                      });
-                      setCancelModalOpen(true);
+                      abrirModalCancelamento();
                       return;
                     }
                     if (next !== "cancelada") setCancelamento(null);
@@ -2268,6 +2282,11 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
                     <option value="cancelada">Cancelada</option>
                     <option value="recusada">Recusada</option>
                   </select>
+                  {formCanCancel && order.status !== "cancelada" && order.status !== "recusada" && (
+                    <Button type="button" variant="outline" className="mt-2 w-full text-red-700 border-red-200 hover:bg-red-50" onClick={abrirModalCancelamento} data-testid="button-cancelar-os-detalhe">
+                      <Ban className="w-3.5 h-3.5 mr-1" /> Cancelar OS
+                    </Button>
+                  )}
                 </div>
               )}
               {(form.status === "cancelada" || form.status === "recusada") && (
@@ -2866,6 +2885,7 @@ function OrderForm({ order, clients, employees, vehicles, kits, onClose, allOrde
 
 export default function ServiceOrdersPage() {
   const [showForm, setShowForm] = useState(false);
+  const [startOnCancel, setStartOnCancel] = useState(false);
   const [editItem, setEditItem] = useState<ServiceOrder | undefined>();
   const [prefilledVehicleId, setPrefilledVehicleId] = useState<number | null>(null);
   const [prefilledScheduled, setPrefilledScheduled] = useState(false);
@@ -2941,6 +2961,8 @@ export default function ServiceOrdersPage() {
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const isAdminOrDiretoria = user?.role === "admin" || user?.role === "diretoria";
+  const canCancelOs = canCancelServiceOrder(user?.role);
+  const canCreateOs = user?.role === "admin" || user?.role === "diretoria" || user?.role === "comercial";
   const [editingTimeOs, setEditingTimeOs] = useState<number | null>(null);
   const [editInicioMissao, setEditInicioMissao] = useState("");
   const [editFimMissao, setEditFimMissao] = useState("");
@@ -3078,12 +3100,14 @@ export default function ServiceOrdersPage() {
           <h1 className="text-2xl font-bold text-neutral-900" data-testid="text-orders-title">Ordens de Serviço</h1>
           <p className="text-sm text-neutral-500 mt-1">Gestão completa de OS</p>
         </div>
-        <Button onClick={() => { setEditItem(undefined); setShowForm(true); }} data-testid="button-new-order">
-          <Plus className="w-4 h-4 mr-2" /> Nova OS
-        </Button>
+        {canCreateOs && (
+          <Button onClick={() => { setEditItem(undefined); setStartOnCancel(false); setShowForm(true); }} data-testid="button-new-order">
+            <Plus className="w-4 h-4 mr-2" /> Nova OS
+          </Button>
+        )}
       </div>
 
-      {showForm && <FormErrorBoundary onClose={() => { setShowForm(false); setEditItem(undefined); }}><OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} billings={billingsReady && !billingsStale ? allBillings : undefined} onClose={() => { setShowForm(false); setEditItem(undefined); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} /></FormErrorBoundary>}
+      {showForm && <FormErrorBoundary onClose={() => { setShowForm(false); setEditItem(undefined); setStartOnCancel(false); }}><OrderForm order={editItem} clients={clients || []} employees={employees || []} vehicles={vehicles || []} kits={kits || []} allOrders={orders || []} prefilledVehicleId={prefilledVehicleId} prefilledScheduled={prefilledScheduled} billings={billingsReady && !billingsStale ? allBillings : undefined} startOnCancel={startOnCancel} onClose={() => { setShowForm(false); setEditItem(undefined); setStartOnCancel(false); setPrefilledVehicleId(null); setPrefilledScheduled(false); }} /></FormErrorBoundary>}
 
       {filterVehicleId && (() => {
         const fv = vehicles.find(vv => vv.id === filterVehicleId);
@@ -3580,7 +3604,10 @@ export default function ServiceOrdersPage() {
                           }
                           if (window.confirm(`Enviar Relatório de Escolta (${o.osNumber}) por email ao cliente?`)) sendReportEmailMutation.mutate(o.id);
                         }} title="Enviar Relatório por Email" data-testid={`button-send-report-${o.id}`}><Mail className="w-4 h-4 text-blue-500" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setShowForm(true); }} data-testid={`button-edit-order-${o.id}`}><Pencil className="w-4 h-4" /></Button>
+                        {canCancelOs && o.status !== "cancelada" && o.status !== "recusada" && (
+                          <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setStartOnCancel(true); setShowForm(true); }} title="Cancelar OS" data-testid={`button-cancel-order-${o.id}`}><Ban className="w-4 h-4 text-red-600" /></Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => { setEditItem(o); setStartOnCancel(false); setShowForm(true); }} data-testid={`button-edit-order-${o.id}`}><Pencil className="w-4 h-4" /></Button>
                         {isDiretoria && <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Excluir permanentemente OS ${o.osNumber}?`)) deleteMutation.mutate(o.id); }} data-testid={`button-delete-order-${o.id}`}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
                       </div>
                     </td>

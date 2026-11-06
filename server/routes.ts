@@ -1419,6 +1419,9 @@ async function ensureSystemSettingsTable() {
     if (req.user!.role === "financeiro" && !permissions.includes("controle_faturamento")) {
       permissions.push("controle_faturamento");
     }
+    if (req.user!.role === "financeiro" && !permissions.includes("service_orders")) {
+      permissions.push("service_orders");
+    }
     res.json({
       user: toSafeUser(req.user!),
       permissions: permissions.length ? permissions : fallback,
