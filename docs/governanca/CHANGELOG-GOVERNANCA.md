@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-06 — Atualização do painel só quando o vigilante manda o status
+
+- O aviso, a carta e a coluna do mapa abrem só com o texto gravado em "Enviar Atualização" no aplicativo.
+- Foto de checklist e avanço de etapa continuam no histórico da OS. Não disparam o aviso nem o card do grupo, salvo o fim de missão.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-05 — Missão aberta sem início manda no painel da viatura
 
 - Se a viatura tem uma OS ainda aberta sem início de viagem (ex.: Omega na origem), essa OS manda no cartão e no painel. A outra da mesma placa (ex.: RJC em trânsito) não aparece até a aberta terminar.

@@ -7,6 +7,7 @@ import { typingSecondsForMessage } from "./lib/whatsapp-humanize.js";
 import { haversineDist } from "./routes/_helpers.js";
 import { nominatimReverseGeocode } from "./db-init.js";
 import { downloadMissionPhotoDataUri } from "./lib/mission-photos";
+import { isAtualizacaoStatusVigilante } from "../shared/atualizacao-status";
 
 const TAG = "[whatsapp-forward-cron]";
 
@@ -98,6 +99,14 @@ export function isFinalKmUpdate(message?: string | null): boolean {
 // prática, o fim da missão pro grupo do cliente).
 export function isFinalCardUpdate(step?: string | null, message?: string | null): boolean {
   return String(step || "") === "finalizada" || isFinalKmUpdate(message);
+}
+
+/** Card do grupo: status que o vigilante mandou no aplicativo, ou o fim de missão.
+ *  Foto de checklist no meio da etapa não é atualização. */
+export function deveEncaminharParaCliente(message?: string | null, step?: string | null): boolean {
+  if (!isForwardableStep(step)) return false;
+  if (isFinalCardUpdate(step, message)) return true;
+  return isAtualizacaoStatusVigilante(message);
 }
 
 // Trava de finalização: decide se a OS JÁ teve um card de "Fim de Missão"
@@ -490,8 +499,7 @@ export async function buildFinalizedSummary(u: any, so: any, client: any): Promi
   // Texto livre do agente no fechamento (vira o complemento do STATUS).
   // Ignora marcadores do sistema: "🔄 …" (avanço de etapa), "📷 …"/legenda de
   // foto de KM, e auditoria "AJUSTE MANUAL …" — só queremos a fala do agente.
-  const isSystemMsg = (m: string): boolean =>
-    !m || /^🔄/.test(m) || /^📷/.test(m) || isFinalKmUpdate(m) || /^ajuste manual/i.test(m);
+  const isSystemMsg = (m: string): boolean => !isAtualizacaoStatusVigilante(m) || isFinalKmUpdate(m);
   const agentMsg = msgs
     .map(x => String(x?.message || "").trim())
     .find(m => m && !isSystemMsg(m)) || "";
@@ -734,6 +742,12 @@ export async function processPendingForwards(): Promise<void> {
     for (const u of ups as any[]) {
       // claim atômico (anti-race entre workers/instâncias)
       if (!(await claim(u.id))) continue;
+
+      if (!deveEncaminharParaCliente(u.message, u.mission_step)) {
+        await markDone(u.id, "skip: não é atualização de status do vigilante");
+        console.log(`${TAG} ⊘ id=${u.id} OS=${u.os_number} foto ou etapa interna, sem encaminhar`);
+        continue;
+      }
 
       const photoUrl: string = String(u.photo_url || "");
       const msg: string = String(u.message || "").trim();

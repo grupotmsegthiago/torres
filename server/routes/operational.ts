@@ -10,6 +10,7 @@ import type { Express } from "express";
   import { haversineDist } from "./_helpers";
   import { resolveVehicleIcon } from "@shared/vehicle-icons";
   import { getActiveMissionByVehicle } from "@shared/os-viatura";
+import { ultimaAtualizacaoStatusNaoLida } from "@shared/atualizacao-status";
   import { withSwrCache } from "../lib/swr-cache";
   import { brtDateKey, currentBrtDayRange, currentBrtWeekRange, currentBrtMonthRange } from "../lib/brt-date";
   import { fetchAllSupabaseRows } from "../lib/supabase-page";
@@ -493,7 +494,8 @@ import type { Express } from "express";
         }
 
         const osUpdates = updatesByOS.get(o.id) || [];
-        const lastUpdate = osUpdates.filter(u => !u.readByAdmin || u.readByAdmin === 0 || u.readByAdmin === "0").slice(0, 1);
+        const statusNaoLido = ultimaAtualizacaoStatusNaoLida(osUpdates);
+        const lastUpdate = statusNaoLido ? [statusNaoLido] : [];
         const recentUpdates = osUpdates.slice(0, 5);
 
         let liveCost: {
@@ -1192,10 +1194,12 @@ import type { Express } from "express";
                 let lastUpd: any[] = [];
                 let recentUpds: any[] = [];
                 try {
-                  const r1 = await supabaseAdmin.from("mission_updates").select("*")
+                  const r1 = await supabaseAdmin.from("mission_updates")
+                    .select("id, message, mission_step, employee_name, created_at, photo_url, latitude, longitude, copiado_por, copiado_em, read_by_admin")
                     .eq("service_order_id", linkedOrder.id).eq("read_by_admin", 0)
-                    .order("created_at", { ascending: false }).limit(1);
-                  lastUpd = r1.data || [];
+                    .order("created_at", { ascending: false }).limit(20);
+                  const statusVeiculo = ultimaAtualizacaoStatusNaoLida(toCamelArray(r1.data || []));
+                  lastUpd = statusVeiculo ? [statusVeiculo] : [];
                   const r2 = await supabaseAdmin.from("mission_updates").select("*")
                     .eq("service_order_id", linkedOrder.id)
                     .order("created_at", { ascending: false }).limit(5);

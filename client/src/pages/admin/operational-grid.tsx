@@ -37,6 +37,7 @@ import { VEHICLE_ICON_OPTIONS, painelEscoltaThumb, resolveVehicleIcon, rotuloMod
 import { isPernoiteMessage } from "@shared/pernoite-mensagem";
 import { kitCompativelComPlaca } from "@shared/kit-visual";
 import { UNREAD_POLL_MS } from "@shared/mission-lidas";
+import { isAtualizacaoStatusVigilante } from "@shared/atualizacao-status";
 import { loadGoogleMapsScript } from "@/components/places-autocomplete";
 import { VincularOsButton, type VinculoInicial } from "@/components/admin/vincular-os-dialog";
 import { PainelV2 } from "@/components/painel-v2/PainelV2";
@@ -1397,7 +1398,7 @@ function ultimaMensagemAgente(v: TrackedVehicle): string | null {
   const itens = [
     v.activeOs?.lastAgentUpdate,
     ...(v.activeOs?.recentUpdates || []),
-  ].filter((item) => item?.message);
+  ].filter((item) => isAtualizacaoStatusVigilante(item?.message));
   if (itens.length === 0) return null;
   itens.sort((a, b) => parseUTCDate(b?.createdAt).getTime() - parseUTCDate(a?.createdAt).getTime());
   return itens[0]?.message || null;
@@ -6252,13 +6253,16 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
       const res = await authFetch("/api/mission/updates?unread=true&limit=200", { signal });
       if (!res.ok) return [];
       const data = await res.json();
-      return semJaLidas(Array.isArray(data) ? data : []);
+      return semJaLidas(Array.isArray(data) ? data : []).filter((u) => isAtualizacaoStatusVigilante(u?.message));
     },
     staleTime: 0,
     refetchInterval: UNREAD_POLL_MS,
     refetchIntervalInBackground: true,
   });
-  const updates = useMemo(() => semJaLidas(updatesBrutos), [updatesBrutos]);
+  const updates = useMemo(
+    () => semJaLidas(updatesBrutos).filter((u) => isAtualizacaoStatusVigilante(u?.message)),
+    [updatesBrutos],
+  );
 
   const { enabled: soundEnabled, toggle: toggleSound } = useNotificationSound(updates);
 
@@ -7528,13 +7532,16 @@ export default function OperationalGridPage() {
       const res = await authFetch("/api/mission/updates?unread=true&limit=200", { signal });
       if (!res.ok) return [];
       const data = await res.json();
-      return semJaLidas(Array.isArray(data) ? data : []);
+      return semJaLidas(Array.isArray(data) ? data : []).filter((u) => isAtualizacaoStatusVigilante(u?.message));
     },
     staleTime: 0,
     refetchInterval: UNREAD_POLL_MS,
     refetchIntervalInBackground: true,
   });
-  const updatesNaoLidos = useMemo(() => semJaLidas(unreadAgentUpdates), [unreadAgentUpdates]);
+  const updatesNaoLidos = useMemo(
+    () => semJaLidas(unreadAgentUpdates).filter((u) => isAtualizacaoStatusVigilante(u?.message)),
+    [unreadAgentUpdates],
+  );
 
   useEffect(() => {
     const lista = updatesNaoLidos.filter((u) => u?.id && String(u.message || "").trim());

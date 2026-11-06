@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isFinalCardUpdate, alreadyForwardedFinal, hasCompetingFinalCard } from "./cron-whatsapp-forward.js";
+import { isFinalCardUpdate, alreadyForwardedFinal, hasCompetingFinalCard, deveEncaminharParaCliente } from "./cron-whatsapp-forward.js";
 
 test("isFinalCardUpdate: step finalizada é card de fim", () => {
   assert.equal(isFinalCardUpdate("finalizada", null), true);
@@ -98,6 +98,16 @@ test("hasCompetingFinalCard: irmã em voo (claim ativo) bloqueia duplicata paral
     ),
     true,
   );
+});
+
+test("encaminha o status do aplicativo e o KM final; foto de checklist fica de fora", () => {
+  assert.equal(deveEncaminharParaCliente("Missão segue padrão, sem novidades", "em_transito"), true);
+  assert.equal(deveEncaminharParaCliente("📷 Foto: KM Final — KM 8.130", "chegada_destino"), true);
+  assert.equal(deveEncaminharParaCliente("🔄 Finalizada", "finalizada"), true);
+  assert.equal(deveEncaminharParaCliente("📷 Foto: Viatura Frente", "em_transito"), false);
+  assert.equal(deveEncaminharParaCliente("📷 Foto: Local de Destino", "chegada_destino"), false);
+  assert.equal(deveEncaminharParaCliente("🔄 Em Trânsito Destino", "em_transito_destino"), false);
+  assert.equal(deveEncaminharParaCliente("Missão segue padrão, sem novidades", "aguardando"), false);
 });
 
 test("hasCompetingFinalCard: primeira final da OS pode enviar", () => {

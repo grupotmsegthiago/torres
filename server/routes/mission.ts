@@ -19,6 +19,7 @@ import type { Express } from "express";
   import { applyPedagioAjustes, buildPedagioConferidoLog } from "../lib/pedagio-conferencia";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
 import { checklistViaturaObrigatorio } from "../../shared/mission-checklist";
+import { isAtualizacaoStatusVigilante } from "../../shared/atualizacao-status";
 import { avisarMensagensLidas } from "../lib/mission-lidas-broadcast";
 import { getActiveMissionByVehicle, outraMissaoEmCursoNaViatura } from "../../shared/os-viatura";
 
@@ -1284,9 +1285,22 @@ Responda APENAS com JSON: {"km_lido": number}`;
     let missionResults: any[];
     if (unreadOnly) {
       try {
-        const { data, error } = await supabaseAdmin.from("mission_updates").select("*").eq("read_by_admin", 0).order("created_at", { ascending: false }).limit(limit);
-        if (error) throw error;
-        missionResults = toCamelArray(data || []);
+        // Foto de checklist (📷) e avanço de etapa (🔄) não são o status do aplicativo.
+        let unreadRes = await supabaseAdmin.from("mission_updates").select("*")
+          .eq("read_by_admin", 0)
+          .not("message", "like", "🔄%")
+          .not("message", "like", "📷%")
+          .not("message", "ilike", "ajuste manual%")
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (unreadRes.error) {
+          unreadRes = await supabaseAdmin.from("mission_updates").select("*")
+            .eq("read_by_admin", 0)
+            .order("created_at", { ascending: false })
+            .limit(limit);
+        }
+        if (unreadRes.error) throw unreadRes.error;
+        missionResults = toCamelArray(unreadRes.data || []).filter((m) => isAtualizacaoStatusVigilante(m.message));
       } catch (_e) { missionResults = []; }
     } else {
       const [missionRes, telRes] = await Promise.all([
@@ -1679,7 +1693,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
         latitude: latitude || null,
         longitude: longitude || null,
         photo_url: alertPhotoPath,
-        read_by_admin: 0,
+        // Foto de etapa fica no histórico. Não entra na fila de status do painel.
+        read_by_admin: 1,
       });
       console.log(`[mission-photo] Alert created for OS #${so.osNumber} step=${step}`);
     } catch (alertErr: any) {
@@ -2677,7 +2692,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
         latitude: geo?.lat?.toString() || null,
         longitude: geo?.lng?.toString() || null,
         photo_url: null,
-        read_by_admin: 0,
+        // Avanço de etapa fica no histórico. O aviso do painel é só o status do aplicativo.
+        read_by_admin: 1,
       });
       console.log(`[mission-advance] Alert created: ${currentStep} → ${nextStep} OS #${so.osNumber}`);
     } catch (alertErr: any) {
