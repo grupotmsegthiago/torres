@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-06 — Avanço de etapa volta a subir no painel
+
+- Quando o vigilante avança uma etapa com nome (Início Missão, Em Trânsito Destino, Na Origem), o aviso sobe na tela até a equipe marcar como lida.
+- Foto de checklist e etapa sem nome continuam só no histórico. Mensagem de outro dia não reabre.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-06 — Mensagem de ontem não reabre no painel
 
 - O status do aplicativo continua abrindo no painel no dia em que o vigilante manda, até a equipe marcar como lida.

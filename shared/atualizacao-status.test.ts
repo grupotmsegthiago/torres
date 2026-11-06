@@ -5,6 +5,7 @@ import {
   atualizacaoDoDiaOperacional,
   atualizacaoVisivelNoPainel,
   isAtualizacaoStatusVigilante,
+  mensagemEntraNoPainel,
   ultimaAtualizacaoStatusNaoLida,
 } from "./atualizacao-status";
 
@@ -24,14 +25,17 @@ test("foto de checklist, avanço de etapa e ajuste manual não são atualizaçã
   assert.equal(isAtualizacaoStatusVigilante(null), false);
 });
 
-test("a fila do painel fica com o status não lido, pulando foto e etapa mais novas", () => {
+test("a fila do painel abre a etapa e o status, e pula a foto", () => {
   const escolhida = ultimaAtualizacaoStatusNaoLida([
     { id: 3, message: "📷 Foto: KM Saída — KM 100", readByAdmin: 0 },
     { id: 2, message: "🔄 Em Trânsito Destino", readByAdmin: 0 },
     { id: 1, message: "Trânsito intenso na rodovia", readByAdmin: 0 },
     { id: 0, message: "Pernoite", readByAdmin: 1 },
   ]);
-  assert.equal(escolhida?.id, 1);
+  assert.equal(escolhida?.id, 2);
+  assert.equal(mensagemEntraNoPainel("🔄 Em Trânsito Destino"), true);
+  assert.equal(mensagemEntraNoPainel("🔄 Início Missão"), true);
+  assert.equal(mensagemEntraNoPainel("🔄 checkout_armamento"), false);
   assert.equal(atualizacaoAindaNaoLida(0), true);
   assert.equal(atualizacaoAindaNaoLida("0"), true);
   assert.equal(atualizacaoAindaNaoLida(1), false);
@@ -46,6 +50,8 @@ test("mensagem de ontem não entra no painel; a de hoje fica até marcarem lida"
   assert.equal(atualizacaoDoDiaOperacional("2026-11-06T02:30:00.000Z", agora), false);
   assert.equal(atualizacaoVisivelNoPainel({ message: "Pernoite", createdAt: ontem }, agora), false);
   assert.equal(atualizacaoVisivelNoPainel({ message: "📷 Foto: Viatura Frente", createdAt: hoje }, agora), false);
+  assert.equal(atualizacaoVisivelNoPainel({ message: "🔄 Em Trânsito Destino", createdAt: hoje }, agora), true);
+  assert.equal(atualizacaoVisivelNoPainel({ message: "🔄 Em Trânsito Destino", createdAt: ontem }, agora), false);
   const escolhida = ultimaAtualizacaoStatusNaoLida([
     { id: 9, message: "Mensagem de ontem", createdAt: ontem, readByAdmin: 0 },
     { id: 8, message: "Na rua com o cliente", createdAt: hoje, readByAdmin: 0 },

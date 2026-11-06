@@ -39,6 +39,9 @@ O histórico da OS, o formulário, a rota e o botão de WhatsApp do aviso. Quem 
 ### Resultados (negócio)
 O painel avisa quando o vigilante manda o status no aplicativo. Foto e troca de etapa deixam de abrir o mesmo aviso.
 
+### Complemento — etapa na tela
+O histórico de alertas lista o avanço de etapa. A tela do painel tinha deixado de abrir esse aviso. Etapa com nome (🔄 Em Trânsito Destino, Início Missão, Na Origem) volta para o aviso, a carta e a coluna, até marcarem como lida. Foto e etapa sem nome permanecem só no histórico.
+
 ### Complemento — dia operacional
 Mensagem de ontem ainda não lida voltava na coluna e no aviso. A fila do painel agora só traz status do dia (America/Sao_Paulo). "Marcar como lida" grava `read_by_admin = 1` e a transmissão não reabre. Fechar o aviso com × só esconde nesta tela; a carta segue até a equipe marcar como lida.
 

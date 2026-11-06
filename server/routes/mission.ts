@@ -19,7 +19,7 @@ import type { Express } from "express";
   import { applyPedagioAjustes, buildPedagioConferidoLog } from "../lib/pedagio-conferencia";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
 import { checklistViaturaObrigatorio } from "../../shared/mission-checklist";
-import { inicioDoDiaOperacionalIso, isAtualizacaoStatusVigilante } from "../../shared/atualizacao-status";
+import { inicioDoDiaOperacionalIso, mensagemEntraNoPainel } from "../../shared/atualizacao-status";
 import { avisarMensagensLidas } from "../lib/mission-lidas-broadcast";
 import { getActiveMissionByVehicle, outraMissaoEmCursoNaViatura } from "../../shared/os-viatura";
 
@@ -1285,12 +1285,11 @@ Responda APENAS com JSON: {"km_lido": number}`;
     let missionResults: any[];
     if (unreadOnly) {
       try {
-        // Foto de checklist (📷) e avanço de etapa (🔄) não são o status do aplicativo.
+        // Foto de checklist fica no histórico. Status livre e avanço de etapa sobem no painel.
         const desdeHoje = inicioDoDiaOperacionalIso();
         let unreadRes = await supabaseAdmin.from("mission_updates").select("*")
           .eq("read_by_admin", 0)
           .gte("created_at", desdeHoje)
-          .not("message", "like", "🔄%")
           .not("message", "like", "📷%")
           .not("message", "ilike", "ajuste manual%")
           .order("created_at", { ascending: false })
@@ -1303,7 +1302,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
             .limit(limit);
         }
         if (unreadRes.error) throw unreadRes.error;
-        missionResults = toCamelArray(unreadRes.data || []).filter((m) => isAtualizacaoStatusVigilante(m.message));
+        missionResults = toCamelArray(unreadRes.data || []).filter((m) => mensagemEntraNoPainel(m.message));
       } catch (_e) { missionResults = []; }
     } else {
       const [missionRes, telRes] = await Promise.all([
@@ -2685,6 +2684,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
     };
     try {
       const stepToLabel = STEP_ALERT_LABELS[nextStep] || nextStep;
+      const etapaComNome = Boolean(STEP_ALERT_LABELS[nextStep]);
       await supabaseAdmin.from("mission_updates").insert({
         service_order_id: serviceOrderId,
         os_number: so.osNumber || null,
@@ -2695,8 +2695,8 @@ Responda APENAS com JSON: {"km_lido": number}`;
         latitude: geo?.lat?.toString() || null,
         longitude: geo?.lng?.toString() || null,
         photo_url: null,
-        // Avanço de etapa fica no histórico. O aviso do painel é só o status do aplicativo.
-        read_by_admin: 1,
+        // Etapa com nome sobe no painel. Etapa interna sem nome fica no histórico.
+        read_by_admin: etapaComNome ? 0 : 1,
       });
       console.log(`[mission-advance] Alert created: ${currentStep} → ${nextStep} OS #${so.osNumber}`);
     } catch (alertErr: any) {

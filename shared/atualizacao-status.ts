@@ -1,12 +1,14 @@
 import { toDateKey } from "./date-key";
 
 /**
- * Atualização de status é só o texto que o vigilante grava no aplicativo
- * em "Enviar Atualização". Foto de checklist e avanço de etapa gravam
- * outro texto (📷 / 🔄) e não abrem o aviso do painel.
+ * O texto de "Enviar Atualização" é o status livre do vigilante.
+ * Foto de checklist (📷) e ajuste manual não são esse texto.
+ * O avanço de etapa (🔄) também não entra no grupo do cliente:
+ * a equipe trata esse aviso no painel.
  *
- * No painel entra o status de hoje (America/Sao_Paulo), até alguém marcar
- * como lida. Mensagem de ontem não reabre.
+ * No painel entram o status livre e o avanço de etapa de hoje
+ * (America/Sao_Paulo), até alguém marcar como lida.
+ * Mensagem de ontem não reabre. Foto fica só no histórico.
  */
 
 export function isAtualizacaoStatusVigilante(message?: string | null): boolean {
@@ -15,6 +17,16 @@ export function isAtualizacaoStatusVigilante(message?: string | null): boolean {
   if (texto.startsWith("🔄")) return false;
   if (texto.startsWith("📷")) return false;
   if (/^ajuste manual\b/i.test(texto)) return false;
+  return true;
+}
+
+/** O que sobe no aviso, na carta e na coluna. Foto, ajuste e etapa sem nome ficam de fora. */
+export function mensagemEntraNoPainel(message?: string | null): boolean {
+  const texto = String(message ?? "").trim();
+  if (!texto) return false;
+  if (texto.startsWith("📷")) return false;
+  if (/^ajuste manual\b/i.test(texto)) return false;
+  if (texto.startsWith("🔄") && /^[a-z0-9_]+$/.test(texto.replace(/^🔄\s*/, ""))) return false;
   return true;
 }
 
@@ -43,7 +55,7 @@ export function atualizacaoVisivelNoPainel(
   agora = new Date(),
 ): boolean {
   if (!item) return false;
-  return isAtualizacaoStatusVigilante(item.message) && atualizacaoDoDiaOperacional(item.createdAt, agora);
+  return mensagemEntraNoPainel(item.message) && atualizacaoDoDiaOperacional(item.createdAt, agora);
 }
 
 /** A mais recente não lida que é status do vigilante neste dia. A lista entra da mais nova para a mais antiga. */
