@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   atualizacaoAindaNaoLida,
+  atualizacaoDoDiaOperacional,
+  atualizacaoVisivelNoPainel,
   isAtualizacaoStatusVigilante,
   ultimaAtualizacaoStatusNaoLida,
 } from "./atualizacao-status";
@@ -33,4 +35,21 @@ test("a fila do painel fica com o status não lido, pulando foto e etapa mais no
   assert.equal(atualizacaoAindaNaoLida(0), true);
   assert.equal(atualizacaoAindaNaoLida("0"), true);
   assert.equal(atualizacaoAindaNaoLida(1), false);
+});
+
+test("mensagem de ontem não entra no painel; a de hoje fica até marcarem lida", () => {
+  const agora = new Date("2026-11-06T18:00:00-03:00");
+  const ontem = "2026-11-05T22:40:00-03:00";
+  const hoje = "2026-11-06T11:05:00-03:00";
+  assert.equal(atualizacaoDoDiaOperacional(ontem, agora), false);
+  assert.equal(atualizacaoDoDiaOperacional(hoje, agora), true);
+  assert.equal(atualizacaoDoDiaOperacional("2026-11-06T02:30:00.000Z", agora), false);
+  assert.equal(atualizacaoVisivelNoPainel({ message: "Pernoite", createdAt: ontem }, agora), false);
+  assert.equal(atualizacaoVisivelNoPainel({ message: "📷 Foto: Viatura Frente", createdAt: hoje }, agora), false);
+  const escolhida = ultimaAtualizacaoStatusNaoLida([
+    { id: 9, message: "Mensagem de ontem", createdAt: ontem, readByAdmin: 0 },
+    { id: 8, message: "Na rua com o cliente", createdAt: hoje, readByAdmin: 0 },
+    { id: 7, message: "Já tratei", createdAt: hoje, readByAdmin: 1 },
+  ], agora);
+  assert.equal(escolhida?.id, 8);
 });

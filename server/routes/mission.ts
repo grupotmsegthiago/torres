@@ -19,7 +19,7 @@ import type { Express } from "express";
   import { applyPedagioAjustes, buildPedagioConferidoLog } from "../lib/pedagio-conferencia";
   import { cancelAsaasPaymentsLinkedToOs } from "../asaas";
 import { checklistViaturaObrigatorio } from "../../shared/mission-checklist";
-import { isAtualizacaoStatusVigilante } from "../../shared/atualizacao-status";
+import { inicioDoDiaOperacionalIso, isAtualizacaoStatusVigilante } from "../../shared/atualizacao-status";
 import { avisarMensagensLidas } from "../lib/mission-lidas-broadcast";
 import { getActiveMissionByVehicle, outraMissaoEmCursoNaViatura } from "../../shared/os-viatura";
 
@@ -1286,8 +1286,10 @@ Responda APENAS com JSON: {"km_lido": number}`;
     if (unreadOnly) {
       try {
         // Foto de checklist (📷) e avanço de etapa (🔄) não são o status do aplicativo.
+        const desdeHoje = inicioDoDiaOperacionalIso();
         let unreadRes = await supabaseAdmin.from("mission_updates").select("*")
           .eq("read_by_admin", 0)
+          .gte("created_at", desdeHoje)
           .not("message", "like", "🔄%")
           .not("message", "like", "📷%")
           .not("message", "ilike", "ajuste manual%")
@@ -1296,6 +1298,7 @@ Responda APENAS com JSON: {"km_lido": number}`;
         if (unreadRes.error) {
           unreadRes = await supabaseAdmin.from("mission_updates").select("*")
             .eq("read_by_admin", 0)
+            .gte("created_at", desdeHoje)
             .order("created_at", { ascending: false })
             .limit(limit);
         }

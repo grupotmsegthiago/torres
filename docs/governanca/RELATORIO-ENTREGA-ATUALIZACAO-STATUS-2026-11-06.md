@@ -34,13 +34,16 @@ O histórico da OS, o formulário, a rota e o botão de WhatsApp do aviso. Quem 
 ### Testes executados
 | Comando | Resultado |
 |---|---|
-| `npx tsx --test shared/atualizacao-status.test.ts server/cron-whatsapp-forward-dedup.test.ts` | 16 pass / 0 fail |
+| `npx tsx --test shared/atualizacao-status.test.ts server/cron-whatsapp-forward-dedup.test.ts` | 17 pass / 0 fail |
 
 ### Resultados (negócio)
 O painel avisa quando o vigilante manda o status no aplicativo. Foto e troca de etapa deixam de abrir o mesmo aviso.
 
+### Complemento — dia operacional
+Mensagem de ontem ainda não lida voltava na coluna e no aviso. A fila do painel agora só traz status do dia (America/Sao_Paulo). "Marcar como lida" grava `read_by_admin = 1` e a transmissão não reabre. Fechar o aviso com × só esconde nesta tela; a carta segue até a equipe marcar como lida.
+
 ### Riscos
-Linhas antigas de foto e etapa que ainda estão não lidas saem da fila pelo texto. Não são apagadas.
+Linhas antigas de foto e etapa que ainda estão não lidas saem da fila pelo texto. Não são apagadas. Mensagem de ontem permanece no histórico da OS.
 
 ### Rollback
 Reverter o commit. A fila volta a tratar foto e etapa como atualização.

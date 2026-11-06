@@ -1,5 +1,11 @@
 # Changelog — Governança Torres
 
+## 2026-11-06 — Mensagem de ontem não reabre no painel
+
+- O status do aplicativo continua abrindo no painel no dia em que o vigilante manda, até a equipe marcar como lida.
+- Mensagem de outro dia não entra no aviso, na carta nem na coluna. A leitura gravada (`read_by_admin`) continua sendo o que impede a reabertura.
+- Não entra no custo do abastecimento, no boletim nem no balanço.
+
 ## 2026-11-06 — Atualização do painel só quando o vigilante manda o status
 
 - O aviso, a carta e a coluna do mapa abrem só com o texto gravado em "Enviar Atualização" no aplicativo.

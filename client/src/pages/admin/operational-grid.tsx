@@ -37,7 +37,7 @@ import { VEHICLE_ICON_OPTIONS, painelEscoltaThumb, resolveVehicleIcon, rotuloMod
 import { isPernoiteMessage } from "@shared/pernoite-mensagem";
 import { kitCompativelComPlaca } from "@shared/kit-visual";
 import { UNREAD_POLL_MS } from "@shared/mission-lidas";
-import { isAtualizacaoStatusVigilante } from "@shared/atualizacao-status";
+import { atualizacaoVisivelNoPainel, isAtualizacaoStatusVigilante } from "@shared/atualizacao-status";
 import { loadGoogleMapsScript } from "@/components/places-autocomplete";
 import { VincularOsButton, type VinculoInicial } from "@/components/admin/vincular-os-dialog";
 import { PainelV2 } from "@/components/painel-v2/PainelV2";
@@ -6253,14 +6253,14 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
       const res = await authFetch("/api/mission/updates?unread=true&limit=200", { signal });
       if (!res.ok) return [];
       const data = await res.json();
-      return semJaLidas(Array.isArray(data) ? data : []).filter((u) => isAtualizacaoStatusVigilante(u?.message));
+      return semJaLidas(Array.isArray(data) ? data : []).filter((u) => atualizacaoVisivelNoPainel(u));
     },
     staleTime: 0,
     refetchInterval: UNREAD_POLL_MS,
     refetchIntervalInBackground: true,
   });
   const updates = useMemo(
-    () => semJaLidas(updatesBrutos).filter((u) => isAtualizacaoStatusVigilante(u?.message)),
+    () => semJaLidas(updatesBrutos).filter((u) => atualizacaoVisivelNoPainel(u)),
     [updatesBrutos],
   );
 
@@ -7532,14 +7532,14 @@ export default function OperationalGridPage() {
       const res = await authFetch("/api/mission/updates?unread=true&limit=200", { signal });
       if (!res.ok) return [];
       const data = await res.json();
-      return semJaLidas(Array.isArray(data) ? data : []).filter((u) => isAtualizacaoStatusVigilante(u?.message));
+      return semJaLidas(Array.isArray(data) ? data : []).filter((u) => atualizacaoVisivelNoPainel(u));
     },
     staleTime: 0,
     refetchInterval: UNREAD_POLL_MS,
     refetchIntervalInBackground: true,
   });
   const updatesNaoLidos = useMemo(
-    () => semJaLidas(unreadAgentUpdates).filter((u) => isAtualizacaoStatusVigilante(u?.message)),
+    () => semJaLidas(unreadAgentUpdates).filter((u) => atualizacaoVisivelNoPainel(u)),
     [unreadAgentUpdates],
   );
 
