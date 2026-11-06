@@ -3,7 +3,7 @@
 **Data:** 6 de novembro de 2026
 **Branch:** `cursor/atualizacao-status-vigilante-003b`
 **Ambiente validado:** [x] local  [ ] preview  [ ] produção
-**Publicou?** [x] Não
+**Publicou?** [x] Sim — `dev` e `main`, 6 de novembro de 2026. A Vercel publica a `main`.
 
 ### Reutilização (D11 / P13)
 - Busca: `POST /api/mission/update`, foto e avanço em `server/routes/mission.ts`, fila não lida do painel, `cron-whatsapp-forward.ts`.
