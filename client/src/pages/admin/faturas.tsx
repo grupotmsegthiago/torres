@@ -29,6 +29,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { InvoiceTraceDialog } from "@/components/InvoiceTraceDialog";
 import { classifyIssuedOrProcessing, isQueuedAtPrefecture } from "@shared/nfse-status";
+import { canCancelNfse } from "@shared/perfis-acesso";
 import { cleanNfseDescription, NFSE_CATEGORIA_OPCOES, NFSE_DESCRICAO_MAX, NFSE_DESCRICAO_MIN, swapNfseCategoryPrefix, type NfseCategoriaFiscal } from "@shared/nfse-descricao";
 
 interface Invoice {
@@ -114,6 +115,7 @@ export default function FaturasPage() {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const isDiretoria = currentUser?.role === "diretoria";
+  const podeCancelarNf = canCancelNfse(currentUser?.role);
   const [showCreate, setShowCreate] = useState(false);
   const [showDetail, setShowDetail] = useState<Invoice | null>(null);
   const [showTrace, setShowTrace] = useState<Invoice | null>(null);
@@ -690,6 +692,7 @@ export default function FaturasPage() {
               onCancel={() => { if (confirm("Cancelar esta fatura?")) cancelMutation.mutate(showDetail.id); }}
               syncing={syncMutation.isPending}
               isDiretoria={isDiretoria}
+              podeCancelarNf={podeCancelarNf}
               onEmitir={(id, dueDate, billingType) => emitirMutation.mutate({ id, dueDate, billingType })}
             />
           )}
@@ -1044,7 +1047,7 @@ type NfsePreview = {
   prefixo?: Record<NfseCategoriaFiscal, string>;
 };
 
-function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDiretoria?: boolean }) {
+function NfseControlSection({ invoice, podeCancelarNf }: { invoice: Invoice; podeCancelarNf?: boolean }) {
   const { toast } = useToast();
   const [emitting, setEmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
@@ -1257,7 +1260,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
         </Button>
       )}
 
-      {hasNfse && isDiretoria && invoice.nfse_status !== "CANCELED" && invoice.nfse_status !== "CANCELLED" && (
+      {hasNfse && podeCancelarNf && invoice.nfse_status !== "CANCELED" && invoice.nfse_status !== "CANCELLED" && (
         <Button
           variant="outline"
           size="sm"
@@ -1269,7 +1272,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
           {canceling ? (
             <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Cancelando NFS-e...</>
           ) : (
-            <><XCircle className="w-3 h-3 mr-1" /> Cancelar NFS-e (Diretoria)</>
+            <><XCircle className="w-3 h-3 mr-1" /> Cancelar NFS-e</>
           )}
         </Button>
       )}
@@ -1353,7 +1356,7 @@ function NfseControlSection({ invoice, isDiretoria }: { invoice: Invoice; isDire
   );
 }
 
-function InvoiceDetailDialog({ invoice, clientEmiteNf = true, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing, isDiretoria, onEmitir }: {
+function InvoiceDetailDialog({ invoice, clientEmiteNf = true, onClose, onSync, onResend, onDelete, onMarkPaid, onCancel, syncing, isDiretoria, podeCancelarNf, onEmitir }: {
   invoice: Invoice;
   clientEmiteNf?: boolean;
   onClose: () => void;
@@ -1364,6 +1367,7 @@ function InvoiceDetailDialog({ invoice, clientEmiteNf = true, onClose, onSync, o
   onCancel: () => void;
   syncing: boolean;
   isDiretoria: boolean;
+  podeCancelarNf?: boolean;
   onEmitir?: (id: number, dueDate: string, billingType: string) => void;
 }) {
   const { toast } = useToast();
@@ -1580,7 +1584,7 @@ function InvoiceDetailDialog({ invoice, clientEmiteNf = true, onClose, onSync, o
           )}
 
           {clientEmiteNf ? (
-            <NfseControlSection invoice={invoice} isDiretoria={isDiretoria} />
+            <NfseControlSection invoice={invoice} podeCancelarNf={podeCancelarNf} />
           ) : (
             <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 flex items-center gap-2">
               <Receipt className="w-4 h-4 text-neutral-400 flex-shrink-0" />

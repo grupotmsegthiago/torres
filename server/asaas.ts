@@ -104,7 +104,7 @@ import {
   evaluateAsaasWebhookAuth,
 } from "./lib/asaas-helpers";
 import { notifyNfseIntegrationError } from "./lib/nfse-error-alert";
-import { resolveActorName, INTEGRATION_ACTOR, NF_AWAITING_CORRECTION } from "../shared/perfis-acesso";
+import { resolveActorName, INTEGRATION_ACTOR, NF_AWAITING_CORRECTION, canCancelNfse } from "../shared/perfis-acesso";
 import {
   cancelFocusNfse,
   emitFocusNfseForInvoice,  hasFocusApiToken,
@@ -2603,8 +2603,8 @@ export function registerAsaasRoutes(app: Express) {
   app.post("/api/invoices/:id/cancel-nfse", requireAdminRole, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
-      if (user?.role !== "diretoria") {
-        return res.status(403).json({ message: "Somente a diretoria pode cancelar Notas Fiscais." });
+      if (!canCancelNfse(user?.role)) {
+        return res.status(403).json({ message: "Somente a diretoria ou o administrador pode cancelar Notas Fiscais." });
       }
 
       const id = parseInt(req.params.id);

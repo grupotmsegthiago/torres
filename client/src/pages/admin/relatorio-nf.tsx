@@ -25,6 +25,7 @@ import { classifyIssuedOrProcessing, isFinalNfNumber } from "@shared/nfse-status
 import { brtTodayStr } from "@shared/financeiroPeriod";
 import { ordenarFaturas } from "@shared/relatorio-nf-ordem";
 import { NF_SEM_OS_MSG } from "@shared/nf-os-guard";
+import { canCancelNfse } from "@shared/perfis-acesso";
 import AdminLayout from "@/components/admin/layout";
 
 type NormalizedStatus =
@@ -285,6 +286,7 @@ export default function RelatorioNFPage() {
   const { user } = useAuth();
   const isDiretoria = user?.role === "diretoria";
   const isFinanceiro = user?.role === "diretoria" || user?.role === "admin" || user?.role === "financeiro";
+  const podeCancelarNf = canCancelNfse(user?.role);
   const [nfModal, setNfModal] = useState<{ id: number; url: string | null; contentType: string | null; htmlText: string | null; loading: boolean; error: string | null } | null>(null);
   const [cancelModal, setCancelModal] = useState<{ invoiceId: number; nfNumber: string | null; clientName: string; value: number; mode: "focus" | "local"; reason: string } | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ source: "BOLETIM" | "INVOICE" | "BILLING_AVULSO"; sourceId: number | string; clientName: string; value: number; description: string; reason: string } | null>(null);
@@ -1597,7 +1599,7 @@ export default function RelatorioNFPage() {
                               )}
                             </button>
                           )}
-                          {isDiretoria && r.source === "INVOICE" && r.invoiceId && r.rawNfseStatus && r.normalizedStatus !== "NF_CANCELADA" && (
+                          {podeCancelarNf && r.source === "INVOICE" && r.invoiceId && r.rawNfseStatus && r.normalizedStatus !== "NF_CANCELADA" && (
                             <button
                               type="button"
                               onClick={() => setCancelModal({ invoiceId: r.invoiceId!, nfNumber: r.nfseNumber, clientName: r.clientName, value: Number(r.value || 0), mode: "focus", reason: "" })}

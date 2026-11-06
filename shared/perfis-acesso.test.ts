@@ -12,6 +12,7 @@ import {
   usesAclMenu,
   DEFAULT_PROFILE_PERMISSIONS,
   canEnterGestaoByCpf,
+  canCancelNfse,
 } from "./perfis-acesso.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -86,4 +87,12 @@ test("gestão por CPF só admin e diretoria; funcionário não entra", () => {
   assert.match(routes, /canEnterGestaoByCpf/);
   assert.match(routes, /from \"\.\/auth\"/);
   assert.match(routes, /requireAuth, requireAdminRole, requireDiretoria/);
+});
+
+test("cancelar NFS-e: admin e diretoria; financeiro e funcionário não", () => {
+  assert.equal(canCancelNfse("admin"), true);
+  assert.equal(canCancelNfse("diretoria"), true);
+  assert.equal(canCancelNfse("financeiro"), false);
+  assert.equal(canCancelNfse("funcionario"), false);
+  assert.equal(canCancelNfse(null), false);
 });

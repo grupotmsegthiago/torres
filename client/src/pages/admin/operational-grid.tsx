@@ -1686,6 +1686,27 @@ function mensagensDoMapa(vehicles: TrackedVehicle[], updates: any[], grid: GridI
       });
     }
   }
+  // Não lida de OS que já saiu da frota continua no canto até marcarem como lida.
+  for (const u of updates) {
+    if (!u?.id || porId.has(Number(u.id)) || !String(u.message || "").trim()) continue;
+    porId.set(Number(u.id), {
+      id: Number(u.id),
+      plate: u.osNumber || "—",
+      hora: u.createdAt ? formatTimeBRT(u.createdAt) : "",
+      texto: String(u.message).trim(),
+      autor: u.employeeName ? titleCase(String(u.employeeName)) : "Agente",
+      vehicleId: null,
+      osNumber: u.osNumber || null,
+      foto: u.photoUrl || null,
+      temFoto: Boolean(u.hasPhoto || (u.photoUrl && u.photoUrl !== "[has_photo]")),
+      lat: u.latitude ?? null,
+      lng: u.longitude ?? null,
+      cliente: "",
+      origem: "",
+      destino: "",
+      quando: parseUTCDate(u.createdAt).getTime(),
+    });
+  }
   return [...porId.values()].sort((a, b) => b.quando - a.quando);
 }
 
@@ -6228,7 +6249,7 @@ function MissionUpdatesAlert({ vehicles, gridData, clients }: { vehicles: Tracke
   const { data: updatesBrutos = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
     queryFn: async ({ signal }) => {
-      const res = await authFetch("/api/mission/updates?unread=true", { signal });
+      const res = await authFetch("/api/mission/updates?unread=true&limit=200", { signal });
       if (!res.ok) return [];
       const data = await res.json();
       return semJaLidas(Array.isArray(data) ? data : []);
@@ -7504,7 +7525,7 @@ export default function OperationalGridPage() {
   const { data: unreadAgentUpdates = [] } = useQuery<any[]>({
     queryKey: ["/api/mission/updates", "unread"],
     queryFn: async ({ signal }) => {
-      const res = await authFetch("/api/mission/updates?unread=true", { signal });
+      const res = await authFetch("/api/mission/updates?unread=true&limit=200", { signal });
       if (!res.ok) return [];
       const data = await res.json();
       return semJaLidas(Array.isArray(data) ? data : []);
@@ -7537,16 +7558,23 @@ export default function OperationalGridPage() {
       };
     };
     const porRecente = (a: any, b: any) => parseUTCDate(b.createdAt || 0).getTime() - parseUTCDate(a.createdAt || 0).getTime();
+    const chegouAgora = (u: any) => {
+      const t = parseUTCDate(u?.createdAt).getTime();
+      return Number.isFinite(t) && Date.now() - t < 3 * 60 * 1000;
+    };
     if (alertaConhecidos.current === null) {
+      // A primeira passagem vem vazia, antes da consulta. Não memoriza isso,
+      // senão a lista real inteira parece transmissão nova.
+      if (updatesNaoLidos.length === 0) return;
       alertaConhecidos.current = new Set(lista.map((u) => Number(u.id)));
       const fresco = [...lista].sort(porRecente)[0];
-      if (fresco && Date.now() - parseUTCDate(fresco.createdAt).getTime() < 3 * 60 * 1000) {
+      if (fresco && chegouAgora(fresco)) {
         setAlertaMsg(montar(fresco));
       }
       return;
     }
     const novo = [...lista]
-      .filter((u) => !alertaConhecidos.current!.has(Number(u.id)) && !alertaDispensados.current.has(Number(u.id)))
+      .filter((u) => !alertaConhecidos.current!.has(Number(u.id)) && !alertaDispensados.current.has(Number(u.id)) && chegouAgora(u))
       .sort(porRecente)[0];
     for (const u of lista) alertaConhecidos.current.add(Number(u.id));
     if (novo) setAlertaMsg(montar(novo));
@@ -7755,7 +7783,8 @@ export default function OperationalGridPage() {
   useEffect(() => {
     if (!somMensagem || !chaveMensagens) return;
     const esperaMs = 2 * 60 * 1000;
-    const vencida = () => mensagensColuna.some((mensagem) => mensagem.quando && Date.now() - mensagem.quando >= esperaMs);
+    const naFrota = (mensagem: MensagemMapa) => mensagem.vehicleId != null;
+    const vencida = () => mensagensColuna.some((mensagem) => naFrota(mensagem) && mensagem.quando && Date.now() - mensagem.quando >= esperaMs);
     let intervalo: ReturnType<typeof setInterval> | undefined;
     let espera: ReturnType<typeof setTimeout> | undefined;
     const tocar = () => {
@@ -7769,7 +7798,7 @@ export default function OperationalGridPage() {
       tocar();
     } else {
       const falta = mensagensColuna.reduce((menor, mensagem) => {
-        if (!mensagem.quando) return menor;
+        if (!naFrota(mensagem) || !mensagem.quando) return menor;
         const restante = esperaMs - (Date.now() - mensagem.quando);
         return restante > 0 && restante < menor ? restante : menor;
       }, Number.POSITIVE_INFINITY);

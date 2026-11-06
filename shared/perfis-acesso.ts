@@ -121,6 +121,11 @@ export function isPrivilegedRole(role?: string | null): boolean {
   return role === "diretoria" || role === "admin";
 }
 
+/** Cancelar NFS-e na Focus. Diretoria e administrador (o financeiro da Juliana entra como admin). */
+export function canCancelNfse(role?: string | null): boolean {
+  return isPrivilegedRole(role);
+}
+
 /** Quem pode gravar a OS como cancelada. Comercial já editava a OS; financeiro entra só nesse ato. */
 export function canCancelServiceOrder(role?: string | null): boolean {
   const r = String(role || "");
